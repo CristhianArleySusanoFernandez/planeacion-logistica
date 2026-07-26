@@ -1,0 +1,345 @@
+"""Lector del archivo ECOM crudo diario (.xlsx): una fila por línea de producto.
+
+Solo traducción de datos (fila → LineaPedido); la zona NO viene en este archivo.
+ECOM cambia detalles del export sin avisar, así que el lector es tolerante:
+- La hoja NO se busca por nombre fijo ("Hoja1", "Informe"...): si el libro tiene
+  una sola hoja se usa esa; con varias, la primera cuyo encabezado traiga las
+  columnas esenciales.
+- Las columnas se identifican por el TEXTO de su encabezado (con sinónimos y
+  normalización), no por posición fija: agregar, quitar o reordenar columnas
+  no rompe el lector mientras existan las que necesita.
+Peculiaridades del formato real:
+- Los pedidos multilínea traen R. Social y Total de factura solo en la primera
+  línea; Cliente viene siempre → el código se saca de Cliente con fallback a
+  R. Social.
+- Hay DOS columnas "Total": la de la factura (zona de cabecera del pedido) y la
+  de la línea (zona de producto, tras "Iva"). Ver ``_mapear_columnas``.
+- Los totales vienen como texto (a veces con separador de miles ',').
+- La columna "Kilos" viene en gramos: aquí se convierte a kilos.
+- La fecha puede venir dañada como texto serial (p.ej. '46190') → queda None.
+- La hoja declara dimensiones falsas: se corta tras una racha de filas sin pedido.
+"""
+
+import logging
+import unicodedata
+from collections.abc import Iterator, Sequence
+from dataclasses import dataclass
+from datetime import date, datetime
+from decimal import Decimal, InvalidOperation
+from pathlib import Path
+from typing import Any
+
+import openpyxl
+from openpyxl.utils import get_column_letter
+from openpyxl.workbook import Workbook
+from openpyxl.worksheet.worksheet import Worksheet
+
+from planeacion.domain.modelo import LineaPedido
+
+_logger = logging.getLogger(__name__)
+
+_MAX_FILAS_VACIAS_SEGUIDAS = 100
+_GRAMOS_POR_KILO = Decimal("1000")
+
+# Sinónimos aceptados por columna lógica, ya normalizados (ver _normalizar).
+# Las columnas "total" no van aquí: se resuelven aparte por posición relativa
+# porque el archivo trae dos con el mismo nombre (ver _mapear_columnas).
+_SINONIMOS: dict[str, tuple[str, ...]] = {
+    "pedido": ("pedido",),
+    "fecha": ("fecha",),
+    "documento": ("nit/ced", "nit", "documento"),
+    "razon_social": ("r. social", "razon social", "r.social"),
+    "cliente": ("cliente",),
+    "ciudad": ("ciudad",),
+    "barrio": ("barrio",),
+    "direccion": ("direccion",),
+    "asesor": ("asesor",),
+    "producto": ("producto",),
+    "cantidad": ("cantidad",),
+    "kilos": ("kilos",),
+}
+
+# Nombre con el que cada columna lógica se menciona en mensajes y avisos.
+_NOMBRE_VISIBLE: dict[str, str] = {
+    "pedido": "Pedido",
+    "fecha": "Fecha",
+    "documento": "nit/ced",
+    "razon_social": "R. Social",
+    "cliente": "Cliente",
+    "ciudad": "Ciudad",
+    "barrio": "Barrio",
+    "direccion": "Direccion",
+    "asesor": "Asesor",
+    "producto": "Producto",
+    "cantidad": "Cantidad",
+    "kilos": "Kilos",
+    "total_linea": "Total (de la línea)",
+}
+
+
+class FormatoEcomInvalido(Exception):
+    """Una celda del ECOM no se puede interpretar (el mensaje ubica la fila)."""
+
+
+class ColumnasEcomFaltantes(FormatoEcomInvalido):
+    """Al archivo le faltan columnas esenciales; el mensaje dice cuáles."""
+
+
+@dataclass(frozen=True)
+class _MapaColumnas:
+    """Índices 0-based de cada columna lógica en la hoja (None = no vino)."""
+
+    pedido: int
+    fecha: int
+    total_linea: int
+    kilos: int
+    cliente: int | None
+    razon_social: int | None
+    documento: int | None
+    ciudad: int | None
+    barrio: int | None
+    direccion: int | None
+    asesor: int | None
+    producto: int | None
+    cantidad: int | None
+    total_factura: int | None
+
+    @property
+    def max_col(self) -> int:
+        """Última columna (1-based) que hace falta leer de cada fila."""
+        indices = [
+            self.pedido, self.fecha, self.total_linea, self.kilos,
+            self.cliente, self.razon_social, self.documento, self.ciudad,
+            self.barrio, self.direccion, self.asesor, self.producto,
+            self.cantidad, self.total_factura,
+        ]  # fmt: skip
+        return max(indice for indice in indices if indice is not None) + 1
+
+
+def _normalizar(valor: Any) -> str:
+    """Encabezado → forma comparable: minúsculas, sin acentos, espacios colapsados."""
+    texto = "" if valor is None else str(valor)
+    sin_acentos = "".join(
+        caracter
+        for caracter in unicodedata.normalize("NFD", texto)
+        if not unicodedata.combining(caracter)
+    )
+    return " ".join(sin_acentos.lower().split())
+
+
+def _resolver_totales(normalizados: Sequence[str]) -> tuple[int | None, int | None]:
+    """(total_factura, total_linea) entre las columnas llamadas "Total".
+
+    El archivo trae dos "Total": el de la factura (en la zona de cabecera del
+    pedido) y el de la línea (en la zona de producto, justo después de "Iva").
+    Heurística: si hay columna "Iva", el primer "Total" DESPUÉS de "Iva" es el
+    de línea y el primero antes el de factura; sin "Iva", el primero es factura
+    y el segundo línea. Los archivos viejos traían el de línea renombrado como
+    "Total2": se acepta como sinónimo directo.
+    """
+    posiciones_total = [i for i, texto in enumerate(normalizados) if texto == "total"]
+    total2 = next((i for i, texto in enumerate(normalizados) if texto == "total2"), None)
+    iva = next((i for i, texto in enumerate(normalizados) if texto == "iva"), None)
+
+    linea = total2
+    if linea is None and iva is not None:
+        linea = next((i for i in posiciones_total if i > iva), None)
+    if linea is None and len(posiciones_total) >= 2:
+        linea = posiciones_total[1]
+    factura = next((i for i in posiciones_total if i != linea), None)
+    return factura, linea
+
+
+def _mapear_columnas(encabezados: Sequence[Any]) -> _MapaColumnas:
+    """Fila de encabezados → mapa de columnas lógicas; falla listando lo que falta."""
+    normalizados = [_normalizar(celda) for celda in encabezados]
+    indices: dict[str, int | None] = {
+        nombre: next((i for i, texto in enumerate(normalizados) if texto in sinonimos), None)
+        for nombre, sinonimos in _SINONIMOS.items()
+    }
+    total_factura, total_linea = _resolver_totales(normalizados)
+
+    faltantes = [
+        _NOMBRE_VISIBLE[nombre]
+        for nombre in ("pedido", "fecha", "kilos")
+        if indices[nombre] is None
+    ]
+    if indices["cliente"] is None and indices["razon_social"] is None:
+        faltantes.append(_NOMBRE_VISIBLE["cliente"])
+    if total_linea is None:
+        faltantes.append(_NOMBRE_VISIBLE["total_linea"])
+    if faltantes:
+        encontrados = ", ".join(str(celda).strip() for celda in encabezados if _normalizar(celda))
+        raise ColumnasEcomFaltantes(
+            f"No pude leer el archivo de ECOM: faltan las columnas [{', '.join(faltantes)}].\n"
+            f"Encabezados encontrados: {encontrados or '(ninguno)'}.\n"
+            "¿El archivo es un export de pedidos de ECOM?"
+        )
+
+    opcionales_ausentes = [
+        _NOMBRE_VISIBLE[nombre]
+        for nombre in ("documento", "ciudad", "barrio", "direccion", "asesor", "producto", "cantidad")
+        if indices[nombre] is None
+    ]
+    if opcionales_ausentes:
+        _logger.warning(
+            "El ECOM no trae las columnas opcionales %s: esos campos quedan vacíos.",
+            ", ".join(opcionales_ausentes),
+        )
+
+    # Los esenciales ya se validaron arriba; mypy no sigue esa prueba.
+    assert indices["pedido"] is not None and indices["fecha"] is not None
+    assert indices["kilos"] is not None and total_linea is not None
+    return _MapaColumnas(
+        pedido=indices["pedido"],
+        fecha=indices["fecha"],
+        total_linea=total_linea,
+        kilos=indices["kilos"],
+        cliente=indices["cliente"],
+        razon_social=indices["razon_social"],
+        documento=indices["documento"],
+        ciudad=indices["ciudad"],
+        barrio=indices["barrio"],
+        direccion=indices["direccion"],
+        asesor=indices["asesor"],
+        producto=indices["producto"],
+        cantidad=indices["cantidad"],
+        total_factura=total_factura,
+    )
+
+
+def _encabezados_de(hoja: Worksheet) -> Sequence[Any]:
+    return next(hoja.iter_rows(min_row=1, max_row=1, values_only=True), ())
+
+
+def _elegir_hoja(libro: Workbook, nombre_archivo: str) -> tuple[Worksheet, _MapaColumnas]:
+    """Con una sola hoja, esa; con varias, la primera cuyo encabezado mapee."""
+    if len(libro.sheetnames) == 1:
+        hoja = libro[libro.sheetnames[0]]
+        return hoja, _mapear_columnas(_encabezados_de(hoja))
+
+    primer_error: ColumnasEcomFaltantes | None = None
+    for nombre in libro.sheetnames:
+        hoja = libro[nombre]
+        try:
+            return hoja, _mapear_columnas(_encabezados_de(hoja))
+        except ColumnasEcomFaltantes as error:
+            primer_error = primer_error or error
+    assert primer_error is not None
+    raise ColumnasEcomFaltantes(
+        f"Ninguna hoja de {nombre_archivo} ({', '.join(libro.sheetnames)}) trae las "
+        f"columnas de un export de pedidos de ECOM. Del primer intento: {primer_error}"
+    )
+
+
+def _texto(valor: Any) -> str | None:
+    """Celda → texto limpio. Los enteros que Excel guarda como float no llevan '.0'."""
+    if valor is None:
+        return None
+    if isinstance(valor, float) and valor.is_integer():
+        valor = int(valor)
+    texto = str(valor).strip()
+    return texto or None
+
+
+def convertir_decimal(valor: Any, contexto: str = "") -> Decimal:
+    """Texto/número → Decimal. Vacío vale 0; tolera separador de miles ','."""
+    texto = _texto(valor)
+    if texto is None:
+        return Decimal("0")
+    try:
+        return Decimal(texto.replace(",", ""))
+    except InvalidOperation as error:
+        raise FormatoEcomInvalido(f"valor no numérico {texto!r} {contexto}".strip()) from error
+
+
+def extraer_codigo_cliente(texto_cliente: str) -> str:
+    """De "CODIGO-NOMBRE" toma el prefijo antes del primer '-'."""
+    return texto_cliente.split("-", 1)[0].strip()
+
+
+def _nombre_cliente(texto_cliente: str) -> str | None:
+    partes = texto_cliente.split("-", 1)
+    if len(partes) < 2:
+        return None
+    return partes[1].strip() or None
+
+
+def convertir_fecha(valor: Any) -> date | None:
+    """datetime/date → date; texto ISO se intenta; lo dañado (p.ej. '46190') → None."""
+    if isinstance(valor, datetime):
+        return valor.date()
+    if isinstance(valor, date):
+        return valor
+    texto = _texto(valor)
+    if texto is None:
+        return None
+    try:
+        return datetime.fromisoformat(texto).date()
+    except ValueError:
+        return None
+
+
+class LectorEcomExcel:
+    """Adaptador del puerto ``LectorDePedidos``."""
+
+    def leer(self, ruta: Path) -> list[LineaPedido]:
+        libro = openpyxl.load_workbook(ruta, read_only=True, data_only=True)
+        try:
+            hoja, mapa = _elegir_hoja(libro, ruta.name)
+            _logger.info("Leyendo pedidos de la hoja %r de %s", hoja.title, ruta.name)
+            return list(_leer_lineas(hoja, mapa))
+        finally:
+            libro.close()
+
+
+def _celda(fila: tuple[Any, ...], indice: int | None) -> Any:
+    if indice is None or indice >= len(fila):
+        return None
+    return fila[indice]
+
+
+def _letra(indice: int) -> str:
+    return get_column_letter(indice + 1)
+
+
+def _leer_lineas(hoja: Worksheet, mapa: _MapaColumnas) -> Iterator[LineaPedido]:
+    vacias_seguidas = 0
+    for numero, fila in enumerate(
+        hoja.iter_rows(min_row=2, max_col=mapa.max_col, values_only=True), start=2
+    ):
+        pedido = _texto(_celda(fila, mapa.pedido))
+        if pedido is None:
+            vacias_seguidas += 1
+            if vacias_seguidas > _MAX_FILAS_VACIAS_SEGUIDAS:
+                return
+            continue
+        vacias_seguidas = 0
+        cliente_crudo = _texto(_celda(fila, mapa.cliente)) or _texto(_celda(fila, mapa.razon_social))
+        if cliente_crudo is None:
+            raise FormatoEcomInvalido(f"fila {numero}: sin cliente (Cliente y R. Social vacías)")
+        cantidad_cruda = _celda(fila, mapa.cantidad)
+        yield LineaPedido(
+            pedido=pedido,
+            codigo_cliente=extraer_codigo_cliente(cliente_crudo),
+            fecha=convertir_fecha(_celda(fila, mapa.fecha)),
+            total_linea=convertir_decimal(
+                _celda(fila, mapa.total_linea), f"(fila {numero}, col {_letra(mapa.total_linea)})"
+            ),
+            kilos=convertir_decimal(
+                _celda(fila, mapa.kilos), f"(fila {numero}, col {_letra(mapa.kilos)})"
+            )
+            / _GRAMOS_POR_KILO,
+            nombre_cliente=_nombre_cliente(cliente_crudo),
+            documento=_texto(_celda(fila, mapa.documento)),
+            direccion=_texto(_celda(fila, mapa.direccion)),
+            ciudad=_texto(_celda(fila, mapa.ciudad)),
+            barrio=_texto(_celda(fila, mapa.barrio)),
+            producto=_texto(_celda(fila, mapa.producto)),
+            cantidad=(
+                convertir_decimal(cantidad_cruda, f"(fila {numero}, col {_letra(mapa.cantidad or 0)})")
+                if _texto(cantidad_cruda) is not None
+                else None
+            ),
+            asesor=_texto(_celda(fila, mapa.asesor)),
+        )

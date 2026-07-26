@@ -1,0 +1,50 @@
+# Tema visual — identidad de Distribuciones Santiago.
+# Hay modo claro y modo oscuro: se cambia en el menú ⋮ (arriba a la derecha)
+# → Settings → tema; por defecto sigue la preferencia del sistema.
+# Los colores de marca son decorativos; los semáforos (verde/ámbar/rojo) son
+# semánticos y NUNCA usan el dorado de la marca.
+
+[client]
+# "viewer" oculta las opciones de desarrollador pero deja el menú ⋮ con
+# Settings, que es donde vive el selector de tema claro/oscuro ("minimal"
+# escondería también Settings).
+toolbarMode = "viewer"
+
+[theme]
+font = "sans-serif"
+baseRadius = "8px"
+buttonRadius = "8px"
+showSidebarBorder = true
+
+[theme.light]
+primaryColor = "#1B3C8F"              # azul marino: botones y elementos activos
+backgroundColor = "#FFFFFF"
+secondaryBackgroundColor = "#F7F9FC"
+textColor = "#1F2937"
+linkColor = "#29A9E1"                 # azul cielo
+
+# Colores semánticos (texto coloreado :green[...] / :blue[...] en labels)
+greenColor = "#16A34A"
+orangeColor = "#D97706"
+redColor = "#DC2626"
+blueColor = "#29A9E1"
+
+[theme.light.sidebar]
+backgroundColor = "#F7F9FC"
+secondaryBackgroundColor = "#EDF1F7"
+
+[theme.dark]
+primaryColor = "#29A9E1"              # en oscuro el azul cielo contrasta mejor
+backgroundColor = "#111827"
+secondaryBackgroundColor = "#1F2937"
+textColor = "#E5E7EB"
+linkColor = "#53BCE7"
+
+greenColor = "#22C55E"
+orangeColor = "#F59E0B"
+redColor = "#EF4444"
+blueColor = "#53BCE7"
+
+[theme.dark.sidebar]
+backgroundColor = "#0B1220"
+secondaryBackgroundColor = "#182238"

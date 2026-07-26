@@ -1,0 +1,125 @@
+"""Caso de uso: generar la planeación del día (pivote + warm-start + balanceo).
+
+No persiste nada por sí solo: la máquina propone y Rudy decide. ``guardar`` se
+llama aparte, cuando ella confirma en el CLI (o en la UI de la fase 5).
+"""
+
+import logging
+from datetime import date
+from pathlib import Path
+
+from planeacion.application.dto.planeacion import PlaneacionCompleta
+from planeacion.application.puertos.entrada.generar_pivote import GenerarPivotePorZona
+from planeacion.application.puertos.salida.repositorios import (
+    RepositorioCarros,
+    RepositorioCarroZonas,
+    RepositorioPlaneaciones,
+    RepositorioZonas,
+)
+from planeacion.domain.modelo import AsignacionZona, Carro, ReglasBalanceo, ZonaAgregada
+from planeacion.domain.modelo.balanceo import REGLAS_POR_DEFECTO
+from planeacion.domain.servicios.balanceador import Balanceador
+
+DIAS_SEMANA = ("lunes", "martes", "miercoles", "jueves", "viernes", "sabado", "domingo")
+
+logger = logging.getLogger(__name__)
+
+
+class CasoDeUsoGenerarPlaneacion:
+    """Implementación del puerto de entrada ``GenerarPlaneacion``."""
+
+    def __init__(
+        self,
+        pivote: GenerarPivotePorZona,
+        carros: RepositorioCarros,
+        zonas: RepositorioZonas,
+        planeaciones: RepositorioPlaneaciones,
+        carro_zonas: RepositorioCarroZonas,
+    ) -> None:
+        self._pivote = pivote
+        self._carros = carros
+        self._zonas = zonas
+        self._planeaciones = planeaciones
+        self._carro_zonas = carro_zonas
+        self._balanceador = Balanceador()
+
+    def ejecutar(
+        self,
+        ruta_ecom: Path,
+        fecha: date | None = None,
+        reglas: ReglasBalanceo = REGLAS_POR_DEFECTO,
+    ) -> PlaneacionCompleta:
+        pivote = self._pivote.ejecutar(ruta_ecom, fecha=fecha)
+
+        # El pivote entrega DTOs planos; se reconstruye la Zona de dominio (con su
+        # regla de Chiquinquirá) casando el nombre contra la tabla de zonas.
+        zonas_por_nombre = {zona.nombre: zona for zona in self._zonas.listar()}
+        zonas_agregadas = [
+            ZonaAgregada(
+                zona=zonas_por_nombre[dto.zona],
+                facturas=dto.facturas,
+                clientes=dto.clientes,
+                pesos=dto.pesos,
+                kilos=dto.kilos,
+            )
+            for dto in pivote.zonas
+        ]
+
+        repertorio = self._carro_zonas.obtener_todos()
+        if not any(repertorio.values()):
+            logger.warning(
+                "La tabla carro_zonas está vacía: se balancea sin repertorio "
+                "(cualquier carro del municipio puede atender cualquier zona)."
+            )
+
+        dia_semana = DIAS_SEMANA[pivote.fecha.weekday()]
+        previa = self._planeaciones.obtener_asignacion_previa(dia_semana)
+        resultado = self._balanceador.balancear(
+            zonas_agregadas=zonas_agregadas,
+            carros_por_municipio=self._carros_por_municipio(),
+            asignacion_previa=previa.zona_a_carro if previa else None,
+            reglas=reglas,
+            repertorio=repertorio,
+        )
+        return PlaneacionCompleta(
+            fecha=pivote.fecha,
+            dia_semana=dia_semana,
+            resultado=resultado,
+            total_facturas=pivote.total_facturas,
+            total_clientes=pivote.total_clientes,
+            total_pesos=pivote.total_pesos,
+            total_kilos=pivote.total_kilos,
+            no_resueltos=pivote.no_resueltos,
+            pedidos_excluidos_por_fecha=pivote.pedidos_excluidos_por_fecha,
+            facturas=pivote.facturas,
+            fecha_previa=previa.fecha if previa and resultado.desde_historico else None,
+        )
+
+    def guardar(self, planeacion: PlaneacionCompleta) -> int:
+        asignaciones = [
+            AsignacionZona(
+                zona=zona.zona,
+                carro=carga.carro,
+                facturas=zona.facturas,
+                clientes=zona.clientes,
+                pesos=zona.pesos,
+                kilos=zona.kilos,
+            )
+            for cargas in planeacion.resultado.cargas_por_municipio.values()
+            for carga in cargas
+            for zona in carga.zonas
+        ]
+        return self._planeaciones.guardar_planeacion(
+            planeacion.fecha, planeacion.dia_semana, asignaciones
+        )
+
+    def _carros_por_municipio(self) -> dict[str, list[Carro]]:
+        """Los carros activos agrupados por municipio, en orden estable por número
+        (de ese orden sale la convención sur/norte de Chiquinquirá)."""
+        agrupados: dict[str, list[Carro]] = {}
+        for carro in self._carros.listar():
+            if carro.activo and carro.municipio is not None:
+                agrupados.setdefault(carro.municipio.nombre, []).append(carro)
+        for carros in agrupados.values():
+            carros.sort(key=lambda c: (len(c.numero), c.numero))
+        return agrupados

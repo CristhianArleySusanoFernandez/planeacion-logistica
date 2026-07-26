@@ -1,0 +1,120 @@
+"""Composición de dependencias: fábrica del cliente Supabase y de los repositorios."""
+
+from dataclasses import dataclass
+
+from supabase import Client, create_client
+
+from planeacion.application.casos_uso.generar_pivote import CasoDeUsoGenerarPivote
+from planeacion.application.casos_uso.generar_planeacion import CasoDeUsoGenerarPlaneacion
+from planeacion.application.casos_uso.resolver_clientes_nuevos import (
+    CasoDeUsoResolverClientesNuevos,
+)
+from planeacion.application.puertos.entrada.generar_pivote import GenerarPivotePorZona
+from planeacion.application.puertos.entrada.generar_planeacion import GenerarPlaneacion
+from planeacion.application.puertos.entrada.resolver_clientes_nuevos import (
+    ResolverClientesNuevos,
+)
+from planeacion.application.puertos.salida.exportador_planeacion import ExportadorPlaneacion
+from planeacion.application.puertos.salida.repositorios import (
+    RepositorioCarros,
+    RepositorioCarroZonas,
+    RepositorioClientes,
+    RepositorioCorrecciones,
+    RepositorioMunicipios,
+    RepositorioOverrides,
+    RepositorioPlaneaciones,
+    RepositorioZonas,
+)
+from planeacion.config.settings import Settings
+from planeacion.infraestructura.adaptadores.salida.excel.exportador_planeacion import (
+    ExportadorExcelPlaneacion,
+)
+from planeacion.infraestructura.adaptadores.salida.excel.lector_ecom import LectorEcomExcel
+from planeacion.infraestructura.adaptadores.salida.supabase.repositorio_carro_zonas import (
+    RepositorioCarroZonasSupabase,
+)
+from planeacion.infraestructura.adaptadores.salida.supabase.repositorio_carros import (
+    RepositorioCarrosSupabase,
+)
+from planeacion.infraestructura.adaptadores.salida.supabase.repositorio_clientes import (
+    RepositorioClientesSupabase,
+)
+from planeacion.infraestructura.adaptadores.salida.supabase.repositorio_correcciones import (
+    RepositorioCorreccionesSupabase,
+)
+from planeacion.infraestructura.adaptadores.salida.supabase.repositorio_municipios import (
+    RepositorioMunicipiosSupabase,
+)
+from planeacion.infraestructura.adaptadores.salida.supabase.repositorio_overrides import (
+    RepositorioOverridesSupabase,
+)
+from planeacion.infraestructura.adaptadores.salida.supabase.repositorio_planeaciones import (
+    RepositorioPlaneacionesSupabase,
+)
+from planeacion.infraestructura.adaptadores.salida.supabase.repositorio_zonas import (
+    RepositorioZonasSupabase,
+)
+
+
+def crear_cliente_supabase(settings: Settings) -> Client:
+    return create_client(settings.supabase_url, settings.supabase_key)
+
+
+@dataclass(frozen=True)
+class Contenedor:
+    """Repositorios ya cableados; los tipos son los puertos, no los adaptadores."""
+
+    municipios: RepositorioMunicipios
+    zonas: RepositorioZonas
+    carros: RepositorioCarros
+    carro_zonas: RepositorioCarroZonas
+    clientes: RepositorioClientes
+    correcciones: RepositorioCorrecciones
+    overrides: RepositorioOverrides
+    planeaciones: RepositorioPlaneaciones
+
+
+def crear_contenedor(settings: Settings | None = None) -> Contenedor:
+    settings = settings or Settings()
+    cliente = crear_cliente_supabase(settings)
+    return Contenedor(
+        municipios=RepositorioMunicipiosSupabase(cliente),
+        zonas=RepositorioZonasSupabase(cliente),
+        carros=RepositorioCarrosSupabase(cliente),
+        carro_zonas=RepositorioCarroZonasSupabase(cliente),
+        clientes=RepositorioClientesSupabase(cliente),
+        correcciones=RepositorioCorreccionesSupabase(cliente),
+        overrides=RepositorioOverridesSupabase(cliente),
+        planeaciones=RepositorioPlaneacionesSupabase(cliente),
+    )
+
+
+def crear_generar_pivote(contenedor: Contenedor) -> GenerarPivotePorZona:
+    return CasoDeUsoGenerarPivote(
+        lector=LectorEcomExcel(),
+        clientes=contenedor.clientes,
+        overrides=contenedor.overrides,
+        zonas=contenedor.zonas,
+    )
+
+
+def crear_resolver_clientes_nuevos(contenedor: Contenedor) -> ResolverClientesNuevos:
+    return CasoDeUsoResolverClientesNuevos(
+        clientes=contenedor.clientes,
+        zonas=contenedor.zonas,
+        correcciones=contenedor.correcciones,
+    )
+
+
+def crear_generar_planeacion(contenedor: Contenedor) -> GenerarPlaneacion:
+    return CasoDeUsoGenerarPlaneacion(
+        pivote=crear_generar_pivote(contenedor),
+        carros=contenedor.carros,
+        zonas=contenedor.zonas,
+        planeaciones=contenedor.planeaciones,
+        carro_zonas=contenedor.carro_zonas,
+    )
+
+
+def crear_exportador_planeacion() -> ExportadorPlaneacion:
+    return ExportadorExcelPlaneacion()
