@@ -3,6 +3,7 @@
 from collections.abc import Mapping, Set
 from dataclasses import dataclass, field
 from decimal import Decimal
+from enum import Enum
 
 from planeacion.domain.errores import MovimientoInvalido
 from planeacion.domain.modelo.carro import Carro
@@ -78,6 +79,31 @@ class CargaCarro:
         raise MovimientoInvalido(f"el carro {self.carro.numero} no tiene la zona {nombre_zona!r}")
 
 
+class NivelDesbalance(Enum):
+    """Qué tan bien quedó repartido un municipio, según el peor de sus dos CV."""
+
+    ACEPTABLE = "aceptable"
+    ATENCION = "atencion"
+    CRITICO = "critico"
+
+
+# Criterio de negocio: hasta 10 % de coeficiente de variación el reparto se
+# considera parejo, entre 10 % y 20 % conviene revisarlo y por encima de 20 %
+# hay carros claramente desiguales. Vive acá, y no en cada adaptador, para que
+# la CLI y la UI no puedan juzgar distinto la misma planeación.
+UMBRAL_CV_ACEPTABLE = 0.10
+UMBRAL_CV_ATENCION = 0.20
+
+
+def clasificar_cv(cv: float) -> NivelDesbalance:
+    """CV → nivel. Los bordes: 0,10 exacto ya es ATENCION y 0,20 exacto todavía lo es."""
+    if cv < UMBRAL_CV_ACEPTABLE:
+        return NivelDesbalance.ACEPTABLE
+    if cv <= UMBRAL_CV_ATENCION:
+        return NivelDesbalance.ATENCION
+    return NivelDesbalance.CRITICO
+
+
 @dataclass(frozen=True)
 class MetricasDesbalance:
     """Qué tan parejos quedaron los carros de un municipio."""
@@ -90,6 +116,11 @@ class MetricasDesbalance:
 
     def es_aceptable(self, umbral_cv: float) -> bool:
         return max(self.cv_clientes, self.cv_pesos) <= umbral_cv
+
+    @property
+    def nivel(self) -> NivelDesbalance:
+        """El nivel del municipio lo marca su peor dimensión, clientes o pesos."""
+        return clasificar_cv(max(self.cv_clientes, self.cv_pesos))
 
 
 @dataclass

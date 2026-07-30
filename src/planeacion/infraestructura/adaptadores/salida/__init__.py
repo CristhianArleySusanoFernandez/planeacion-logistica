@@ -1,1 +1,1 @@
-"""Paquete de Planeación Logística."""
+"""Adaptadores de salida: Excel y Supabase."""

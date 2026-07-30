@@ -1,5 +1,6 @@
 """El exportador escribe las 4 hojas con el layout de la referencia y los totales cuadran."""
 
+from dataclasses import replace
 from datetime import date
 from decimal import Decimal
 from pathlib import Path
@@ -102,6 +103,11 @@ def _planeacion_de_ejemplo() -> PlaneacionCompleta:
         ),
         pedidos_excluidos_por_fecha=0,
         facturas=facturas,
+        # Los agregados de lo no resuelto los calcula el dominio; el exportador
+        # solo los escribe. Acá coinciden con la factura P4.
+        facturas_no_resueltas=1,
+        pesos_no_resueltos=Decimal("100"),
+        kilos_no_resueltos=Decimal("1"),
     )
 
 
@@ -148,6 +154,45 @@ def test_hoja_planeacion_replica_el_pivote(tmp_path: Path) -> None:
     assert hoja["E6"].value == 12500
     # La fila #N/D acumula lo no resuelto.
     assert (hoja["C7"].value, hoja["D7"].value, hoja["E7"].value, hoja["F7"].value) == (1, 100, 1000, 1)
+
+
+def test_fila_no_resueltos_usa_los_agregados_del_dominio(tmp_path: Path) -> None:
+    """La fila '#N/D' se escribe con lo que trae el DTO, no recalculando el detalle.
+
+    Los valores de abajo se apartan a propósito de lo que daría sumar las
+    facturas sin zona: si el exportador volviera a agregarlas por su cuenta,
+    escribiría (1, 100, 1000, 1) y la prueba fallaría. Así queda fijado que la
+    única definición de "cuánto pesa lo no resuelto" vive en AgregadorPorZona.
+    """
+    planeacion = replace(
+        _planeacion_de_ejemplo(),
+        facturas_no_resueltas=7,
+        pesos_no_resueltos=Decimal("777.25"),
+        kilos_no_resueltos=Decimal("4"),
+    )
+    ruta = ExportadorExcelPlaneacion().exportar(planeacion, tmp_path / "salida.xlsx")
+    hoja = load_workbook(ruta)["PLANEACION"]
+    assert hoja["B7"].value == "#N/D"
+    # E en gramos, como el resto de las filas de zona; F son los clientes distintos.
+    assert (hoja["C7"].value, hoja["D7"].value, hoja["E7"].value, hoja["F7"].value) == (
+        7,
+        777.25,
+        4000,
+        1,
+    )
+
+
+def test_sin_clientes_no_resueltos_no_se_escribe_la_fila(tmp_path: Path) -> None:
+    planeacion = replace(
+        _planeacion_de_ejemplo(),
+        no_resueltos=(),
+        facturas_no_resueltas=0,
+        pesos_no_resueltos=Decimal("0"),
+        kilos_no_resueltos=Decimal("0"),
+    )
+    ruta = ExportadorExcelPlaneacion().exportar(planeacion, tmp_path / "salida.xlsx")
+    hoja = load_workbook(ruta)["PLANEACION"]
+    assert hoja["B7"].value is None
 
 
 def test_hoja_base_resume_por_carro(tmp_path: Path) -> None:

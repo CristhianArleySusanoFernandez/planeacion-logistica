@@ -23,4 +23,3 @@ class ClientePendiente:
     ciudad: str | None  # ya con la corrección de ubicación aplicada, si existía
     barrio: str | None
     sugerencia: SugerenciaDTO | None  # None = Rudy asigna a mano sin ayuda
-    zona_confirmada: str | None = None

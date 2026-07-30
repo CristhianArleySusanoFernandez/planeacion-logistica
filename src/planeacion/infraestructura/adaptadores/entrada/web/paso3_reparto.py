@@ -5,12 +5,20 @@ from pathlib import Path
 
 import streamlit as st
 
-from planeacion.application.casos_uso.ajustar_asignacion import CasoDeUsoAjustarAsignacion
 from planeacion.application.dto.pivote import PivotePorZonaDTO
 from planeacion.application.dto.planeacion import PlaneacionCompleta
-from planeacion.config.contenedor import Contenedor, crear_generar_planeacion
+from planeacion.config.contenedor import (
+    Contenedor,
+    crear_ajustar_asignacion,
+    crear_generar_planeacion,
+)
 from planeacion.domain.errores import ErrorDeDominio, MovimientoInvalido
-from planeacion.domain.modelo import CargaCarro, MetricasDesbalance
+from planeacion.domain.modelo import (
+    UMBRAL_CV_ACEPTABLE,
+    UMBRAL_CV_ATENCION,
+    CargaCarro,
+    MetricasDesbalance,
+)
 from planeacion.infraestructura.adaptadores.entrada.web import estado, estilos
 
 
@@ -120,10 +128,12 @@ def _resumen_balance(
             for municipio, m in sorted(finales.items())
         ]
     )
+    # Los cortes se leen del dominio para que la leyenda no pueda mentirle a los colores.
     leyenda = (
-        f"{estilos.punto_color(estilos.SEMAFORO_VERDE)}menos de 10 % &nbsp; "
-        f"{estilos.punto_color(estilos.SEMAFORO_AMBAR)}10–20 % &nbsp; "
-        f"{estilos.punto_color(estilos.SEMAFORO_ROJO)}más de 20 %"
+        f"{estilos.punto_color(estilos.SEMAFORO_VERDE)}menos de {UMBRAL_CV_ACEPTABLE:.0%} &nbsp; "
+        f"{estilos.punto_color(estilos.SEMAFORO_AMBAR)}{UMBRAL_CV_ACEPTABLE:.0%}–"
+        f"{UMBRAL_CV_ATENCION:.0%} &nbsp; "
+        f"{estilos.punto_color(estilos.SEMAFORO_ROJO)}más de {UMBRAL_CV_ATENCION:.0%}"
     )
     st.markdown(
         '<span class="texto-suave">CV = qué tan parejo quedó el reparto '
@@ -212,7 +222,7 @@ def _controles_mover(
     col3.markdown("&nbsp;")  # alinea el botón con los selectbox
     if col3.button("Mover", key=f"mover_boton_{clave}"):
         try:
-            CasoDeUsoAjustarAsignacion().ejecutar(planeacion.resultado, zona_elegida, destino)
+            crear_ajustar_asignacion().ejecutar(planeacion.resultado, zona_elegida, destino)
         except MovimientoInvalido as error:
             st.error(str(error))
             return

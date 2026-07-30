@@ -1,1 +1,1 @@
-"""Paquete de Planeación Logística."""
+"""Planeación logística de Distribuciones Santiago de Tunja."""

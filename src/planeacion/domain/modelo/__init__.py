@@ -1,11 +1,15 @@
 """Modelos del dominio."""
 
 from planeacion.domain.modelo.balanceo import (
+    UMBRAL_CV_ACEPTABLE,
+    UMBRAL_CV_ATENCION,
     AsignacionZona,
     CargaCarro,
     MetricasDesbalance,
+    NivelDesbalance,
     ReglasBalanceo,
     ResultadoBalanceo,
+    clasificar_cv,
 )
 from planeacion.domain.modelo.carro import Carro
 from planeacion.domain.modelo.cliente import Cliente, CorreccionUbicacion, OverrideZona
@@ -22,6 +26,8 @@ from planeacion.domain.modelo.zona import ReglaChiquinquira, Zona
 
 __all__ = [
     "MUNICIPIO_OTROS",
+    "UMBRAL_CV_ACEPTABLE",
+    "UMBRAL_CV_ATENCION",
     "AsignacionZona",
     "CargaCarro",
     "Carro",
@@ -34,6 +40,7 @@ __all__ = [
     "MetricasDesbalance",
     "MotivoNoResuelto",
     "Municipio",
+    "NivelDesbalance",
     "OverrideZona",
     "ReglaChiquinquira",
     "ReglasBalanceo",
@@ -41,4 +48,5 @@ __all__ = [
     "SugerenciaDeZona",
     "Zona",
     "ZonaAgregada",
+    "clasificar_cv",
 ]

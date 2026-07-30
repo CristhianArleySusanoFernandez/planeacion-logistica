@@ -1,7 +1,7 @@
 """Caso de uso: generar la planeación del día (pivote + warm-start + balanceo).
 
 No persiste nada por sí solo: la máquina propone y Rudy decide. ``guardar`` se
-llama aparte, cuando ella confirma en el CLI (o en la UI de la fase 5).
+llama aparte, cuando ella confirma en el CLI o en la UI.
 """
 
 import logging
@@ -93,6 +93,9 @@ class CasoDeUsoGenerarPlaneacion:
             pedidos_excluidos_por_fecha=pivote.pedidos_excluidos_por_fecha,
             facturas=pivote.facturas,
             fecha_previa=previa.fecha if previa and resultado.desde_historico else None,
+            facturas_no_resueltas=pivote.facturas_no_resueltas,
+            pesos_no_resueltos=pivote.pesos_no_resueltos,
+            kilos_no_resueltos=pivote.kilos_no_resueltos,
         )
 
     def guardar(self, planeacion: PlaneacionCompleta) -> int:

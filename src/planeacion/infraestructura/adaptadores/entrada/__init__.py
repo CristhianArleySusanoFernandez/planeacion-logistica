@@ -1,1 +1,1 @@
-"""Paquete de Planeación Logística."""
+"""Adaptadores de entrada: por dónde se opera la aplicación."""

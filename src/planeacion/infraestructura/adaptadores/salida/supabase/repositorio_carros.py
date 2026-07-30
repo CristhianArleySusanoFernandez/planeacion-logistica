@@ -53,11 +53,6 @@ class RepositorioCarrosSupabase:
             self._cliente.table(TABLA).upsert(filas, on_conflict="numero").execute()
         return len(filas)
 
-    def obtener_por_numero(self, numero: str) -> Carro | None:
-        respuesta = self._cliente.table(TABLA).select(_COLUMNAS).eq("numero", numero).execute()
-        datos = como_filas(respuesta.data)
-        return desde_fila(datos[0]) if datos else None
-
     def listar(self) -> list[Carro]:
         respuesta = self._cliente.table(TABLA).select(_COLUMNAS).order("numero").execute()
         return [desde_fila(fila) for fila in como_filas(respuesta.data)]

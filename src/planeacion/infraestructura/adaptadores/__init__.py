@@ -1,1 +1,1 @@
-"""Paquete de Planeación Logística."""
+"""Adaptadores de entrada y de salida."""

@@ -17,8 +17,10 @@ carro activo la permite queda en ``zonas_sin_carro``. Con repertorio vacío
 
 Convención de la regla dura de Chiquinquirá: el PRIMER carro del pool del
 municipio (en el orden recibido) es el "sur" y el SEGUNDO el "norte"; esta
-regla prevalece sobre el repertorio.
-TODO: hacer configurable qué carro es sur y cuál norte (hoy la flota no trae esa marca).
+regla prevalece sobre el repertorio. La convención es posicional porque la
+flota no guarda una marca sur/norte por carro: mientras no exista esa columna,
+el orden estable por número que arma el caso de uso es lo que fija cuál es
+cuál (en los datos reales calza: la ruta 1 es "RUTA SUR" y la 2 "RUTA 1 NORTE").
 """
 
 from collections.abc import Callable, Mapping, Sequence

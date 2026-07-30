@@ -17,24 +17,37 @@ from pathlib import Path
 
 from pydantic import ValidationError
 
-from planeacion.application.casos_uso.ajustar_asignacion import CasoDeUsoAjustarAsignacion
 from planeacion.application.dto.planeacion import PlaneacionCompleta
 from planeacion.application.puertos.entrada.generar_planeacion import GenerarPlaneacion
-from planeacion.config.contenedor import crear_contenedor, crear_generar_planeacion
+from planeacion.config.contenedor import (
+    crear_ajustar_asignacion,
+    crear_contenedor,
+    crear_generar_planeacion,
+)
 from planeacion.config.settings import Settings
 from planeacion.domain.errores import ErrorDeDominio, MovimientoInvalido
-from planeacion.domain.modelo import CargaCarro, MetricasDesbalance, ReglasBalanceo
+from planeacion.domain.modelo import (
+    CargaCarro,
+    MetricasDesbalance,
+    NivelDesbalance,
+    ReglasBalanceo,
+    clasificar_cv,
+)
 from planeacion.infraestructura.adaptadores.salida.excel.lector_ecom import FormatoEcomInvalido
 
 _MAX_RESULTADOS_BUSQUEDA = 15
 
 
+_TEXTO_SEMAFORO = {
+    NivelDesbalance.ACEPTABLE: "VERDE",
+    NivelDesbalance.ATENCION: "AMARILLO",
+    NivelDesbalance.CRITICO: "ROJO",
+}
+
+
 def _semaforo(cv: float) -> str:
-    if cv < 0.10:
-        return "VERDE"
-    if cv <= 0.20:
-        return "AMARILLO"
-    return "ROJO"
+    """El nivel lo decide el dominio; acá solo se le pone nombre para la consola."""
+    return _TEXTO_SEMAFORO[clasificar_cv(cv)]
 
 
 def _linea_metricas(iniciales: MetricasDesbalance, finales: MetricasDesbalance) -> str:
@@ -135,7 +148,7 @@ def _municipio_de_zona(planeacion: PlaneacionCompleta, nombre_zona: str) -> str 
 
 
 def _modo_interactivo(planeacion: PlaneacionCompleta) -> None:
-    ajustar = CasoDeUsoAjustarAsignacion()
+    ajustar = crear_ajustar_asignacion()
     print("\nMODO INTERACTIVO: mueve zonas entre carros del mismo municipio (Enter para terminar).")
     while True:
         try:

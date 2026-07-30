@@ -1,1 +1,1 @@
-"""Paquete de Planeación Logística."""
+"""Infraestructura: los adaptadores que implementan los puertos."""

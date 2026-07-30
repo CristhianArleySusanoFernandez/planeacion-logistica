@@ -34,3 +34,9 @@ class PlaneacionCompleta:
     pedidos_excluidos_por_fecha: int
     facturas: tuple[FacturaDTO, ...] = ()  # detalle por factura (hojas ECOM y PEDIDOS)
     fecha_previa: date | None = None  # de qué fecha vino el warm-start (None = round-robin)
+    # Agregados de los clientes sin zona, tal como los calculó el dominio; son la
+    # fila "#N/D" que cierra el pivote exportado. Los clientes distintos no van
+    # aquí: son len(no_resueltos).
+    facturas_no_resueltas: int = 0
+    pesos_no_resueltos: Decimal = Decimal("0")
+    kilos_no_resueltos: Decimal = Decimal("0")

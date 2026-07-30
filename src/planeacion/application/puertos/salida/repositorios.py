@@ -62,8 +62,6 @@ class RepositorioCarros(Protocol):
         """Upsert por numero. Devuelve cuántos carros guardó."""
         ...
 
-    def obtener_por_numero(self, numero: str) -> Carro | None: ...
-
     def listar(self) -> list[Carro]: ...
 
     def actualizar_carro(self, carro: Carro) -> None:
@@ -80,8 +78,6 @@ class RepositorioClientes(Protocol):
     def guardar_lote(self, clientes: Sequence[Cliente], ids_zonas: Mapping[str, int]) -> int:
         """Upsert por codigo. Devuelve cuántos clientes guardó."""
         ...
-
-    def obtener_por_codigo(self, codigo: str) -> Cliente | None: ...
 
     def listar(self) -> list[Cliente]:
         """Todos los clientes con su zona ya cargada (para construir el resolutor)."""
@@ -144,10 +140,6 @@ class RepositorioCarroZonas(Protocol):
         ...
 
     def quitar(self, numero_carro: str, nombre_zona: str) -> None: ...
-
-    def reemplazar_repertorio(self, numero_carro: str, nombres_zonas: Sequence[str]) -> None:
-        """Deja el repertorio del carro exactamente con esas zonas."""
-        ...
 
 
 class RepositorioPlaneaciones(Protocol):

@@ -23,9 +23,6 @@ class RepoClientesFalso:
     def guardar_lote(self, clientes: Sequence[Cliente], ids_zonas: Mapping[str, int]) -> int:
         raise NotImplementedError
 
-    def obtener_por_codigo(self, codigo: str) -> Cliente | None:
-        raise NotImplementedError
-
     def listar(self) -> list[Cliente]:
         return list(self._clientes)
 

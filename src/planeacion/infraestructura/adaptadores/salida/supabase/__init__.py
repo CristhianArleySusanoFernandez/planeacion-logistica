@@ -1,1 +1,1 @@
-"""Paquete de Planeación Logística."""
+"""Repositorios sobre Supabase (Postgres)."""

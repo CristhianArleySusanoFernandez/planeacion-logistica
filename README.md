@@ -1,7 +1,7 @@
 # Planeación Logística — Distribuciones Santiago de Tunja
 
 Aplicación Python (arquitectura hexagonal + Supabase) que automatiza la planeación logística diaria.
-El contexto completo del negocio y la arquitectura están en [CLAUDE.md](CLAUDE.md).
+El contexto completo del negocio y la arquitectura están en [`docs/dominio.md`](docs/dominio.md).
 
 ## Requisitos
 
@@ -103,8 +103,8 @@ si hay una guardada) o de un round-robin por peso, y mejora con movimientos e in
 uv run planeacion-balancear datos/pedidos24-26Junio.xlsx [--fecha] [--w-clientes 0.5] [--w-pesos 0.5] [--interactivo]
 ```
 
-Imprime el reparto por municipio con semáforos de desbalance (CV < 10% verde, 10–20% amarillo,
-> 20% rojo) mostrando el CV **inicial → final**. Con `--interactivo` Rudy mueve zonas entre carros
+Imprime el reparto por municipio con semáforos de desbalance (CV bajo 10% verde, 10–20% amarillo,
+sobre 20% rojo) mostrando el CV **inicial → final**. Con `--interactivo` Rudy mueve zonas entre carros
 y ve el recálculo en vivo; al final el comando pregunta si guardar la planeación (nada se persiste
 sin confirmar). Reglas duras: las zonas de Chiquinquirá SUR van al primer carro del pool y las
 NORTE al segundo, y no se pueden mover.
@@ -227,10 +227,12 @@ Notas del entorno:
 
 ```bash
 uv run ruff check          # lint
-uv run mypy src            # tipos (estricto)
-uv run pytest              # pruebas (la de integración se salta sin credenciales)
+uv run ruff format         # formato (--check para solo verificar)
+uv run mypy src            # tipos (strict = true en pyproject.toml)
+uv run pytest              # pruebas (las de integración se saltan sin credenciales)
 ```
 
 Estructura hexagonal en `src/planeacion/`: `domain/` (núcleo puro), `application/` (casos de uso y
-puertos), `infraestructura/` (adaptadores Excel/Supabase/CLI), `config/` (settings y wiring).
-`domain` y `application` no importan nada de `infraestructura`.
+puertos), `infraestructura/` (adaptadores Excel/Supabase/CLI/Streamlit), `config/` (settings y wiring).
+`domain` y `application` no importan nada de `infraestructura`. El detalle de las capas, el glosario
+del negocio y las reglas están en [`docs/dominio.md`](docs/dominio.md).

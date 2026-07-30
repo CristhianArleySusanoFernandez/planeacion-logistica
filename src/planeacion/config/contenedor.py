@@ -4,11 +4,13 @@ from dataclasses import dataclass
 
 from supabase import Client, create_client
 
+from planeacion.application.casos_uso.ajustar_asignacion import CasoDeUsoAjustarAsignacion
 from planeacion.application.casos_uso.generar_pivote import CasoDeUsoGenerarPivote
 from planeacion.application.casos_uso.generar_planeacion import CasoDeUsoGenerarPlaneacion
 from planeacion.application.casos_uso.resolver_clientes_nuevos import (
     CasoDeUsoResolverClientesNuevos,
 )
+from planeacion.application.puertos.entrada.ajustar_asignacion import AjustarAsignacion
 from planeacion.application.puertos.entrada.generar_pivote import GenerarPivotePorZona
 from planeacion.application.puertos.entrada.generar_planeacion import GenerarPlaneacion
 from planeacion.application.puertos.entrada.resolver_clientes_nuevos import (
@@ -114,6 +116,11 @@ def crear_generar_planeacion(contenedor: Contenedor) -> GenerarPlaneacion:
         planeaciones=contenedor.planeaciones,
         carro_zonas=contenedor.carro_zonas,
     )
+
+
+def crear_ajustar_asignacion() -> AjustarAsignacion:
+    """No necesita contenedor: opera sobre un resultado de balanceo ya en memoria."""
+    return CasoDeUsoAjustarAsignacion()
 
 
 def crear_exportador_planeacion() -> ExportadorPlaneacion:

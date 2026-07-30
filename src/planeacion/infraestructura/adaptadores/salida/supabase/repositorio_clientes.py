@@ -60,11 +60,6 @@ class RepositorioClientesSupabase:
             self._cliente.table(TABLA).upsert(lote, on_conflict="codigo").execute()
         return len(filas)
 
-    def obtener_por_codigo(self, codigo: str) -> Cliente | None:
-        respuesta = self._cliente.table(TABLA).select(_COLUMNAS).eq("codigo", codigo).execute()
-        datos = como_filas(respuesta.data)
-        return desde_fila(datos[0]) if datos else None
-
     def guardar_cliente(self, cliente: Cliente) -> None:
         ids_zona: dict[str, int] = {}
         if cliente.zona is not None:

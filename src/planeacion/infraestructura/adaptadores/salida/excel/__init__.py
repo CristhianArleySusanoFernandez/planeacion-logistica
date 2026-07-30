@@ -1,1 +1,1 @@
-"""Paquete de Planeación Logística."""
+"""Lectura y escritura de los archivos Excel del proceso."""

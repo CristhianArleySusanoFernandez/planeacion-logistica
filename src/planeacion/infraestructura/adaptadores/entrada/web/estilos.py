@@ -16,6 +16,8 @@ from string import Template
 
 import streamlit as st
 
+from planeacion.domain.modelo import NivelDesbalance, clasificar_cv
+
 # ------------------------------------------------ paleta de MARCA (decorativa)
 AZUL_MARINO = "#1B3C8F"  # principal: encabezados, botones
 AZUL_CIELO = "#29A9E1"  # secundario: hover, acentos, barras
@@ -329,13 +331,16 @@ def badge(texto: str, tono: str) -> str:
     return f'<span class="badge {clase}">{html.escape(texto)}</span>'
 
 
+_COLOR_SEMAFORO = {
+    NivelDesbalance.ACEPTABLE: SEMAFORO_VERDE,
+    NivelDesbalance.ATENCION: SEMAFORO_AMBAR,
+    NivelDesbalance.CRITICO: SEMAFORO_ROJO,
+}
+
+
 def color_semaforo(cv: float) -> str:
-    """Verde < 10 %, ámbar 10–20 %, rojo > 20 %. Nunca colores de la marca."""
-    if cv < 0.10:
-        return SEMAFORO_VERDE
-    if cv <= 0.20:
-        return SEMAFORO_AMBAR
-    return SEMAFORO_ROJO
+    """El nivel lo decide el dominio; acá solo se le asigna color. Nunca los de la marca."""
+    return _COLOR_SEMAFORO[clasificar_cv(cv)]
 
 
 def punto_semaforo(cv: float) -> str:

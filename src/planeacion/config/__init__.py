@@ -1,1 +1,1 @@
-"""Paquete de Planeación Logística."""
+"""Configuración y composición de dependencias."""

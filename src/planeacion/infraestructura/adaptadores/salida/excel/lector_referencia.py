@@ -22,7 +22,10 @@ HOJA_PLANEACION = "PLANEACION"
 HOJAS_DE_SIEMBRA = (HOJA_MAESTRA, HOJA_CAMBIOS, HOJA_OVERRIDES, HOJA_BASE)
 
 # Columna (índice 0-based) → encabezado esperado en la fila 1. "martha ojo" no
-# tiene encabezado, por eso no aparece aquí.
+# tiene encabezado, por eso no aparece aquí. El de BASE es el del bloque 1
+# (vehículos físicos), que no se siembra pero sirve para confirmar que el
+# archivo es el .xlsm de planeación esperado; la flota sale del bloque 2
+# (ver leer_rutas).
 ENCABEZADOS_ESPERADOS: dict[str, dict[int, str]] = {
     HOJA_MAESTRA: {1: "Direccion", 2: "Codigo_Postal", 3: "Ciudad", 5: "RUTA"},
     HOJA_CAMBIOS: {0: "Codigo del cliente", 5: "Ciudad Real", 6: "Barrio Real"},
@@ -57,18 +60,6 @@ class FilaCambio:
 class FilaOverride:
     codigo: str
     zona: str
-
-
-@dataclass(frozen=True)
-class FilaCarroBase:
-    """Bloque 1 de BASE: el catálogo de vehículos físicos (solo referencia,
-    no se siembra; ver docs/mapeo-vehiculos-rutas.md)."""
-
-    codigo: str
-    conductor: str | None
-    placa: str | None
-    auxiliar: str | None
-    zona: str | None
 
 
 @dataclass(frozen=True)
@@ -183,20 +174,6 @@ class LectorReferenciaExcel:
             if zona is None:
                 continue
             yield FilaOverride(codigo=codigo, zona=zona)
-
-    def leer_carros(self) -> Iterator[FilaCarroBase]:
-        """Lee solo el primer bloque de BASE (vehículos físicos): se detiene en la
-        fila-encabezado 'Ruta', donde empieza el bloque 2 (las rutas de reparto)."""
-        for codigo, fila in self._filas_con_codigo(HOJA_BASE, max_col=5):
-            if codigo.strip().upper() == "RUTA":
-                return
-            yield FilaCarroBase(
-                codigo=codigo,
-                conductor=_texto(fila[1]),
-                placa=_texto(fila[2]),
-                auxiliar=_texto(fila[3]),
-                zona=_texto(fila[4]),
-            )
 
     def tiene_hoja(self, hoja: str) -> bool:
         return hoja in self._libro.sheetnames

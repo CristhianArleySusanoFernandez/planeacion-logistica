@@ -3,7 +3,7 @@
 Uso:
     uv run planeacion-resolver-nuevos datos/pedidos24-26Junio.xlsx [--fecha 2026-06-24]
 
-Corre el pivote (Fase 2), toma los clientes sin zona (#N/D o en maestra sin RUTA)
+Corre el pivote, toma los clientes sin zona (#N/D o en maestra sin RUTA)
 y por cada uno muestra la sugerencia del voto de vecinos para que Rudy decida:
 aceptar, elegir una alternativa, asignar manualmente u omitir. Solo lo confirmado
 se persiste en Supabase.

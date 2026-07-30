@@ -1,5 +1,12 @@
 # Mapeo vehículos físicos ↔ rutas de reparto
 
+> **Documento de referencia, mantenido a mano** (última revisión: julio de 2026).
+> El cruce se construyó una sola vez con un lector del bloque 1 de la hoja `BASE`
+> que **ya no existe en el código**: se eliminó en la limpieza final porque el
+> bloque 1 no se siembra y ningún caso de uso lo consumía. Esta tabla no se
+> regenera sola; para corregirla o completarla hay que editarla acá (ver "Cómo
+> completarlo" al final).
+
 La hoja `BASE` de los `.xlsm` de planeación tiene **dos tablas**:
 
 - **Bloque 1** (filas 1–22): catálogo de **vehículos físicos** — `Codigo` (108, 820, 127...),

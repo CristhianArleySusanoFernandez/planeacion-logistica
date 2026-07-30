@@ -1,4 +1,4 @@
-"""Validación de la Fase 2: el pivote de la app debe reproducir la hoja PLANEACION.
+"""El pivote que calcula la app debe reproducir la hoja PLANEACION del .xlsm del día.
 
 Los valores esperados se leen DEL PROPIO .xlsm (fila "Ventas Totales" y filas de
 zona de la hoja PLANEACION), nunca quemados en el test. Nota honesta sobre los

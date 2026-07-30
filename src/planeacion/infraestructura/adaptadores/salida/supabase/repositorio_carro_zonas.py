@@ -58,11 +58,6 @@ class RepositorioCarroZonasSupabase:
         zona_id = self._id_de("zonas", "nombre", nombre_zona)
         self._cliente.table(TABLA).delete().eq("carro_id", carro_id).eq("zona_id", zona_id).execute()
 
-    def reemplazar_repertorio(self, numero_carro: str, nombres_zonas: Sequence[str]) -> None:
-        carro_id = self._id_de("carros", "numero", numero_carro)
-        self._cliente.table(TABLA).delete().eq("carro_id", carro_id).execute()
-        self.asignar_lote([(numero_carro, nombre) for nombre in nombres_zonas])
-
     def _ids_por_clave(self, tabla: str, clave: str) -> dict[str, int]:
         respuesta = self._cliente.table(tabla).select(f"id, {clave}").limit(10000).execute()
         return {fila[clave]: int(fila["id"]) for fila in como_filas(respuesta.data)}

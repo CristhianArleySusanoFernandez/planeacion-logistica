@@ -1,1 +1,1 @@
-"""Paquete de Planeación Logística."""
+"""Capa de aplicación: casos de uso y puertos."""

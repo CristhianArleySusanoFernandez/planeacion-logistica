@@ -13,7 +13,10 @@ Replica el layout del .xlsm de referencia (inspeccionado en DEL_24_PAR_EL_26_JUN
 - PEDIDOS: detalle por factura (extra pedido por el usuario; no existe con esta
   forma en la referencia, que lo trae por línea de producto).
 
-Solo traducción de datos: todos los números vienen ya calculados en el DTO.
+Los totales y los agregados por zona vienen ya calculados en el DTO. Lo único
+que se deriva aquí son cifras propias del layout de la hoja: los promedios por
+vehículo de la fila 2 (total ÷ carros con carga) y la fila '#N/D' de cierre del
+pivote, que se recalcula desde el detalle de facturas sin zona.
 """
 
 from decimal import Decimal
@@ -162,19 +165,19 @@ class ExportadorExcelPlaneacion:
         hoja.freeze_panes = "A5"
 
     def _fila_no_resueltos(self, hoja: Worksheet, fila: int, planeacion: PlaneacionCompleta) -> None:
-        """La fila '#N/D' del pivote viejo: los clientes que quedaron sin zona."""
-        sin_zona = [factura for factura in planeacion.facturas if factura.zona is None]
-        if not sin_zona:
+        """La fila '#N/D' del pivote viejo: los clientes que quedaron sin zona.
+
+        Los agregados los calculó el dominio (AgregadorPorZona); acá solo se
+        escriben, para que no existan dos definiciones de "cuánto pesa lo no
+        resuelto" que puedan divergir.
+        """
+        if not planeacion.facturas_no_resueltas:
             return
         hoja.cell(row=fila, column=2, value=_SIN_ZONA)
-        hoja.cell(row=fila, column=3, value=len({factura.pedido for factura in sin_zona}))
-        hoja.cell(row=fila, column=4, value=sum((f.total for f in sin_zona), Decimal("0")))
-        hoja.cell(
-            row=fila,
-            column=5,
-            value=sum((f.kilos for f in sin_zona), Decimal("0")) * _GRAMOS_POR_KILO,
-        )
-        hoja.cell(row=fila, column=6, value=len({factura.codigo_cliente for factura in sin_zona}))
+        hoja.cell(row=fila, column=3, value=planeacion.facturas_no_resueltas)
+        hoja.cell(row=fila, column=4, value=planeacion.pesos_no_resueltos)
+        hoja.cell(row=fila, column=5, value=planeacion.kilos_no_resueltos * _GRAMOS_POR_KILO)
+        hoja.cell(row=fila, column=6, value=len(planeacion.no_resueltos))
 
     def _hoja_base(self, hoja: Worksheet, planeacion: PlaneacionCompleta) -> None:
         _escribir_encabezado(hoja, 1, ENCABEZADO_BASE)
