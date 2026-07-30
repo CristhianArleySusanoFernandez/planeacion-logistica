@@ -151,9 +151,7 @@ class RepositorioCarroZonas(Protocol):
 
 
 class RepositorioPlaneaciones(Protocol):
-    def guardar_planeacion(
-        self, fecha: date, dia_semana: str, asignaciones: Sequence[AsignacionZona]
-    ) -> int:
+    def guardar_planeacion(self, fecha: date, dia_semana: str, asignaciones: Sequence[AsignacionZona]) -> int:
         """Inserta la cabecera y el detalle zona→carro. Devuelve el id de la planeación."""
         ...
 

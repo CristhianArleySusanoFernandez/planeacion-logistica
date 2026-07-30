@@ -50,8 +50,8 @@ def test_exportacion_del_flujo_completo(tmp_path: Path) -> None:
     try:
         hoja_referencia = referencia["ECOM"]
         encabezado_referencia = [
-            tuple(fila) for fila in hoja_referencia.iter_rows(min_row=3, max_row=3, max_col=2,
-                                                              values_only=True)
+            tuple(fila)
+            for fila in hoja_referencia.iter_rows(min_row=3, max_row=3, max_col=2, values_only=True)
         ][0]
     finally:
         referencia.close()

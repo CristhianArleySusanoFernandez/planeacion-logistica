@@ -79,9 +79,7 @@ def _zonas_nombres(contenedor: Contenedor) -> list[str]:
     return nombres
 
 
-def _editor_con_filtro(
-    clave: str, originales: list[Fila], **kwargs: Any
-) -> tuple[list[Fila], list[Fila]]:
+def _editor_con_filtro(clave: str, originales: list[Fila], **kwargs: Any) -> tuple[list[Fila], list[Fila]]:
     """Filtro de texto + editor dinámico. Devuelve (visibles, editadas): el diff
     del guardado se calcula contra las VISIBLES para que una fila oculta por el
     filtro nunca cuente como eliminada."""
@@ -186,8 +184,7 @@ def _carros_que_atienden(contenedor: Contenedor) -> dict[str, str]:
         for nombre in zonas:
             atienden.setdefault(nombre, []).append(numero)
     return {
-        nombre: ", ".join(sorted(numeros, key=lambda n: (len(n), n)))
-        for nombre, numeros in atienden.items()
+        nombre: ", ".join(sorted(numeros, key=lambda n: (len(n), n))) for nombre, numeros in atienden.items()
     }
 
 
@@ -281,9 +278,7 @@ def _guardar_matriz(
     cuando una fila desaparece del filtro (ej. con «solo sin carro» activo).
     """
     estado_editor = st.session_state.get(clave_editor) or {}
-    cambios = cambios_desde_edicion(
-        estado_editor.get("edited_rows", {}), orden_zonas, set(numeros_carros)
-    )
+    cambios = cambios_desde_edicion(estado_editor.get("edited_rows", {}), orden_zonas, set(numeros_carros))
     st.session_state["matriz_nonce"] = st.session_state.get("matriz_nonce", 0) + 1
     if not cambios:
         return
@@ -321,9 +316,7 @@ def _tab_repertorio(contenedor: Contenedor) -> None:
         help="La vista de trabajo: solo las zonas que ningún carro atiende. "
         "Van desapareciendo de la lista a medida que las asignas.",
     )
-    texto = col_buscar.text_input(
-        "Buscar zona", key="matriz_buscar", placeholder="Nombre o parte del nombre"
-    )
+    texto = col_buscar.text_input("Buscar zona", key="matriz_buscar", placeholder="Nombre o parte del nombre")
 
     sin_carro, total = contar_sin_carro(zonas, repertorio)
     progreso = (
@@ -425,9 +418,7 @@ def _tab_correcciones(contenedor: Contenedor) -> None:
         return
     diff = calcular_diff(visibles, editadas, "cliente_codigo")
     errores = (
-        [f"{len(diff.invalidas)} fila(s) sin código de cliente: no se guardaron."]
-        if diff.invalidas
-        else []
+        [f"{len(diff.invalidas)} fila(s) sin código de cliente: no se guardaron."] if diff.invalidas else []
     )
     guardadas = 0
     for fila in diff.nuevas + diff.editadas:
@@ -470,9 +461,7 @@ def _tab_overrides(contenedor: Contenedor) -> None:
         return
     diff = calcular_diff(visibles, editadas, "cliente_codigo")
     errores = (
-        [f"{len(diff.invalidas)} fila(s) sin código de cliente: no se guardaron."]
-        if diff.invalidas
-        else []
+        [f"{len(diff.invalidas)} fila(s) sin código de cliente: no se guardaron."] if diff.invalidas else []
     )
     guardadas = 0
     for fila in diff.nuevas + diff.editadas:

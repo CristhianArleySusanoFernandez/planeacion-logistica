@@ -31,9 +31,7 @@ _ZONA_UNO = Zona(nombre="(BARBOSA):  UNO", municipio=_BARBOSA)
 _ZONA_DOS = Zona(nombre="(BARBOSA):  DOS", municipio=_BARBOSA)
 
 
-def _factura(
-    pedido: str, codigo: str, zona: str | None, total: str, kilos: str
-) -> FacturaDTO:
+def _factura(pedido: str, codigo: str, zona: str | None, total: str, kilos: str) -> FacturaDTO:
     return FacturaDTO(
         pedido=pedido,
         codigo_cliente=codigo,
@@ -61,9 +59,7 @@ def _planeacion_de_ejemplo() -> PlaneacionCompleta:
     carga_20 = CargaCarro(
         carro=Carro(numero="20", conductor="PEDRO", municipio=_BARBOSA),
         zonas=[
-            ZonaAgregada(
-                zona=_ZONA_DOS, facturas=1, clientes=1, pesos=Decimal("500"), kilos=Decimal("3")
-            )
+            ZonaAgregada(zona=_ZONA_DOS, facturas=1, clientes=1, pesos=Decimal("500"), kilos=Decimal("3"))
         ],
     )
     metricas = MetricasDesbalance(
@@ -166,9 +162,7 @@ def test_hoja_base_resume_por_carro(tmp_path: Path) -> None:
 def test_hoja_pedidos_una_fila_por_factura(tmp_path: Path) -> None:
     hoja = load_workbook(_exportar(tmp_path))["PEDIDOS"]
     assert tuple(hoja.cell(row=1, column=c).value for c in range(1, 13)) == ENCABEZADO_PEDIDOS
-    filas = [
-        tuple(hoja.cell(row=f, column=c).value for c in range(1, 13)) for f in range(2, 6)
-    ]
+    filas = [tuple(hoja.cell(row=f, column=c).value for c in range(1, 13)) for f in range(2, 6)]
     assert len(filas) == 4
     primera = filas[0]
     assert primera[1:8] == ("P1", "111", "TIENDA 111", "BARBOSA", "CENTRO", "CL 1 2 3", 600.50)

@@ -37,18 +37,24 @@ def test_guardar_y_recuperar_asignacion_previa() -> None:
 
     asignaciones = [
         AsignacionZona(
-            zona=zonas[0], carro=carros[0], facturas=3, clientes=2,
-            pesos=Decimal("1000.50"), kilos=Decimal("12.345"),
+            zona=zonas[0],
+            carro=carros[0],
+            facturas=3,
+            clientes=2,
+            pesos=Decimal("1000.50"),
+            kilos=Decimal("12.345"),
         ),
         AsignacionZona(
-            zona=zonas[1], carro=carros[1], facturas=1, clientes=1,
-            pesos=Decimal("500"), kilos=Decimal("3"),
+            zona=zonas[1],
+            carro=carros[1],
+            facturas=1,
+            clientes=1,
+            pesos=Decimal("500"),
+            kilos=Decimal("3"),
         ),
     ]
 
-    id_planeacion = contenedor.planeaciones.guardar_planeacion(
-        date(2026, 1, 1), _DIA_CENTINELA, asignaciones
-    )
+    id_planeacion = contenedor.planeaciones.guardar_planeacion(date(2026, 1, 1), _DIA_CENTINELA, asignaciones)
     try:
         previa = contenedor.planeaciones.obtener_asignacion_previa(_DIA_CENTINELA)
         assert previa is not None

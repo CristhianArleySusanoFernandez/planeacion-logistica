@@ -127,9 +127,7 @@ def test_el_balanceo_conserva_los_totales_del_municipio() -> None:
 
     cargas = resultado.cargas_por_municipio["OTROS"]
     assert sum(carga.clientes for carga in cargas) == sum(z.clientes for z in zonas)
-    assert sum((carga.pesos for carga in cargas), Decimal("0")) == sum(
-        (z.pesos for z in zonas), Decimal("0")
-    )
+    assert sum((carga.pesos for carga in cargas), Decimal("0")) == sum((z.pesos for z in zonas), Decimal("0"))
     assert sum(len(carga.zonas) for carga in cargas) == len(zonas)
 
 

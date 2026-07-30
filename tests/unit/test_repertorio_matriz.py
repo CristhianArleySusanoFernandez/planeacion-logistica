@@ -60,9 +60,7 @@ class TestZonasVisibles:
         assert [z.municipio.nombre for z in filas] == sorted(z.municipio.nombre for z in filas)
 
     def test_solo_sin_carro_deja_las_huerfanas(self) -> None:
-        filas = zonas_visibles(
-            _ZONAS, _REPERTORIO, FiltroMatriz(municipio=TODOS, solo_sin_carro=True)
-        )
+        filas = zonas_visibles(_ZONAS, _REPERTORIO, FiltroMatriz(municipio=TODOS, solo_sin_carro=True))
         # VÉLEZ y RUTA MUZO no aparecen en ningún repertorio.
         assert [z.nombre for z in filas] == ["(BARBOSA):  VÉLEZ", "RUTA MUZO"]
 

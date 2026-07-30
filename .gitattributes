@@ -1,0 +1,10 @@
+# Finales de línea normalizados: LF en el repositorio, sin importar el sistema
+# donde se trabaje (el proyecto se desarrolla en Windows y se despliega en Linux).
+* text=auto eol=lf
+
+# Binarios: nunca tocar.
+*.xlsx binary
+*.xlsm binary
+*.png binary
+*.jpg binary
+*.ico binary

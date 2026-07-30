@@ -110,8 +110,7 @@ def _badges_pendiente(pendiente: ClientePendiente) -> str:
     else:
         partes.append(
             estilos.badge(
-                f"Solo por ciudad — {sugerencia.vecinos_en_zona} de "
-                f"{sugerencia.total_vecinos} vecinos",
+                f"Solo por ciudad — {sugerencia.vecinos_en_zona} de {sugerencia.total_vecinos} vecinos",
                 "ambar",
             )
         )
@@ -122,13 +121,10 @@ def _fila_pendiente(pendiente: ClientePendiente, zonas_nombres: list[str]) -> st
     """La card de un cliente. Devuelve la zona elegida o None si se omite."""
     nombre = pendiente.nombre or "sin nombre"
     st.markdown(
-        f"**{html.escape(pendiente.codigo)} — {html.escape(nombre)}** &nbsp; "
-        f"{_badges_pendiente(pendiente)}",
+        f"**{html.escape(pendiente.codigo)} — {html.escape(nombre)}** &nbsp; {_badges_pendiente(pendiente)}",
         unsafe_allow_html=True,
     )
-    ubicacion = " · ".join(
-        dato for dato in (pendiente.ciudad, pendiente.barrio, pendiente.direccion) if dato
-    )
+    ubicacion = " · ".join(dato for dato in (pendiente.ciudad, pendiente.barrio, pendiente.direccion) if dato)
     if ubicacion:
         st.caption(ubicacion)
 
@@ -136,9 +132,7 @@ def _fila_pendiente(pendiente: ClientePendiente, zonas_nombres: list[str]) -> st
     if pendiente.sugerencia is not None:
         opciones.append(pendiente.sugerencia.zona)
         opciones.extend(
-            alternativa
-            for alternativa, _ in pendiente.sugerencia.alternativas
-            if alternativa not in opciones
+            alternativa for alternativa, _ in pendiente.sugerencia.alternativas if alternativa not in opciones
         )
     opciones.extend([_OPCION_MANUAL, _OPCION_OMITIR])
 

@@ -67,9 +67,7 @@ def test_zona_sin_carro_elegible_queda_en_zonas_sin_carro() -> None:
     zonas = [_zona("ZONA HUERFANA", 10, "100"), _zona("ZONA A", 10, "100")]
     repertorio = {"1": {"ZONA A"}}
 
-    resultado = Balanceador().balancear(
-        zonas, {"OTROS": _carros("1", "2")}, None, SIN_MEJORA, repertorio
-    )
+    resultado = Balanceador().balancear(zonas, {"OTROS": _carros("1", "2")}, None, SIN_MEJORA, repertorio)
 
     assert [z.zona.nombre for z in resultado.zonas_sin_carro] == ["ZONA HUERFANA"]
     assert _carro_de(resultado, "ZONA HUERFANA") is None
@@ -100,9 +98,7 @@ def test_warm_start_reubica_la_zona_cuyo_carro_previo_ya_no_la_permite() -> None
     previa = {"ZONA A": "1", "ZONA B": "1"}  # la semana pasada todo iba en el 1
     repertorio = {"1": {"ZONA A"}, "2": {"ZONA A", "ZONA B"}}  # Rudy le quitó B al 1
 
-    resultado = Balanceador().balancear(
-        zonas, {"OTROS": _carros("1", "2")}, previa, SIN_MEJORA, repertorio
-    )
+    resultado = Balanceador().balancear(zonas, {"OTROS": _carros("1", "2")}, previa, SIN_MEJORA, repertorio)
 
     assert resultado.desde_historico is True
     assert _carro_de(resultado, "ZONA A") == "1"  # la previa sigue valiendo donde se puede
@@ -119,9 +115,7 @@ def test_zona_viajera_se_balancea_en_el_pool_de_su_carro_elegible() -> None:
 
     assert _carro_de(resultado, "RAQUIRA") == "2"
     nombres_chiquinquira = {
-        zona.zona.nombre
-        for carga in resultado.cargas_por_municipio["CHIQUINQUIRA"]
-        for zona in carga.zonas
+        zona.zona.nombre for carga in resultado.cargas_por_municipio["CHIQUINQUIRA"] for zona in carga.zonas
     }
     assert "RAQUIRA" in nombres_chiquinquira  # viajó al pool de su carro elegible
     assert resultado.zonas_sin_carro == []

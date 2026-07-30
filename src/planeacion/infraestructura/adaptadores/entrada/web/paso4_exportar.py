@@ -33,10 +33,7 @@ def mostrar(contenedor: Contenedor) -> None:
 
 def _resumen_final(planeacion: PlaneacionCompleta) -> None:
     carros_usados = sum(
-        1
-        for cargas in planeacion.resultado.cargas_por_municipio.values()
-        for carga in cargas
-        if carga.zonas
+        1 for cargas in planeacion.resultado.cargas_por_municipio.values() for carga in cargas if carga.zonas
     )
     estilos.fila_metricas(
         [

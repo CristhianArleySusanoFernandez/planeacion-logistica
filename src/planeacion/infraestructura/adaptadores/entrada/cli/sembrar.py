@@ -229,8 +229,10 @@ def _imprimir_resumen_construccion(datos: DatosDeSiembra) -> None:
         f"  carros (rutas del bloque 2 de BASE): {len(datos.carros)} "
         f"(activos: {activos}, externos: {sum(1 for c in datos.carros if c.es_externo)})"
     )
-    print(f"  clientes: {len(datos.clientes)} "
-          f"(duplicados omitidos: {datos.clientes_duplicados}, sin zona: {datos.clientes_sin_zona})")
+    print(
+        f"  clientes: {len(datos.clientes)} "
+        f"(duplicados omitidos: {datos.clientes_duplicados}, sin zona: {datos.clientes_sin_zona})"
+    )
     print(f"  correcciones_ubicacion: {len(datos.correcciones)}")
     print(f"  overrides_zona: {len(datos.overrides)} (duplicados omitidos: {datos.overrides_duplicados})")
     if datos.zonas_solo_de_overrides:

@@ -29,9 +29,7 @@ class GrupoDuplicado:
     variantes: tuple[VarianteZona, ...]
 
 
-def agrupar_duplicados(
-    zonas: Sequence[Zona], clientes_por_zona: Mapping[str, int]
-) -> list[GrupoDuplicado]:
+def agrupar_duplicados(zonas: Sequence[Zona], clientes_por_zona: Mapping[str, int]) -> list[GrupoDuplicado]:
     """Agrupa las zonas por su nombre normalizado y devuelve solo los grupos con
     más de una variante real, con los que tienen más clientes primero (los que
     más urge fusionar)."""

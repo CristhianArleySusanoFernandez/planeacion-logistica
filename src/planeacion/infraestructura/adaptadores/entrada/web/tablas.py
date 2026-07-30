@@ -46,20 +46,14 @@ def calcular_diff(originales: list[Fila], editadas: list[Fila], clave: str) -> D
         llave = str(valor).strip() if valor is not None else ""
         if not llave:
             # Fila del editor sin llave: inválida si trae algún dato, si no se ignora.
-            tiene_datos = any(
-                v not in (None, "", False) for campo, v in fila.items() if campo != clave
-            )
+            tiene_datos = any(v not in (None, "", False) for campo, v in fila.items() if campo != clave)
             if tiene_datos:
                 invalidas.append(fila)
             continue
         actuales[llave] = fila
     return DiffFilas(
         nuevas=[fila for llave, fila in actuales.items() if llave not in previas],
-        editadas=[
-            fila
-            for llave, fila in actuales.items()
-            if llave in previas and fila != previas[llave]
-        ],
+        editadas=[fila for llave, fila in actuales.items() if llave in previas and fila != previas[llave]],
         eliminadas=[llave for llave in previas if llave not in actuales],
         invalidas=invalidas,
     )

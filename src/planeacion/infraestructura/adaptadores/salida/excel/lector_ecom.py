@@ -120,9 +120,7 @@ def _normalizar(valor: Any) -> str:
     """Encabezado → forma comparable: minúsculas, sin acentos, espacios colapsados."""
     texto = "" if valor is None else str(valor)
     sin_acentos = "".join(
-        caracter
-        for caracter in unicodedata.normalize("NFD", texto)
-        if not unicodedata.combining(caracter)
+        caracter for caracter in unicodedata.normalize("NFD", texto) if not unicodedata.combining(caracter)
     )
     return " ".join(sin_acentos.lower().split())
 
@@ -160,9 +158,7 @@ def _mapear_columnas(encabezados: Sequence[Any]) -> _MapaColumnas:
     total_factura, total_linea = _resolver_totales(normalizados)
 
     faltantes = [
-        _NOMBRE_VISIBLE[nombre]
-        for nombre in ("pedido", "fecha", "kilos")
-        if indices[nombre] is None
+        _NOMBRE_VISIBLE[nombre] for nombre in ("pedido", "fecha", "kilos") if indices[nombre] is None
     ]
     if indices["cliente"] is None and indices["razon_social"] is None:
         faltantes.append(_NOMBRE_VISIBLE["cliente"])
@@ -305,9 +301,7 @@ def _letra(indice: int) -> str:
 
 def _leer_lineas(hoja: Worksheet, mapa: _MapaColumnas) -> Iterator[LineaPedido]:
     vacias_seguidas = 0
-    for numero, fila in enumerate(
-        hoja.iter_rows(min_row=2, max_col=mapa.max_col, values_only=True), start=2
-    ):
+    for numero, fila in enumerate(hoja.iter_rows(min_row=2, max_col=mapa.max_col, values_only=True), start=2):
         pedido = _texto(_celda(fila, mapa.pedido))
         if pedido is None:
             vacias_seguidas += 1
@@ -326,9 +320,7 @@ def _leer_lineas(hoja: Worksheet, mapa: _MapaColumnas) -> Iterator[LineaPedido]:
             total_linea=convertir_decimal(
                 _celda(fila, mapa.total_linea), f"(fila {numero}, col {_letra(mapa.total_linea)})"
             ),
-            kilos=convertir_decimal(
-                _celda(fila, mapa.kilos), f"(fila {numero}, col {_letra(mapa.kilos)})"
-            )
+            kilos=convertir_decimal(_celda(fila, mapa.kilos), f"(fila {numero}, col {_letra(mapa.kilos)})")
             / _GRAMOS_POR_KILO,
             nombre_cliente=_nombre_cliente(cliente_crudo),
             documento=_texto(_celda(fila, mapa.documento)),

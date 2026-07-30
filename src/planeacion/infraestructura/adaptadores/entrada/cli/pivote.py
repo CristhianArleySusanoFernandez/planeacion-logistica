@@ -70,10 +70,12 @@ def _imprimir_pivote(pivote: PivotePorZonaDTO) -> None:
     )
 
     if pivote.no_resueltos:
-        print(f"\nCLIENTES SIN ZONA ({len(pivote.no_resueltos)}) — "
-              f"{pivote.facturas_no_resueltas} facturas, "
-              f"${pivote.pesos_no_resueltos:,.2f}, {pivote.kilos_no_resueltos:,.2f} kg "
-              "(incluidos en el total general):")
+        print(
+            f"\nCLIENTES SIN ZONA ({len(pivote.no_resueltos)}) — "
+            f"{pivote.facturas_no_resueltas} facturas, "
+            f"${pivote.pesos_no_resueltos:,.2f}, {pivote.kilos_no_resueltos:,.2f} kg "
+            "(incluidos en el total general):"
+        )
         for cliente in pivote.no_resueltos:
             detalle = " / ".join(p for p in (cliente.nombre, cliente.ciudad, cliente.barrio) if p)
             motivo = _MOTIVOS.get(cliente.motivo, cliente.motivo)
@@ -135,9 +137,7 @@ def _exportar_csv(pivote: PivotePorZonaDTO, ruta: Path) -> None:
 
 
 def main() -> int:
-    parser = argparse.ArgumentParser(
-        description="Genera el pivote por zona desde el ECOM crudo del día."
-    )
+    parser = argparse.ArgumentParser(description="Genera el pivote por zona desde el ECOM crudo del día.")
     parser.add_argument("ruta_ecom", type=Path, help="ruta del .xlsx crudo de ECOM (hoja Hoja1)")
     parser.add_argument(
         "--fecha",

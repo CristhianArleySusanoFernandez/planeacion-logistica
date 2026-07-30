@@ -139,9 +139,7 @@ class LectorReferenciaExcel:
             for indice, esperado in esperados.items():
                 real = fila_1[indice] if indice < len(fila_1) else ""
                 if real.strip().upper() != esperado.strip().upper():
-                    errores.append(
-                        f"{hoja}: columna {indice + 1} esperaba '{esperado}' y trae '{real}'"
-                    )
+                    errores.append(f"{hoja}: columna {indice + 1} esperaba '{esperado}' y trae '{real}'")
         return errores
 
     def _filas_con_codigo(

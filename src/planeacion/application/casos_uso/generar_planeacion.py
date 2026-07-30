@@ -109,9 +109,7 @@ class CasoDeUsoGenerarPlaneacion:
             for carga in cargas
             for zona in carga.zonas
         ]
-        return self._planeaciones.guardar_planeacion(
-            planeacion.fecha, planeacion.dia_semana, asignaciones
-        )
+        return self._planeaciones.guardar_planeacion(planeacion.fecha, planeacion.dia_semana, asignaciones)
 
     def _carros_por_municipio(self) -> dict[str, list[Carro]]:
         """Los carros activos agrupados por municipio, en orden estable por número

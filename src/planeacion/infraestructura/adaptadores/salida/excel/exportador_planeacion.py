@@ -34,13 +34,27 @@ _RELLENO_ENCABEZADO = PatternFill(start_color="D9D9D9", end_color="D9D9D9", fill
 
 ENCABEZADO_ECOM = ("Etiquetas de fila", "Mín. de RUTA")
 ENCABEZADO_PLANEACION = (
-    "CARROS", "Etiquetas de fila", "Cuenta de Total", "Suma de Total2",
-    "Suma de Kilos", "Clientes Unicos",
+    "CARROS",
+    "Etiquetas de fila",
+    "Cuenta de Total",
+    "Suma de Total2",
+    "Suma de Kilos",
+    "Clientes Unicos",
 )
 ENCABEZADO_BASE = ("Ruta", "Facturas", "Clientes", "Pesos", "Kilos", "CONDUCTOR", "AUX", "CIUDAD")
 ENCABEZADO_PEDIDOS = (
-    "Fecha", "Pedido", "CODIGO", "CLIENTES", "Ciudad", "Barrio", "Direccion",
-    "Total", "Kilos", "Asesor", "CUADRANTE", "CARRO",
+    "Fecha",
+    "Pedido",
+    "CODIGO",
+    "CLIENTES",
+    "Ciudad",
+    "Barrio",
+    "Direccion",
+    "Total",
+    "Kilos",
+    "Asesor",
+    "CUADRANTE",
+    "CARRO",
 )
 
 
@@ -130,11 +144,7 @@ class ExportadorExcelPlaneacion:
 
         _escribir_encabezado(hoja, 4, ENCABEZADO_PLANEACION)
         zonas = sorted(
-            (
-                (carga.carro.numero, zona)
-                for carga in cargas
-                for zona in carga.zonas
-            ),
+            ((carga.carro.numero, zona) for carga in cargas for zona in carga.zonas),
             key=lambda par: par[1].zona.nombre,
         )
         fila = 5
@@ -160,7 +170,8 @@ class ExportadorExcelPlaneacion:
         hoja.cell(row=fila, column=3, value=len({factura.pedido for factura in sin_zona}))
         hoja.cell(row=fila, column=4, value=sum((f.total for f in sin_zona), Decimal("0")))
         hoja.cell(
-            row=fila, column=5,
+            row=fila,
+            column=5,
             value=sum((f.kilos for f in sin_zona), Decimal("0")) * _GRAMOS_POR_KILO,
         )
         hoja.cell(row=fila, column=6, value=len({factura.codigo_cliente for factura in sin_zona}))
@@ -213,7 +224,19 @@ class ExportadorExcelPlaneacion:
             hoja.cell(row=fila, column=12, value=carro if carro is not None else _SIN_CARRO)
         _ajustar_anchos(
             hoja,
-            {"A": 12, "B": 12, "C": 15, "D": 32, "E": 18, "F": 18, "G": 24,
-             "H": 12, "I": 10, "J": 16, "K": 45, "L": 10},
+            {
+                "A": 12,
+                "B": 12,
+                "C": 15,
+                "D": 32,
+                "E": 18,
+                "F": 18,
+                "G": 24,
+                "H": 12,
+                "I": 10,
+                "J": 16,
+                "K": 45,
+                "L": 10,
+            },
         )
         hoja.freeze_panes = "A2"

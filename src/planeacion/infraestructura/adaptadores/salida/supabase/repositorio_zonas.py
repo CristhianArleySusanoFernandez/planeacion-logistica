@@ -110,9 +110,7 @@ class RepositorioZonasSupabase:
     def _reapuntar(self, tabla: str, id_variante: int, id_canonica: int) -> int:
         movidas = self._contar(tabla, "zona_id", id_variante)
         if movidas:
-            self._cliente.table(tabla).update({"zona_id": id_canonica}).eq(
-                "zona_id", id_variante
-            ).execute()
+            self._cliente.table(tabla).update({"zona_id": id_canonica}).eq("zona_id", id_variante).execute()
         return movidas
 
     def _fusionar_repertorio(self, id_variante: int, id_canonica: int) -> int:

@@ -40,9 +40,7 @@ class RepositorioPlaneacionesSupabase:
     def __init__(self, cliente: Client) -> None:
         self._cliente = cliente
 
-    def guardar_planeacion(
-        self, fecha: date, dia_semana: str, asignaciones: Sequence[AsignacionZona]
-    ) -> int:
+    def guardar_planeacion(self, fecha: date, dia_semana: str, asignaciones: Sequence[AsignacionZona]) -> int:
         cabecera = (
             self._cliente.table(TABLA)
             .insert({"fecha": fecha.isoformat(), "dia_semana": dia_semana})
@@ -84,9 +82,7 @@ class RepositorioPlaneacionesSupabase:
                 mapeo[zona["nombre"]] = carro["numero"]
         if not mapeo:
             return None
-        return AsignacionPrevia(
-            fecha=date.fromisoformat(filas_cabecera[0]["fecha"]), zona_a_carro=mapeo
-        )
+        return AsignacionPrevia(fecha=date.fromisoformat(filas_cabecera[0]["fecha"]), zona_a_carro=mapeo)
 
     def _ids(self, tabla: str, clave: str) -> dict[str, int]:
         respuesta = self._cliente.table(tabla).select(f"id, {clave}").limit(10000).execute()

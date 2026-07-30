@@ -41,9 +41,7 @@ class RepositorioOverridesSupabase:
         return [desde_fila(fila) for fila in como_filas(respuesta.data)]
 
     def guardar_override(self, override: OverrideZona) -> None:
-        respuesta = (
-            self._cliente.table("zonas").select("id").eq("nombre", override.zona_nombre).execute()
-        )
+        respuesta = self._cliente.table("zonas").select("id").eq("nombre", override.zona_nombre).execute()
         filas = como_filas(respuesta.data)
         if not filas:
             raise LookupError(f"la zona {override.zona_nombre!r} no existe en la base")

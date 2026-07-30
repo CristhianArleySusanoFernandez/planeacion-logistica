@@ -64,9 +64,7 @@ def _aplicar(contenedor: Contenedor, grupos: list[GrupoDuplicado]) -> tuple[int,
 
 
 def main() -> int:
-    parser = argparse.ArgumentParser(
-        description="Fusiona zonas duplicadas que normalizan al mismo nombre."
-    )
+    parser = argparse.ArgumentParser(description="Fusiona zonas duplicadas que normalizan al mismo nombre.")
     parser.add_argument(
         "--aplicar",
         action="store_true",

@@ -43,9 +43,7 @@ def mostrar(contenedor: Contenedor) -> None:
             "Configuración → Zonas por carro y regenera el reparto."
         )
 
-    _resumen_balance(
-        resultado.metricas_iniciales, resultado.metricas_finales, resultado.cargas_por_municipio
-    )
+    _resumen_balance(resultado.metricas_iniciales, resultado.metricas_finales, resultado.cargas_por_municipio)
 
     municipios = sorted(resultado.cargas_por_municipio)
     for tab, municipio in zip(st.tabs(municipios), municipios, strict=True):
@@ -76,9 +74,7 @@ def mostrar(contenedor: Contenedor) -> None:
     )
 
 
-def _obtener_planeacion(
-    contenedor: Contenedor, pivote: PivotePorZonaDTO
-) -> PlaneacionCompleta | None:
+def _obtener_planeacion(contenedor: Contenedor, pivote: PivotePorZonaDTO) -> PlaneacionCompleta | None:
     planeacion: PlaneacionCompleta | None = st.session_state.get(estado.CLAVE_PLANEACION)
     if planeacion is None:
         ruta = Path(st.session_state[estado.CLAVE_RUTA_ECOM])
@@ -101,9 +97,7 @@ def _tarjeta_municipio(
     """Card de un municipio: punto del semáforo, CV antes → después y mini-barras
     con los pesos de cada carro (para ver de un vistazo qué tan parejo quedó)."""
     peor_cv = max(final.cv_clientes, final.cv_pesos)
-    barras = estilos.barras_carros(
-        [(f"C{c.carro.numero}", float(c.pesos)) for c in cargas if c.zonas]
-    )
+    barras = estilos.barras_carros([(f"C{c.carro.numero}", float(c.pesos)) for c in cargas if c.zonas])
     return (
         '<div class="tarjeta-kpi">'
         f'<div class="valor" style="font-size:1rem">{estilos.punto_semaforo(peor_cv)}'
@@ -138,9 +132,7 @@ def _resumen_balance(
     )
 
 
-def _mostrar_municipio(
-    municipio: str, cargas: list[CargaCarro], planeacion: PlaneacionCompleta
-) -> None:
+def _mostrar_municipio(municipio: str, cargas: list[CargaCarro], planeacion: PlaneacionCompleta) -> None:
     for carga in cargas:
         _mostrar_carga(municipio, carga, cargas, planeacion)
 
@@ -175,9 +167,7 @@ def _mostrar_carga(
                     f"${zona.pesos:,.0f}",
                     f"{zona.kilos:,.1f}",
                     estilos.Html(
-                        estilos.badge("🔒 fija", "neutro")
-                        if zona.zona.regla_chiquinquira is not None
-                        else ""
+                        estilos.badge("🔒 fija", "neutro") if zona.zona.regla_chiquinquira is not None else ""
                     ),
                 ]
                 for zona in sorted(carga.zonas, key=lambda z: z.zona.nombre)
@@ -208,9 +198,7 @@ def _destinos_para(
 def _controles_mover(
     municipio: str, carga: CargaCarro, cargas: list[CargaCarro], planeacion: PlaneacionCompleta
 ) -> None:
-    movibles = sorted(
-        zona.zona.nombre for zona in carga.zonas if zona.zona.regla_chiquinquira is None
-    )
+    movibles = sorted(zona.zona.nombre for zona in carga.zonas if zona.zona.regla_chiquinquira is None)
     if not movibles:
         return
     clave = f"{municipio}_{carga.carro.numero}"

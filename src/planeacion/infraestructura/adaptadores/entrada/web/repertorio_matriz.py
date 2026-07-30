@@ -37,9 +37,7 @@ class CambioCelda:
 def normalizar(texto: str) -> str:
     """Texto → forma comparable: minúsculas, sin acentos, espacios colapsados."""
     sin_acentos = "".join(
-        caracter
-        for caracter in unicodedata.normalize("NFD", texto)
-        if not unicodedata.combining(caracter)
+        caracter for caracter in unicodedata.normalize("NFD", texto) if not unicodedata.combining(caracter)
     )
     return " ".join(sin_acentos.lower().split())
 
@@ -55,9 +53,7 @@ def contar_sin_carro(zonas: Sequence[Zona], repertorio: Repertorio) -> tuple[int
     return sin_carro, len(zonas)
 
 
-def zonas_visibles(
-    zonas: Sequence[Zona], repertorio: Repertorio, filtro: FiltroMatriz
-) -> list[Zona]:
+def zonas_visibles(zonas: Sequence[Zona], repertorio: Repertorio, filtro: FiltroMatriz) -> list[Zona]:
     """Las filas de la matriz: municipio + solo-sin-carro + búsqueda (sin acentos),
     ordenadas alfabéticamente por nombre dentro del municipio."""
     visibles = [z for z in zonas if filtro.municipio in (TODOS, z.municipio.nombre)]

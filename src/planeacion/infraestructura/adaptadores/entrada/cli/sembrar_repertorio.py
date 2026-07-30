@@ -133,9 +133,7 @@ def main() -> int:
             print(f"  - {zona}")
 
     existentes = {
-        (numero, zona)
-        for numero, zonas in contenedor.carro_zonas.obtener_todos().items()
-        for zona in zonas
+        (numero, zona) for numero, zonas in contenedor.carro_zonas.obtener_todos().items() for zona in zonas
     }
     nuevos = validos - existentes
     contenedor.carro_zonas.asignar_lote(sorted(validos))

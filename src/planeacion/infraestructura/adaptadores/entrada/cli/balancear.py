@@ -78,8 +78,10 @@ def _imprimir_planeacion(planeacion: PlaneacionCompleta) -> None:
         print(f"\nAVISO: {len(resultado.zonas_sin_carro)} zonas sin ningún carro elegible (sin asignar):")
         for zona in sorted(resultado.zonas_sin_carro, key=lambda z: z.zona.nombre):
             print(f"  - {zona.zona.nombre}  ({zona.clientes} cli, ${zona.pesos:,.2f})")
-        print("  Configura su repertorio en la UI (Configuración > Zonas por carro) o con "
-              "planeacion-sembrar-repertorio.")
+        print(
+            "  Configura su repertorio en la UI (Configuración > Zonas por carro) o con "
+            "planeacion-sembrar-repertorio."
+        )
 
     print("\n" + "-" * 100)
     print(
@@ -87,8 +89,10 @@ def _imprimir_planeacion(planeacion: PlaneacionCompleta) -> None:
         f"${planeacion.total_pesos:,.2f} | {planeacion.total_kilos:,.2f} kg"
     )
     if planeacion.no_resueltos:
-        print(f"Clientes sin zona (no entran al balanceo): {len(planeacion.no_resueltos)} "
-              "-> usar planeacion-resolver-nuevos")
+        print(
+            f"Clientes sin zona (no entran al balanceo): {len(planeacion.no_resueltos)} "
+            "-> usar planeacion-resolver-nuevos"
+        )
     if planeacion.pedidos_excluidos_por_fecha:
         print(f"Pedidos excluidos por fecha: {planeacion.pedidos_excluidos_por_fecha}")
 
@@ -174,8 +178,10 @@ def _preguntar_guardar(caso_uso: GenerarPlaneacion, planeacion: PlaneacionComple
         respuesta = ""
     if respuesta == "S":
         id_planeacion = caso_uso.guardar(planeacion)
-        print(f"Planeación guardada (id {id_planeacion}). La próxima corrida de un "
-              f"{planeacion.dia_semana} partirá de ella (warm-start).")
+        print(
+            f"Planeación guardada (id {id_planeacion}). La próxima corrida de un "
+            f"{planeacion.dia_semana} partirá de ella (warm-start)."
+        )
     else:
         print("No se guardó nada.")
 
@@ -185,14 +191,27 @@ def main() -> int:
         description="Balancea las zonas del día entre los carros de cada municipio."
     )
     parser.add_argument("ruta_ecom", type=Path, help="ruta del .xlsx crudo de ECOM (hoja Hoja1)")
-    parser.add_argument("--fecha", type=date.fromisoformat, default=None,
-                        help="fecha a planear (AAAA-MM-DD); sin ella, la más frecuente del archivo")
-    parser.add_argument("--w-clientes", type=float, default=0.5,
-                        help="peso del balance por clientes en la función de costo (default 0.5)")
-    parser.add_argument("--w-pesos", type=float, default=0.5,
-                        help="peso del balance por plata en la función de costo (default 0.5)")
-    parser.add_argument("--interactivo", action="store_true",
-                        help="permite mover zonas entre carros con recálculo en vivo")
+    parser.add_argument(
+        "--fecha",
+        type=date.fromisoformat,
+        default=None,
+        help="fecha a planear (AAAA-MM-DD); sin ella, la más frecuente del archivo",
+    )
+    parser.add_argument(
+        "--w-clientes",
+        type=float,
+        default=0.5,
+        help="peso del balance por clientes en la función de costo (default 0.5)",
+    )
+    parser.add_argument(
+        "--w-pesos",
+        type=float,
+        default=0.5,
+        help="peso del balance por plata en la función de costo (default 0.5)",
+    )
+    parser.add_argument(
+        "--interactivo", action="store_true", help="permite mover zonas entre carros con recálculo en vivo"
+    )
     args = parser.parse_args()
 
     if not args.ruta_ecom.exists():

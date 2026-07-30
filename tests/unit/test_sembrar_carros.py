@@ -16,9 +16,7 @@ from planeacion.infraestructura.adaptadores.salida.excel.lector_referencia impor
 
 
 def _fila(numero: str, facturas: int, ciudad: str | None = "TUNJA") -> FilaRutaBase:
-    return FilaRutaBase(
-        numero=numero, facturas=facturas, conductor="ALGUIEN", auxiliar=None, ciudad=ciudad
-    )
+    return FilaRutaBase(numero=numero, facturas=facturas, conductor="ALGUIEN", auxiliar=None, ciudad=ciudad)
 
 
 def test_municipio_se_deduce_de_la_ciudad() -> None:

@@ -87,9 +87,7 @@ def _a_dto(
 ) -> PivotePorZonaDTO:
     pedidos_del_dia = {linea.pedido for linea in del_dia}
     pedidos_excluidos = {linea.pedido for linea in excluidas} - pedidos_del_dia
-    fechas_excluidas = sorted(
-        {linea.fecha.isoformat() if linea.fecha else "ilegible" for linea in excluidas}
-    )
+    fechas_excluidas = sorted({linea.fecha.isoformat() if linea.fecha else "ilegible" for linea in excluidas})
     return PivotePorZonaDTO(
         fecha=fecha_pivote,
         zonas=tuple(

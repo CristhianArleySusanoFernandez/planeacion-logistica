@@ -46,9 +46,7 @@ def streamlit_falso(monkeypatch: pytest.MonkeyPatch) -> Any:
     return instalar
 
 
-def test_lee_de_st_secrets_cuando_no_hay_entorno(
-    sin_entorno: None, streamlit_falso: Any
-) -> None:
+def test_lee_de_st_secrets_cuando_no_hay_entorno(sin_entorno: None, streamlit_falso: Any) -> None:
     streamlit_falso({"SUPABASE_URL": "https://cloud.supabase.co", "SUPABASE_KEY": "clave-cloud"})
     settings = Settings()
     assert settings.supabase_url == "https://cloud.supabase.co"

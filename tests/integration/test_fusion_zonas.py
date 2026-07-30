@@ -87,19 +87,12 @@ def test_fusionar_reapunta_todo_y_no_duplica_el_repertorio() -> None:
         assert [f["nombre"] for f in restantes.data] == [_CANONICA]
 
         # El repertorio quedó sin duplicados: un solo par por carro con la canónica.
-        pares = (
-            cliente.table("carro_zonas")
-            .select("carro_id")
-            .eq("zona_id", por_nombre[_CANONICA])
-            .execute()
-        )
+        pares = cliente.table("carro_zonas").select("carro_id").eq("zona_id", por_nombre[_CANONICA]).execute()
         carro_ids = [int(f["carro_id"]) for f in pares.data]
         assert len(carro_ids) == len(set(carro_ids)) == 2
 
         # Cliente y override apuntan a la canónica.
-        fila_cliente = (
-            cliente.table("clientes").select("zona_id").eq("codigo", _CLIENTE_CENTINELA).execute()
-        )
+        fila_cliente = cliente.table("clientes").select("zona_id").eq("codigo", _CLIENTE_CENTINELA).execute()
         assert int(fila_cliente.data[0]["zona_id"]) == por_nombre[_CANONICA]
 
         # Y la auditoría posterior ya no reporta el grupo.

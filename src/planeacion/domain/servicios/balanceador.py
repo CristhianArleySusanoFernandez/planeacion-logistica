@@ -85,9 +85,7 @@ class Balanceador:
         # Un carro con repertorio declarado pero vacío cuenta como no configurado.
         repertorio_limpio = {n: frozenset(zs) for n, zs in (repertorio or {}).items() if zs}
         municipio_de_carro = {
-            carro.numero: municipio
-            for municipio, carros in carros_por_municipio.items()
-            for carro in carros
+            carro.numero: municipio for municipio, carros in carros_por_municipio.items() for carro in carros
         }
         zonas_por_municipio, zonas_sin_carro = self._agrupar_zonas(
             zonas_agregadas, municipio_de_carro, repertorio_limpio
@@ -303,9 +301,7 @@ class Balanceador:
         return costo
 
     @staticmethod
-    def _accion_mover(
-        origen: CargaCarro, destino: CargaCarro, zona: ZonaAgregada
-    ) -> Callable[[], None]:
+    def _accion_mover(origen: CargaCarro, destino: CargaCarro, zona: ZonaAgregada) -> Callable[[], None]:
         def ejecutar() -> None:
             origen.quitar(zona.zona.nombre)
             destino.agregar(zona)
@@ -333,9 +329,7 @@ class AjustadorDeAsignacion:
     planeación que tenga la zona permitida (incluye a las viajeras cruzadas).
     """
 
-    def mover(
-        self, resultado: ResultadoBalanceo, nombre_zona: str, numero_carro: str
-    ) -> ResultadoBalanceo:
+    def mover(self, resultado: ResultadoBalanceo, nombre_zona: str, numero_carro: str) -> ResultadoBalanceo:
         """Muta el resultado (mueve la zona y recalcula las métricas afectadas)."""
         municipio_origen, origen, zona = self._buscar_zona(resultado, nombre_zona)
         encontrado = self._buscar_carro(resultado, numero_carro)
@@ -380,9 +374,7 @@ class AjustadorDeAsignacion:
                         return municipio, carga, zona
         raise MovimientoInvalido(f"la zona {nombre_zona!r} no está en la planeación")
 
-    def _buscar_carro(
-        self, resultado: ResultadoBalanceo, numero_carro: str
-    ) -> tuple[str, CargaCarro] | None:
+    def _buscar_carro(self, resultado: ResultadoBalanceo, numero_carro: str) -> tuple[str, CargaCarro] | None:
         for municipio, cargas in resultado.cargas_por_municipio.items():
             for carga in cargas:
                 if carga.carro.numero == numero_carro:
