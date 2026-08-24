@@ -17,6 +17,13 @@ from planeacion.infraestructura.adaptadores.salida.supabase._filas import como_f
 
 TABLA = "carro_zonas"
 _COLUMNAS = "dia_semana, frecuencia, carros(numero), zonas(nombre)"
+# PostgREST corta toda respuesta en `max-rows` (1000 en Supabase) sin avisar y sin
+# importar el `.limit()` que se le pida: pedir 100.000 filas devuelve 1000 y se
+# pierden las demás en silencio. Por eso se pagina con `.range()`, igual que el
+# repositorio de clientes. Con seis días × ~180 zonas × varios carros la tabla
+# pasa las 1000 filas fácil, y un repertorio truncado deja zonas sin carro elegible
+# que el balanceador reporta como huérfanas sin que lo sean.
+_TAMANO_PAGINA = 1000
 _TAMANO_LOTE = 500  # filas por upsert, como en el repositorio de clientes
 # La tabla puede no existir aún: 42P01 es el undefined_table de Postgres y
 # PGRST205 el "not in the schema cache" con que PostgREST reporta lo mismo.
@@ -53,20 +60,30 @@ class RepositorioCarroZonasSupabase:
     def _filas(self, dia_semana: str | None = None) -> list[dict[str, Any]]:
         """Las filas del repertorio, opcionalmente de un solo día.
 
+        Pagina hasta agotar la tabla (ver ``_TAMANO_PAGINA``): una lectura corta
+        no da error, devuelve menos repertorio del que hay.
+
         Con la migración sin aplicar devuelve vacío en vez de reventar: equivale a
         un repertorio sin configurar, y así el balanceo diario no depende del orden
         del despliegue (es la misma tolerancia que ya tenía la 002).
         """
-        consulta = self._cliente.table(TABLA).select(_COLUMNAS)
-        if dia_semana is not None:
-            consulta = consulta.eq("dia_semana", dia_semana)
-        try:
-            respuesta = consulta.limit(100000).execute()
-        except APIError as error:
-            if error.code in _TABLA_INEXISTENTE or error.code == _COLUMNA_INEXISTENTE:
-                return []
-            raise
-        return como_filas(respuesta.data)
+        filas: list[dict[str, Any]] = []
+        inicio = 0
+        while True:
+            consulta = self._cliente.table(TABLA).select(_COLUMNAS).order("id")
+            if dia_semana is not None:
+                consulta = consulta.eq("dia_semana", dia_semana)
+            try:
+                respuesta = consulta.range(inicio, inicio + _TAMANO_PAGINA - 1).execute()
+            except APIError as error:
+                if error.code in _TABLA_INEXISTENTE or error.code == _COLUMNA_INEXISTENTE:
+                    return []
+                raise
+            pagina = como_filas(respuesta.data)
+            filas.extend(pagina)
+            if len(pagina) < _TAMANO_PAGINA:
+                return filas
+            inicio += _TAMANO_PAGINA
 
     def asignar(self, numero_carro: str, nombre_zona: str, dia_semana: str) -> None:
         self.asignar_lote([ParRepertorio(numero_carro, nombre_zona, dia_semana)])
