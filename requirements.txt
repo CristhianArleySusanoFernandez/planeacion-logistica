@@ -76,10 +76,10 @@ urllib3==2.7.0
 uvicorn==0.51.0
 watchdog==6.0.0 ; sys_platform != 'darwin'
 websockets==15.0.1
+xlrd==2.0.2
 yarl==1.24.2
 
 # El propio proyecto: sin esto `import planeacion` falla en Streamlit Community
 # Cloud, porque el código vive en src/ y Cloud solo pone en sys.path la carpeta
 # del archivo principal. Instalarlo deja el paquete importable desde cualquier lado.
 .
-

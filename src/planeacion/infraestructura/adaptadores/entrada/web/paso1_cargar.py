@@ -19,8 +19,8 @@ from planeacion.infraestructura.adaptadores.salida.excel.lector_ecom import (
 def mostrar(contenedor: Contenedor) -> None:
     estilos.titulo_seccion("Paso 1 — Cargar los pedidos del día")
     archivo = st.file_uploader(
-        "Archivo de pedidos de ECOM (.xlsx, hoja Hoja1)",
-        type=["xlsx"],
+        "Archivo de pedidos de ECOM (.xlsx, .xlsm o .xls)",
+        type=["xlsx", "xlsm", "xls"],
         label_visibility="collapsed",
     )
     if archivo is not None and st.session_state.get(estado.CLAVE_NOMBRE_ARCHIVO) != archivo.name:
@@ -76,7 +76,7 @@ def _procesar(contenedor: Contenedor, archivo: UploadedFile) -> None:
             st.error(str(error))  # el mensaje ya dice qué columnas faltan y qué trae el archivo
             return
         except (ErrorDeDominio, FormatoEcomInvalido) as error:
-            st.error(f"No se pudo procesar el archivo: {error}. Revisa que sea el .xlsx de ECOM.")
+            st.error(f"No se pudo procesar el archivo: {error}. Revisa que sea el export de ECOM.")
             return
 
     st.session_state[estado.CLAVE_PIVOTE] = pivote

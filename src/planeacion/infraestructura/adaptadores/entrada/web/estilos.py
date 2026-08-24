@@ -221,7 +221,7 @@ footer { visibility: hidden; }
 }
 [data-testid="stFileUploaderDropzoneInstructions"] { display: none; }
 [data-testid="stFileUploaderDropzone"]::before {
-  content: "⬆  Arrastra aquí el archivo de pedidos de ECOM (.xlsx)";
+  content: "⬆  Arrastra aquí el archivo de pedidos de ECOM (.xlsx, .xlsm o .xls)";
   color: $color_marca; font-weight: 600; margin-right: auto;
 }
 [data-testid="stFileUploaderDropzone"] button {

@@ -41,7 +41,7 @@ _logger = logging.getLogger(__name__)
 _MAX_FILAS_VACIAS_SEGUIDAS = 100
 _GRAMOS_POR_KILO = Decimal("1000")
 
-# Sinónimos aceptados por columna lógica, ya normalizados (ver _normalizar).
+# Sinónimos aceptados por columna lógica, ya normalizados (ver normalizar_encabezado).
 # Las columnas "total" no van aquí: se resuelven aparte por posición relativa
 # porque el archivo trae dos con el mismo nombre (ver _mapear_columnas).
 _SINONIMOS: dict[str, tuple[str, ...]] = {
@@ -116,7 +116,7 @@ class _MapaColumnas:
         return max(indice for indice in indices if indice is not None) + 1
 
 
-def _normalizar(valor: Any) -> str:
+def normalizar_encabezado(valor: Any) -> str:
     """Encabezado → forma comparable: minúsculas, sin acentos, espacios colapsados."""
     texto = "" if valor is None else str(valor)
     sin_acentos = "".join(
@@ -150,7 +150,7 @@ def _resolver_totales(normalizados: Sequence[str]) -> tuple[int | None, int | No
 
 def _mapear_columnas(encabezados: Sequence[Any]) -> _MapaColumnas:
     """Fila de encabezados → mapa de columnas lógicas; falla listando lo que falta."""
-    normalizados = [_normalizar(celda) for celda in encabezados]
+    normalizados = [normalizar_encabezado(celda) for celda in encabezados]
     indices: dict[str, int | None] = {
         nombre: next((i for i, texto in enumerate(normalizados) if texto in sinonimos), None)
         for nombre, sinonimos in _SINONIMOS.items()
@@ -165,7 +165,7 @@ def _mapear_columnas(encabezados: Sequence[Any]) -> _MapaColumnas:
     if total_linea is None:
         faltantes.append(_NOMBRE_VISIBLE["total_linea"])
     if faltantes:
-        encontrados = ", ".join(str(celda).strip() for celda in encabezados if _normalizar(celda))
+        encontrados = ", ".join(str(celda).strip() for celda in encabezados if normalizar_encabezado(celda))
         raise ColumnasEcomFaltantes(
             f"No pude leer el archivo de ECOM: faltan las columnas [{', '.join(faltantes)}].\n"
             f"Encabezados encontrados: {encontrados or '(ninguno)'}.\n"
@@ -204,8 +204,16 @@ def _mapear_columnas(encabezados: Sequence[Any]) -> _MapaColumnas:
     )
 
 
-def _encabezados_de(hoja: Worksheet) -> Sequence[Any]:
-    return next(hoja.iter_rows(min_row=1, max_row=1, values_only=True), ())
+def _encabezados_de(hoja: Worksheet, columna_inicial: int = 0) -> Sequence[Any]:
+    """Fila 1 de la hoja desde ``columna_inicial`` (0-based).
+
+    El desplazamiento existe porque el mismo bloque de ECOM aparece pegado a la
+    derecha de otros datos dentro de la hoja PEDIDOS de los .xlsm (ver
+    ``lector_ecom_embebido``): rebanar desde ahí deja el mapeo por encabezado
+    intacto y evita que columnas homónimas de la izquierda ganen el match.
+    """
+    fila = next(hoja.iter_rows(min_row=1, max_row=1, values_only=True), ())
+    return fila[columna_inicial:]
 
 
 def _elegir_hoja(libro: Workbook, nombre_archivo: str) -> tuple[Worksheet, _MapaColumnas]:
@@ -276,15 +284,41 @@ def convertir_fecha(valor: Any) -> date | None:
         return None
 
 
+def leer_libro_ecom(libro: Workbook, nombre_archivo: str) -> list[LineaPedido]:
+    """Libro ya abierto → líneas de pedido, eligiendo la hoja por su encabezado.
+
+    Es el punto de entrada que comparte todo origen que termine en un libro de
+    openpyxl: el .xlsx/.xlsm que abre ``LectorEcomExcel`` y el .xls binario que
+    ``lector_ecom_xls`` traduce a uno en memoria. Así el mapeo de columnas y el
+    parseo de celdas viven en un solo lugar.
+    """
+    hoja, mapa = _elegir_hoja(libro, nombre_archivo)
+    _logger.info("Leyendo pedidos de la hoja %r de %s", hoja.title, nombre_archivo)
+    return list(_leer_lineas(hoja, mapa))
+
+
 class LectorEcomExcel:
-    """Adaptador del puerto ``LectorDePedidos``."""
+    """Adaptador del puerto ``LectorDePedidos``.
+
+    Acepta las tres extensiones que llegan del ECOM. ``.xlsx`` y ``.xlsm`` son
+    el mismo OOXML (el segundo solo agrega macros) y openpyxl los abre igual;
+    ``.xls`` es el binario viejo, que openpyxl no entiende y se delega al
+    traductor de ``lector_ecom_xls``.
+    """
 
     def leer(self, ruta: Path) -> list[LineaPedido]:
-        libro = openpyxl.load_workbook(ruta, read_only=True, data_only=True)
+        if ruta.suffix.lower() == ".xls":
+            # Import local a propósito: lector_ecom_xls importa los errores de
+            # este módulo, así que a nivel de módulo el ciclo no cerraría.
+            from planeacion.infraestructura.adaptadores.salida.excel.lector_ecom_xls import (
+                abrir_xls_como_libro,
+            )
+
+            libro = abrir_xls_como_libro(ruta)
+        else:
+            libro = openpyxl.load_workbook(ruta, read_only=True, data_only=True)
         try:
-            hoja, mapa = _elegir_hoja(libro, ruta.name)
-            _logger.info("Leyendo pedidos de la hoja %r de %s", hoja.title, ruta.name)
-            return list(_leer_lineas(hoja, mapa))
+            return leer_libro_ecom(libro, ruta.name)
         finally:
             libro.close()
 
@@ -299,9 +333,14 @@ def _letra(indice: int) -> str:
     return get_column_letter(indice + 1)
 
 
-def _leer_lineas(hoja: Worksheet, mapa: _MapaColumnas) -> Iterator[LineaPedido]:
+def _leer_lineas(hoja: Worksheet, mapa: _MapaColumnas, columna_inicial: int = 0) -> Iterator[LineaPedido]:
+    """Filas de datos → LineaPedido. Los índices de ``mapa`` son relativos a
+    ``columna_inicial``, así que las filas se piden ya rebanadas desde ahí."""
     vacias_seguidas = 0
-    for numero, fila in enumerate(hoja.iter_rows(min_row=2, max_col=mapa.max_col, values_only=True), start=2):
+    filas = hoja.iter_rows(
+        min_row=2, min_col=columna_inicial + 1, max_col=columna_inicial + mapa.max_col, values_only=True
+    )
+    for numero, fila in enumerate(filas, start=2):
         pedido = _texto(_celda(fila, mapa.pedido))
         if pedido is None:
             vacias_seguidas += 1
@@ -313,14 +352,19 @@ def _leer_lineas(hoja: Worksheet, mapa: _MapaColumnas) -> Iterator[LineaPedido]:
         if cliente_crudo is None:
             raise FormatoEcomInvalido(f"fila {numero}: sin cliente (Cliente y R. Social vacías)")
         cantidad_cruda = _celda(fila, mapa.cantidad)
+        # Las letras de los mensajes se corrigen con el desplazamiento para que
+        # señalen la columna real de la hoja, no la del bloque rebanado.
         yield LineaPedido(
             pedido=pedido,
             codigo_cliente=extraer_codigo_cliente(cliente_crudo),
             fecha=convertir_fecha(_celda(fila, mapa.fecha)),
             total_linea=convertir_decimal(
-                _celda(fila, mapa.total_linea), f"(fila {numero}, col {_letra(mapa.total_linea)})"
+                _celda(fila, mapa.total_linea),
+                f"(fila {numero}, col {_letra(mapa.total_linea + columna_inicial)})",
             ),
-            kilos=convertir_decimal(_celda(fila, mapa.kilos), f"(fila {numero}, col {_letra(mapa.kilos)})")
+            kilos=convertir_decimal(
+                _celda(fila, mapa.kilos), f"(fila {numero}, col {_letra(mapa.kilos + columna_inicial)})"
+            )
             / _GRAMOS_POR_KILO,
             nombre_cliente=_nombre_cliente(cliente_crudo),
             documento=_texto(_celda(fila, mapa.documento)),
@@ -329,9 +373,24 @@ def _leer_lineas(hoja: Worksheet, mapa: _MapaColumnas) -> Iterator[LineaPedido]:
             barrio=_texto(_celda(fila, mapa.barrio)),
             producto=_texto(_celda(fila, mapa.producto)),
             cantidad=(
-                convertir_decimal(cantidad_cruda, f"(fila {numero}, col {_letra(mapa.cantidad or 0)})")
+                convertir_decimal(
+                    cantidad_cruda,
+                    f"(fila {numero}, col {_letra((mapa.cantidad or 0) + columna_inicial)})",
+                )
                 if _texto(cantidad_cruda) is not None
                 else None
             ),
             asesor=_texto(_celda(fila, mapa.asesor)),
         )
+
+
+def leer_bloque_ecom(hoja: Worksheet, columna_inicial: int = 0) -> list[LineaPedido]:
+    """Lee un bloque de ECOM dentro de una hoja, mapeando su encabezado desde
+    ``columna_inicial`` (0-based).
+
+    Es el punto de entrada que comparten los dos orígenes del mismo formato: el
+    .xlsx suelto de ECOM (bloque en la columna A) y la copia pegada en la hoja
+    PEDIDOS de los .xlsm de planeación (bloque en la S).
+    """
+    mapa = _mapear_columnas(_encabezados_de(hoja, columna_inicial))
+    return list(_leer_lineas(hoja, mapa, columna_inicial))

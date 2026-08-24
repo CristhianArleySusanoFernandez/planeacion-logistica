@@ -283,3 +283,81 @@ def test_fila_sin_cliente_lanza_error_con_la_fila(tmp_path: Path) -> None:
 
     with pytest.raises(FormatoEcomInvalido, match=r"fila 2"):
         LectorEcomExcel().leer(ruta)
+
+
+# ---- Los otros dos formatos que llegan del ECOM: .xlsm y .xls ----------------
+
+
+def test_un_xlsm_se_lee_igual_que_un_xlsx(tmp_path: Path) -> None:
+    """Un .xlsm es el mismo OOXML del .xlsx, solo que con macros: openpyxl lo abre
+    sin cambios y el lector no tiene que saber la diferencia."""
+    ruta = tmp_path / "ecom.xlsm"
+    _guardar(ruta)
+    _verificar_lectura_normal(ruta)
+
+
+def test_un_xlsm_con_varias_hojas_elige_la_del_export(tmp_path: Path) -> None:
+    """Los .xlsm suelen traer varias hojas (el .xlsx de ECOM trae una sola), así
+    que acá se apoya en la elección de hoja por encabezado."""
+    ruta = tmp_path / "ecom_varias.xlsm"
+    libro = openpyxl.Workbook()
+    portada = libro.active
+    assert portada is not None
+    portada.title = "Instructivo"
+    portada.append(["Macro", "de", "Rudy"])
+    datos = libro.create_sheet("PEDIDOS")
+    datos.append(_ENCABEZADOS)
+    for fila in _filas_de_prueba():
+        datos.append(fila)
+    libro.save(ruta)
+
+    _verificar_lectura_normal(ruta)
+
+
+def _guardar_xls(ruta: Path, filas: list[list[object]] | None = None) -> Path:
+    """Escribe el mismo contenido de prueba como .xls binario (BIFF8) real."""
+    import xlwt
+
+    libro = xlwt.Workbook()
+    hoja = libro.add_sheet("Hoja1")
+    # Sin un formato de fecha, xlwt guarda el datetime como número pelado y xlrd
+    # lo devolvería como serial (46190), que el lector trata como fecha dañada.
+    estilo_fecha = xlwt.easyxf(num_format_str="YYYY-MM-DD")
+    for columna, encabezado in enumerate(_ENCABEZADOS):
+        if encabezado is not None:
+            hoja.write(0, columna, encabezado)
+    for numero, fila in enumerate(filas if filas is not None else _filas_de_prueba(), start=1):
+        for columna, valor in enumerate(fila):
+            if valor is None:
+                continue
+            if isinstance(valor, datetime):
+                hoja.write(numero, columna, valor, estilo_fecha)
+            else:
+                hoja.write(numero, columna, valor)
+    libro.save(str(ruta))
+    return ruta
+
+
+def test_un_xls_binario_se_lee_igual_que_un_xlsx(tmp_path: Path) -> None:
+    """openpyxl no entiende el BIFF viejo: el archivo pasa por xlrd y se traduce
+    a un libro en memoria antes de llegar al mismo mapeo de columnas."""
+    _verificar_lectura_normal(_guardar_xls(tmp_path / "ecom.xls"))
+
+
+def test_un_xls_ilegible_da_un_mensaje_util_y_no_un_traceback(tmp_path: Path) -> None:
+    ruta = tmp_path / "no_es_excel.xls"
+    ruta.write_bytes(b"esto no es un libro de Excel")
+
+    with pytest.raises(FormatoEcomInvalido, match="guardarlo como .xlsx"):
+        LectorEcomExcel().leer(ruta)
+
+
+def test_un_xlsx_renombrado_a_xls_avisa_como_guardarlo_bien(tmp_path: Path) -> None:
+    """El error real más probable: el usuario le cambia la extensión a mano.
+    xlrd 2.x ya no lee OOXML, así que hay que caer en el mensaje de ayuda."""
+    ruta = tmp_path / "ecom_disfrazado.xls"
+    _guardar(tmp_path / "ecom_real.xlsx")
+    ruta.write_bytes((tmp_path / "ecom_real.xlsx").read_bytes())
+
+    with pytest.raises(FormatoEcomInvalido, match="guardarlo como .xlsx"):
+        LectorEcomExcel().leer(ruta)
