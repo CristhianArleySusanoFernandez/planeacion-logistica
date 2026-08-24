@@ -3,10 +3,23 @@ diff de filas (nuevas / editadas / eliminadas). Sin Streamlit a propósito, para
 poder probarlos con pytest.
 """
 
+import unicodedata
 from dataclasses import dataclass
 from typing import Any
 
 Fila = dict[str, Any]
+
+
+def normalizar(texto: str) -> str:
+    """Texto → forma comparable: minúsculas, sin acentos, espacios colapsados.
+
+    Vive acá y no en cada pantalla porque toda búsqueda de Configuración compara
+    así: lo que Rudy escribe casi nunca lleva las tildes que sí trae la maestra.
+    """
+    sin_acentos = "".join(
+        caracter for caracter in unicodedata.normalize("NFD", texto) if not unicodedata.combining(caracter)
+    )
+    return " ".join(sin_acentos.lower().split())
 
 
 def filtrar_filas(filas: list[Fila], texto: str) -> list[Fila]:

@@ -3,12 +3,12 @@ filtros, contadores y traducción/persistencia de los cambios de casillas.
 Sin Streamlit a propósito, para poder probarla con pytest.
 """
 
-import unicodedata
 from collections.abc import Collection, Mapping, Sequence
 from dataclasses import dataclass
 
 from planeacion.application.puertos.salida.repositorios import RepositorioCarroZonas
 from planeacion.domain.modelo import Carro, Zona
+from planeacion.infraestructura.adaptadores.entrada.web.tablas import normalizar
 
 TODOS = "Todos"
 
@@ -32,14 +32,6 @@ class CambioCelda:
     numero_carro: str
     nombre_zona: str
     marcado: bool
-
-
-def normalizar(texto: str) -> str:
-    """Texto → forma comparable: minúsculas, sin acentos, espacios colapsados."""
-    sin_acentos = "".join(
-        caracter for caracter in unicodedata.normalize("NFD", texto) if not unicodedata.combining(caracter)
-    )
-    return " ".join(sin_acentos.lower().split())
 
 
 def contar_carros_de_zona(nombre_zona: str, repertorio: Repertorio) -> int:

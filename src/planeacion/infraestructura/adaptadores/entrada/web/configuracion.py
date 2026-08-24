@@ -1,4 +1,4 @@
-"""Configuración — administración de carros, zonas, repertorio, correcciones y overrides.
+"""Configuración — administración de carros, zonas, repertorio, clientes, correcciones y overrides.
 
 CRUD con ``st.data_editor`` dinámico: cada tab tiene filtro de texto, se pueden
 agregar y borrar filas, y "Guardar cambios" persiste el diff (nuevas → insert,
@@ -16,6 +16,7 @@ from planeacion.config.contenedor import Contenedor
 from planeacion.domain.errores import ZonaInvalida
 from planeacion.domain.modelo import (
     Carro,
+    Cliente,
     CorreccionUbicacion,
     Municipio,
     OverrideZona,
@@ -23,7 +24,7 @@ from planeacion.domain.modelo import (
     Zona,
 )
 from planeacion.domain.servicios.parseo_zonas import crear_zona
-from planeacion.infraestructura.adaptadores.entrada.web import estilos
+from planeacion.infraestructura.adaptadores.entrada.web import clientes_maestra, estilos
 from planeacion.infraestructura.adaptadores.entrada.web.repertorio_matriz import (
     TODOS,
     FiltroMatriz,
@@ -32,13 +33,13 @@ from planeacion.infraestructura.adaptadores.entrada.web.repertorio_matriz import
     carros_visibles,
     contar_carros_de_zona,
     contar_sin_carro,
-    normalizar,
     zonas_visibles,
 )
 from planeacion.infraestructura.adaptadores.entrada.web.tablas import (
     Fila,
     calcular_diff,
     filtrar_filas,
+    normalizar,
 )
 
 _REGLAS = [regla.value for regla in ReglaChiquinquira]
@@ -48,8 +49,8 @@ _SIN_CARRO = "⚠ sin carro"
 def mostrar(contenedor: Contenedor) -> None:
     estilos.titulo_seccion("Configuración")
     st.caption("Los catálogos que usa la planeación. Los cambios quedan guardados de inmediato.")
-    tab_carros, tab_zonas, tab_repertorio, tab_correcciones, tab_overrides = st.tabs(
-        ["Carros", "Zonas", "Zonas por carro", "Correcciones", "Overrides"]
+    tab_carros, tab_zonas, tab_repertorio, tab_clientes, tab_correcciones, tab_overrides = st.tabs(
+        ["Carros", "Zonas", "Zonas por carro", "Clientes", "Correcciones", "Overrides"]
     )
     with tab_carros, st.container(border=True):
         _tab_carros(contenedor)
@@ -57,6 +58,8 @@ def mostrar(contenedor: Contenedor) -> None:
         _tab_zonas(contenedor)
     with tab_repertorio, st.container(border=True):
         _tab_repertorio(contenedor)
+    with tab_clientes, st.container(border=True):
+        _tab_clientes(contenedor)
     with tab_correcciones, st.container(border=True):
         _tab_correcciones(contenedor)
     with tab_overrides, st.container(border=True):
@@ -394,6 +397,128 @@ def _tab_repertorio(contenedor: Contenedor) -> None:
             ],
             numericas=("Zonas permitidas",),
         )
+
+
+# --------------------------------------------------------------- tab Clientes
+
+_CLAVE_MAESTRA = "clientes_maestra"
+
+
+def _maestra(contenedor: Contenedor) -> list[Cliente]:
+    """La maestra completa, leída una sola vez por sesión.
+
+    Son ~9.000 clientes. Se cachea acá y no se relee en cada rerun porque el
+    filtrado es en Python (la búsqueda ignora acentos y PostgREST no sabe) y
+    porque es exactamente la misma lectura que la planeación ya hace en cada
+    corrida para armar el resolutor de zonas.
+    """
+    cache: list[Cliente] | None = st.session_state.get(_CLAVE_MAESTRA)
+    if cache is None:
+        cache = contenedor.clientes.listar()
+        st.session_state[_CLAVE_MAESTRA] = cache
+    return cache
+
+
+def _filtro_clientes(contenedor: Contenedor) -> clientes_maestra.FiltroClientes:
+    texto = st.text_input(
+        "Buscar cliente",
+        key="buscar_cliente",
+        placeholder="Código, razón social o zona (no importan las tildes)",
+    )
+    columna_zona, columna_municipio, columna_inactivos = st.columns([2, 1, 1])
+    zona = columna_zona.selectbox(
+        "Zona",
+        [clientes_maestra.TODOS, clientes_maestra.SIN_ZONA, *_zonas_nombres(contenedor)],
+        key="filtro_zona_clientes",
+    )
+    municipio = columna_municipio.selectbox(
+        "Municipio", [clientes_maestra.TODOS, *_municipios(contenedor)], key="filtro_municipio_clientes"
+    )
+    incluir_inactivos = columna_inactivos.checkbox(
+        "Incluir inactivos", key="incluir_inactivos", help="Los desactivados no salen en la búsqueda."
+    )
+    return clientes_maestra.FiltroClientes(
+        texto=texto, zona=zona, municipio=municipio, incluir_inactivos=incluir_inactivos
+    )
+
+
+def _tab_clientes(contenedor: Contenedor) -> None:
+    estilos.titulo_seccion("Maestra de clientes")
+    st.caption(
+        "El cruce cliente → zona del que sale toda la planeación. Corregir acá la zona de un "
+        "cliente cambia a qué carro va a caer desde el próximo pivote."
+    )
+    filtro = _filtro_clientes(contenedor)
+    if not filtro.hay_criterio:
+        st.info(
+            f"La maestra tiene {len(_maestra(contenedor)):,} clientes: buscá uno o filtrá por "
+            "zona o municipio para verlos."
+        )
+        return
+
+    encontrados = clientes_maestra.filtrar_clientes(_maestra(contenedor), filtro)
+    if not encontrados:
+        estilos.estado_vacio("🔍", "Ningún cliente coincide con la búsqueda.")
+        return
+
+    total = clientes_maestra.total_paginas(len(encontrados))
+    numero = 1
+    if total > 1:
+        numero = st.number_input("Página", min_value=1, max_value=total, step=1, key="pagina_clientes")
+    visibles = clientes_maestra.pagina(encontrados, int(numero))
+    st.caption(f"{len(encontrados):,} cliente(s) — página {numero} de {total}.")
+    _editor_clientes(contenedor, visibles, filtro, int(numero))
+
+
+def _editor_clientes(
+    contenedor: Contenedor,
+    visibles: list[Cliente],
+    filtro: clientes_maestra.FiltroClientes,
+    numero_pagina: int,
+) -> None:
+    # El key incluye filtro y página: el editor guarda las ediciones por posición
+    # de fila y quedaría corrupto si las filas cambian bajo el mismo key.
+    firma = f"{normalizar(filtro.texto)}_{filtro.zona}_{filtro.municipio}_{numero_pagina}"
+    editadas = st.data_editor(
+        [clientes_maestra.a_fila(cliente) for cliente in visibles],
+        key=f"editor_clientes_{firma}",
+        num_rows="fixed",  # los clientes nuevos se dan de alta en el paso 2, no acá
+        hide_index=True,
+        disabled=["codigo"],
+        column_config={
+            "codigo": st.column_config.TextColumn("Código"),
+            "razon_social": st.column_config.TextColumn("Razón social"),
+            "documento": st.column_config.TextColumn("Documento"),
+            "ciudad": st.column_config.TextColumn("Ciudad"),
+            "barrio": st.column_config.TextColumn("Barrio"),
+            "direccion": st.column_config.TextColumn("Dirección"),
+            "zona": st.column_config.SelectboxColumn(
+                "Zona", options=["", *_zonas_nombres(contenedor)], help="En blanco = cliente sin zona."
+            ),
+            "activo": st.column_config.CheckboxColumn(
+                "Activo", help="Desmarcar desactiva al cliente; no lo borra, para no perder historial."
+            ),
+        },
+    )
+    if not st.button("Guardar cambios", key="guardar_clientes"):
+        return
+
+    zonas = {zona.nombre: zona for zona in contenedor.zonas.listar()}
+    try:
+        resultado = clientes_maestra.aplicar_cambios(contenedor.clientes, visibles, list(editadas), zonas)
+    except ZonaInvalida as zona_invalida:
+        st.error(str(zona_invalida))
+        return
+    if resultado.guardados:
+        st.session_state.pop(_CLAVE_MAESTRA, None)  # la caché quedó vieja
+    for error in resultado.errores:
+        st.error(error)
+    # Nunca se borran clientes desde acá (se desactivan), así que no hay eliminadas.
+    st.success(
+        f"{resultado.guardados} cliente(s) guardados."
+        if resultado.guardados
+        else "No había cambios que guardar."
+    )
 
 
 # ----------------------------------------------------------- tab Correcciones
