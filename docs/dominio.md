@@ -44,13 +44,36 @@ pueda revisarlo y ajustarlo.
    carro 13 (propio). Esta decisión de costo la toma finalmente Rudy, pero la app la recomienda.
 4. **Ciclo semanal**: la planeación de un día se parece mucho a la del **mismo día de la semana anterior**.
    Por eso el motor de balanceo arranca ("warm-start") desde la planeación del mismo día de semana previa.
-5. **Repertorio de zonas por carro** (tabla `carro_zonas`, migración 002): cada carro solo puede atender
-   las zonas de su repertorio y el balanceador elige únicamente entre carros elegibles. Una zona viajera
-   cuyo único carro elegible es de otro municipio se balancea en el pool de ese carro (ej. RAQUIRA →
-   carro 2 de Chiquinquirá); sin ningún carro elegible queda en `zonas_sin_carro` (aviso en la UI).
-   Repertorio vacío = comportamiento clásico. Se siembra del histórico con
-   `planeacion-sembrar-repertorio datos/*.xlsm` (hoja `PLANEACION`, col A = carro, col B = zona) y se
-   edita en la UI (Configuración → Zonas por carro). La regla dura de Chiquinquirá prevalece sobre él.
+5. **Repertorio de zonas por carro y día** (tabla `carro_zonas`, migraciones 002 y 003): cada carro solo
+   puede atender las zonas de su repertorio y el balanceador elige únicamente entre carros elegibles.
+   El repertorio **depende del día de la semana**: `(TUNJA): ASIS` va en el carro 13 casi toda la semana
+   pero en el 12 los jueves; `(BARBOSA): MUNICIPIO CITE` va en el 5 salvo los sábados, que va en el 3.
+   Una zona-día con **un solo** carro habilitado queda fijada; con **varios**, el balanceador elige.
+   Una zona viajera cuyo único carro elegible es de otro municipio se balancea en el pool de ese carro
+   (ej. RAQUIRA → carro 2 de Chiquinquirá); sin ningún carro elegible **ese día** queda en
+   `zonas_sin_carro` (aviso en la UI). Repertorio vacío = comportamiento clásico. Se siembra del
+   histórico con `planeacion-sembrar-repertorio datos/*.xlsm` (hoja `PLANEACION`, col A = carro,
+   col B = zona) y se edita en la UI (Configuración → Zonas por carro, con selector de día).
+   La regla dura de Chiquinquirá prevalece sobre él.
+
+   > **Dónde vive la decisión del día**: la resuelve el **caso de uso** (`dia_de(pivote.fecha)`) y le
+   > pasa al `Balanceador` solo el repertorio de ese día. El servicio de dominio sigue recibiendo un
+   > `Mapping[str, Set[str]]` plano carro → zonas y no sabe que los días existen; por eso los cuatro
+   > puntos donde ya respetaba el repertorio (reparto inicial, warm-start, movimientos, intercambios)
+   > y `AjustadorDeAsignacion` —que valida contra el `repertorio` que viaja dentro de
+   > `ResultadoBalanceo`— pasaron a respetar el del día sin cambiar una línea.
+
+   > La columna `frecuencia` cuenta cuántas veces se observó el par en el histórico: `0` es "puesto a
+   > mano, nunca visto", y un `1` suele ser un reemplazo puntual más que una regla. Es información
+   > para que la usuaria decida en la interfaz, no un filtro que aplique la siembra.
+
+   > **Qué día es "el día"**: siempre el de los **pedidos**, nunca el de entrega. El nombre del
+   > archivo (`DEL 01 PARA EL 04 AGOSTO`) nombra los dos, pero el pivote, el warm-start y
+   > `planeaciones.dia_semana` se manejan con la fecha de los pedidos, así que la siembra la deriva
+   > del bloque de ECOM de la hoja `PEDIDOS` para que el repertorio quede en la misma clave que el
+   > balanceador consulta. Un archivo que cubre **dos jornadas** no se puede atribuir (el reparto
+   > manual las trata como un bloque único) y se descarta, igual que los que no cuadran con sus
+   > propios totales o traen un volumen anómalamente bajo.
 
 ---
 
@@ -123,6 +146,13 @@ PlaneacionLogistica/
 Es un `.xlsx` con una hoja llamada `Hoja1`. Tiene **una fila por línea de producto** (un pedido con 5
 productos ocupa 5 filas). Columnas relevantes:
 
+> **Extensiones aceptadas.** El mismo export llega a veces como `.xlsm` (el mismo OOXML, solo que
+> guardado desde un libro con macros) o como `.xls` (el binario BIFF anterior a 2007, típico de
+> "Guardar como" en Excel viejo). Los tres se cargan igual: `LectorEcomExcel` abre los dos primeros
+> con openpyxl y traduce el tercero con `xlrd` a un libro en memoria
+> (`lector_ecom_xls.abrir_xls_como_libro`) antes de pasarlo al mismo mapeo de columnas. Ni el nombre
+> ni la cantidad de hojas importan: la hoja se elige por su encabezado.
+
 | Col | Campo        | Uso                                                           |
 |-----|--------------|---------------------------------------------------------------|
 | A   | Tipo         | siempre "PEDIDO"                                               |
@@ -149,6 +179,27 @@ Convertir `O` y `AE` a `Decimal` (vienen como string).
 **La zona NO está en este archivo**: se asigna cruzando el código de cliente contra la maestra (tabla
 `clientes` en Supabase). Los clientes que no estén en la maestra quedan como **no resueltos (#N/D)** y hay
 que sugerirles zona (fase de clientes nuevos).
+
+### El mismo bloque, pegado dentro de los `.xlsm`
+
+Cada `.xlsm` de planeación trae una copia literal del ECOM de su día en la hoja `PEDIDOS`, **a partir
+de la columna S** (`S`=Tipo, `T`=Pedido, `V`=Fecha, `Z`=R. Social, `AA`=Cliente, `AG`=Total de factura,
+`AV`=Iva, `AW`=Total de línea, `BA`=Kilos en gramos). El mapeo es idéntico al del `.xlsx` suelto y es
+consistente en los 27 archivos disponibles, así que el parseo se comparte
+(`lector_ecom.leer_bloque_ecom`, con desplazamiento de columna).
+
+**Trampa del formato**: a la izquierda del bloque, en `A`–`P`, hay otra tabla —la de trabajo manual—
+con encabezados homónimos: `Fecha`, `Kilos` y dos `Total` más. Mapeando la fila 1 completa habría
+**cuatro** columnas `Total` y el `Kilos` de la columna K ganaría el match por estar primero: el archivo
+se leería mal en silencio. Por eso el bloque se ancla en su propio `Tipo`/`Pedido` de la S en adelante.
+
+Esa tabla de `A`–`P` es además la lista de facturas **efectivamente trabajadas**, y no siempre coincide
+con el bloque de la derecha: en `DEL 14 PARA EL 16 JULIO` el ECOM se pegó antes de que cerrara la
+jornada y quedó con 2.435 facturas contra las 2.097 que se planearon. De ahí que la validación exija
+que los totales cuadren con la fila "Ventas Totales" de `PLANEACION` antes de dar por buena la medición.
+
+Dos archivos (`DEL 14 PARA EL 16 JULIO` y `DEL 20-21 PARA EL 23 JULIO`) traen **dos jornadas** que se
+planearon juntas; sus totales de `PLANEACION` son la suma de ambas, así que ahí no se filtra por fecha.
 
 ---
 
@@ -213,7 +264,7 @@ kilos**, ~**1139 clientes únicos** (leer los valores exactos del propio archivo
 
 ## 10. Alcance construido
 
-El proyecto se desarrolló en cinco etapas, todas terminadas:
+El proyecto se desarrolló en seis etapas, todas terminadas:
 
 1. **Fundación**: esqueleto hexagonal, esquema de Supabase y siembra desde el Excel de referencia.
 2. **Ingesta y pivote**: lectura del ECOM crudo, normalización, resolución de zona por cliente y
@@ -223,6 +274,9 @@ El proyecto se desarrolló en cinco etapas, todas terminadas:
    mismo día de la semana anterior y repertorio de zonas por carro.
 5. **UI y exportación**: Streamlit para revisar y ajustar con recálculo en vivo, exportación del
    Excel para facturación e histórico de planeaciones en Supabase.
+6. **Validación por lotes**: `planeacion-validar` reprocesa `.xlsm` históricos desde su propio ECOM
+   embebido y coteja la propuesta contra el reparto manual, sin warm-start. Sobre 5 archivos al azar
+   (agosto 2026, semilla 20260810): **81,2 %** de coincidencia promedio, entre 79,2 % y 84,5 %.
 
 ### Fuera del alcance entregado
 

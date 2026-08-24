@@ -29,8 +29,12 @@ SUPABASE_KEY=eyJ...
 
 Abre el **SQL Editor** del dashboard de Supabase y pega/ejecuta, en orden, el contenido de
 [`migrations/001_esquema_inicial.sql`](migrations/001_esquema_inicial.sql) y
-[`migrations/002_carro_zonas.sql`](migrations/002_carro_zonas.sql).
+[`migrations/002_carro_zonas.sql`](migrations/002_carro_zonas.sql) y
+[`migrations/003_carro_zonas_dia.sql`](migrations/003_carro_zonas_dia.sql).
 Los scripts son idempotentes (`create table if not exists`), se pueden correr más de una vez.
+La 003 le agrega al repertorio la dimensión del **día de la semana** y **replica la
+configuración que ya exista a los seis días laborales**, así lo ya cargado a mano sigue
+significando lo mismo que antes.
 
 ## Sembrar la base desde el Excel de referencia
 
@@ -59,7 +63,9 @@ tabla y filas no mapeables.
 
 ## Pivote por zona (proceso diario)
 
-Con la base ya sembrada, el pivote del día se genera desde el `.xlsx` crudo de ECOM:
+Con la base ya sembrada, el pivote del día se genera desde el archivo crudo de ECOM. Sirven las tres
+extensiones en que suele llegar — `.xlsx`, `.xlsm` y `.xls` — y vale tanto para los comandos de abajo
+como para la interfaz web:
 
 ```bash
 uv run planeacion-pivote datos/pedidos24-26Junio.xlsx
@@ -119,23 +125,109 @@ NORTE al segundo, y no se pueden mover.
 ## Repertorio de zonas por carro
 
 Cada carro tiene un **repertorio limitado de zonas** que puede atender (conocimiento del
-conductor, tipo de vehículo, costumbre). El balanceador solo asigna una zona a un carro que
-la tenga permitida — en el reparto inicial, en el warm-start y en cada movimiento de la
-mejora —; las zonas compartidas por varios carros son donde tiene libertad de elegir. Una
+conductor, tipo de vehículo, costumbre), **y ese repertorio depende del día de la semana**:
+la misma zona no siempre la reparte el mismo carro. En el histórico, `(TUNJA): ASIS` va en
+el carro 13 casi toda la semana pero en el **12 los jueves**, y `(BARBOSA): MUNICIPIO CITE`
+va en el 5 salvo los **sábados**, que va en el 3. Una zona-día con un solo carro habilitado
+queda **fijada**; con varios, el balanceador elige entre ellos.
+
+El día lo resuelve el **caso de uso** a partir de la fecha del pivote y le pasa al
+`Balanceador` solo el repertorio de ese día, así el servicio de dominio sigue viendo un mapa
+plano carro → zonas y no se entera de que los días existen. El balanceador solo asigna una
+zona a un carro que la tenga permitida — en el reparto inicial, en el warm-start y en cada
+movimiento de la mejora —; las zonas compartidas por varios carros son donde tiene libertad de elegir. Una
 zona **viajera** cuyo único carro elegible es de otro municipio se balancea en el pool de
 ese carro (ej. RAQUIRA, de OTROS, viaja en el carro 2 de Chiquinquirá); una zona que ningún
 carro activo permite queda **sin asignar** y se reporta (`zonas_sin_carro`) para que Rudy la
 configure. Con la tabla vacía (base sin configurar) todo funciona como antes.
 
-El repertorio se siembra desde las hojas `PLANEACION` históricas (col A = carro, col B = zona):
+El repertorio se siembra desde las hojas `PLANEACION` históricas (col A = carro, col B = zona),
+cruzándolas con el **bloque de ECOM pegado en la hoja `PEDIDOS`** para saber de qué día es cada
+archivo:
 
 ```bash
 uv run planeacion-sembrar-repertorio datos/*.xlsm
 ```
 
-Es idempotente (upsert por par carro-zona), reporta los carros/zonas del histórico que no
-casan con la base, el repertorio resultante por carro y cuántas zonas activas quedaron sin
-ningún carro. Después se ajusta a mano en la UI (Configuración → Zonas por carro).
+El día **no** sale del nombre del archivo: los nombres tienen erratas (`DEL_24_PAR_EL_26`) y
+además nombran el día de *entrega*, mientras que todo el sistema —el pivote, el warm-start,
+`planeaciones.dia_semana`— se maneja con el día de los *pedidos*. Sembrar por el día de entrega
+dejaría el repertorio en una clave que el balanceador nunca consulta.
+
+Se siembra **todo lo observado**, sin mínimo, con la **frecuencia** de cada trío
+(carro, zona, día) — qué conservar lo decide la usuaria en la matriz, no el script. El reporte
+final muestra: la distribución por veces observado (1 / 2 / 3+), los archivos **descartados** con
+su motivo, los carros del histórico que **no están en la base** y en qué días aparecieron (los
+refuerzos salen sobre todo los sábados), el repertorio resultante por carro, las zonas activas
+sin ningún carro, y cuántos pares quedaron con **frecuencia 0** — los que no salieron de este
+histórico, o sea configuración manual o restos del backfill de la migración 003.
+
+Un archivo se **descarta** (se reporta y no siembra) cuando cubre **dos jornadas** —el reparto
+manual las trata como un bloque único y no hay forma de decir a cuál pertenece cada zona—,
+cuando el bloque de ECOM pegado **no cuadra** con los totales de su propia hoja `PLANEACION`
+(mismo criterio que `planeacion-validar`), cuando no trae ninguna fecha legible, o cuando tiene
+un **volumen anómalo**: menos de un cuarto de la mediana de zonas del lote, que es como se
+detecta un archivo abandonado a medias.
+
+Es idempotente (upsert por trío carro-zona-día; re-correr actualiza las frecuencias).
+
+Con `--borrar-frecuencia-cero` la siembra además **borra** los pares que quedaron en 0 —los que
+no salieron de ningún histórico— dejando solo lo observado. Es destructivo, así que va detrás de
+un flag y avisa antes qué zonas quedan **sin ningún carro** al borrar. Sirve sobre todo después
+de aplicar la migración 003: su backfill replicó a los seis días la configuración que estaba sin
+día, y mientras esas filas siguen ahí habilitan combinaciones que el histórico nunca vio y
+diluyen el efecto del día.
+
+Después se ajusta a mano en la UI (Configuración → Zonas por carro), que muestra
+**un día a la vez**:
+
+- **Selector de día** arriba de los filtros de municipio, «solo zonas sin carro» y búsqueda.
+- Columna **«Veces visto»** por fila: `13×8 · 12×1` es "el carro 13 hizo esta zona 8 veces y el 12
+  una sola". Un `⚠` marca las filas con algún par visto una única vez —probable reemplazo puntual,
+  no una regla— y abajo hay un panel que los junta todos para repasarlos de un tirón. `×0` es un par
+  configurado a mano, que nunca se observó en el histórico.
+- **Copiar de otro día**: como la mayoría de los días se parecen, se copia uno entero y después se
+  ajustan las diferencias. **Reemplaza, no acumula** (marca y desmarca), avisa cuántas casillas va a
+  mover y pide confirmar.
+
+El guardado sigue siendo automático por casilla, sin botón.
+
+## Validación contra las planeaciones manuales
+
+Mide qué tan cerca queda la propuesta automática de lo que Rudy hizo a mano, sobre varios días.
+No hacen falta los `.xlsx` de ECOM originales: cada `.xlsm` de planeación es autosuficiente —
+en la hoja `PEDIDOS`, a partir de la **columna S**, trae pegado el ECOM crudo del día (la entrada),
+y en la hoja `PLANEACION` el reparto manual (el resultado a superar).
+
+```bash
+uv run planeacion-validar "datos/DEL 07 PARA EL 09 JULIO.xlsm"
+uv run planeacion-validar --muestra 5 datos/*.xlsm --exportar-csv diferencias.csv
+```
+
+Por cada archivo imprime los totales de ambos lados (control de que la lectura fue correcta),
+cuántas zonas coincidieron y la lista de diferencias; al final, la tabla resumen con promedio,
+mínimo y máximo. `--muestra N` elige N archivos al azar con una **semilla fija** que se reporta,
+para poder repetir la corrida. El CSV (`archivo, fecha, zona, municipio, carro_manual,
+carro_propuesto, clientes, pesos`) sirve para ver si una zona difiere **sistemáticamente** —eso
+delata una regla de negocio faltante— o solo un día, que es apenas otra forma válida de equilibrar.
+
+Dos decisiones que hacen honesta la medición:
+
+- El balanceo corre **sin warm-start** (`usar_historico=False`): si partiera de la planeación
+  guardada de ese mismo día de semana, estaría midiéndose contra sí misma. La salida lo dice.
+- **No se filtra por fecha** (`todas_las_fechas=True`): dos archivos cubren dos jornadas que se
+  planearon juntas, y sus totales de `PLANEACION` son la suma de ambas.
+
+El porcentaje principal se calcula sobre la **intersección** (las zonas que ambos lados asignaron),
+porque una zona que la app no produjo es un hueco de cobertura de la maestra y no un desacuerdo de
+reparto; el pesimista, que cuenta esas como fallo, se imprime al lado. Si los totales no cuadran, el
+día se reporta y **queda fuera del resumen**: en `DEL 14 PARA EL 16 JULIO` el ECOM se pegó antes de
+que cerrara la jornada (2.435 facturas en el bloque contra 2.097 planeadas), así que compararlo
+mediría la propuesta contra una entrada que Rudy nunca tuvo.
+
+> Medición de agosto 2026 sobre 5 archivos al azar (semilla 20260810): **81,2 % de coincidencia**
+> promedio, entre 79,2 % y 84,5 % — consistente con el 82,4 % que dio la comparación manual del
+> 9 de julio. Cada archivo pesa ~30 MB y se abre dos veces: contar ~1 min por día analizado.
 
 ## Interfaz web (Streamlit)
 
@@ -146,8 +238,8 @@ toda la lógica vive en los casos de uso.
 uv run streamlit run src/planeacion/infraestructura/adaptadores/entrada/web/app.py
 ```
 
-1. **Cargar ECOM**: sube el `.xlsx` crudo, corre el pivote y muestra el resumen del día
-   (con warning si el archivo trae pedidos colados de otras fechas).
+1. **Cargar ECOM**: sube el archivo crudo (`.xlsx`, `.xlsm` o `.xls`), corre el pivote y muestra el
+   resumen del día (con warning si el archivo trae pedidos colados de otras fechas).
 2. **Clientes nuevos**: tabla de #N/D con la zona sugerida por voto de vecinos; cada cliente
    tiene un selector con la sugerencia, las alternativas, búsqueda manual u omitir.
 3. **Reparto de carros**: la pantalla principal. Resumen de balance por municipio con
@@ -167,6 +259,14 @@ bloquea con un error que sugiere desactivarla. El tab **Zonas por carro** edita 
 repertorio (multiselect por carro + resumen de carros sin configurar) y el tab Zonas muestra
 la vista inversa de solo lectura «carros que la atienden» (`⚠ sin carro` para las huérfanas,
 filtrable).
+
+El tab **Clientes** es la maestra (~9.000 registros): buscador por código, razón social o zona
+—parcial y sin acentos—, filtros por zona (incluido `⚠ sin zona`, los que caen como no
+resueltos en el paso 2) y por municipio, y edición de la zona y de los datos de ubicación.
+Como son muchos, **no lista nada hasta que haya un filtro activo** y después pagina de a 50.
+Un cliente no se borra: se **desactiva** con la casilla `Activo`, para no perder historial.
+La lista se lee una sola vez por sesión y el filtrado ocurre en Python, porque la búsqueda
+sin acentos no se puede hacer en la consulta sin `unaccent`.
 
 ## Exportación a Excel (salida para facturación)
 
