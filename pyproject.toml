@@ -20,6 +20,7 @@ planeacion-balancear = "planeacion.infraestructura.adaptadores.entrada.cli.balan
 planeacion-sembrar-repertorio = "planeacion.infraestructura.adaptadores.entrada.cli.sembrar_repertorio:main"
 planeacion-auditar-zonas = "planeacion.infraestructura.adaptadores.entrada.cli.auditar_zonas:main"
 planeacion-fusionar-zonas = "planeacion.infraestructura.adaptadores.entrada.cli.fusionar_zonas:main"
+planeacion-validar = "planeacion.infraestructura.adaptadores.entrada.cli.validar:main"
 
 [dependency-groups]
 dev = [

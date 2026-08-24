@@ -45,12 +45,21 @@ class CasoDeUsoGenerarPivote:
         self._zonas = zonas
         self._agregador = AgregadorPorZona()
 
-    def ejecutar(self, ruta_ecom: Path, fecha: date | None = None) -> PivotePorZonaDTO:
+    def ejecutar(
+        self, ruta_ecom: Path, fecha: date | None = None, todas_las_fechas: bool = False
+    ) -> PivotePorZonaDTO:
         lineas = self._lector.leer(ruta_ecom)
         if not lineas:
             raise SinPedidosParaPivotear(f"{ruta_ecom.name} no trae líneas de pedido")
 
         fecha_pivote = fecha or _fecha_mas_frecuente(lineas)
+        if todas_las_fechas:
+            # El origen ya viene filtrado y a veces cubre dos días a propósito
+            # (jornadas que se planearon juntas): filtrar por uno solo partiría
+            # en dos una planeación que se hizo entera. La fecha del DTO sigue
+            # siendo la más frecuente, solo como etiqueta del día.
+            return _a_dto(fecha_pivote, self._agregador.agregar(lineas, self._crear_resolutor()), lineas, [])
+
         del_dia = [linea for linea in lineas if linea.fecha == fecha_pivote]
         if not del_dia:
             raise SinPedidosParaPivotear(

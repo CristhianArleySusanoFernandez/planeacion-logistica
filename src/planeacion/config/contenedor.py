@@ -17,6 +17,7 @@ from planeacion.application.puertos.entrada.resolver_clientes_nuevos import (
     ResolverClientesNuevos,
 )
 from planeacion.application.puertos.salida.exportador_planeacion import ExportadorPlaneacion
+from planeacion.application.puertos.salida.lector_pedidos import LectorDePedidos
 from planeacion.application.puertos.salida.repositorios import (
     RepositorioCarros,
     RepositorioCarroZonas,
@@ -91,9 +92,13 @@ def crear_contenedor(settings: Settings | None = None) -> Contenedor:
     )
 
 
-def crear_generar_pivote(contenedor: Contenedor) -> GenerarPivotePorZona:
+def crear_generar_pivote(
+    contenedor: Contenedor, lector: LectorDePedidos | None = None
+) -> GenerarPivotePorZona:
+    """Sin ``lector`` usa el .xlsx suelto de ECOM; ``planeacion-validar`` pasa el
+    que lee el bloque embebido en los .xlsm."""
     return CasoDeUsoGenerarPivote(
-        lector=LectorEcomExcel(),
+        lector=lector or LectorEcomExcel(),
         clientes=contenedor.clientes,
         overrides=contenedor.overrides,
         zonas=contenedor.zonas,
@@ -108,9 +113,11 @@ def crear_resolver_clientes_nuevos(contenedor: Contenedor) -> ResolverClientesNu
     )
 
 
-def crear_generar_planeacion(contenedor: Contenedor) -> GenerarPlaneacion:
+def crear_generar_planeacion(
+    contenedor: Contenedor, lector: LectorDePedidos | None = None
+) -> GenerarPlaneacion:
     return CasoDeUsoGenerarPlaneacion(
-        pivote=crear_generar_pivote(contenedor),
+        pivote=crear_generar_pivote(contenedor, lector),
         carros=contenedor.carros,
         zonas=contenedor.zonas,
         planeaciones=contenedor.planeaciones,

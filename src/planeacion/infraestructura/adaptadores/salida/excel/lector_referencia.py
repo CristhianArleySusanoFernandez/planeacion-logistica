@@ -7,6 +7,7 @@ lectura se corta tras una racha de filas sin código.
 
 from collections.abc import Iterator
 from dataclasses import dataclass
+from decimal import Decimal
 from pathlib import Path
 from types import TracebackType
 from typing import Any
@@ -69,6 +70,17 @@ class FilaPlaneacionZona:
 
     carro: str
     zona: str
+
+
+@dataclass(frozen=True)
+class TotalesPlaneacion:
+    """La fila "Ventas Totales" de la hoja PLANEACION: el control de que el
+    origen se leyó bien (deben cuadrar con los totales que calcula la app)."""
+
+    facturas: int
+    pesos: Decimal
+    kilos: Decimal
+    clientes: int
 
 
 @dataclass(frozen=True)
@@ -198,6 +210,28 @@ class LectorReferenciaExcel:
             if carro is None or not carro.isdigit() or zona.strip().upper() in no_asignables:
                 continue
             yield FilaPlaneacionZona(carro=carro, zona=zona)
+
+    def leer_totales_planeacion(self) -> TotalesPlaneacion:
+        """Fila 3 de PLANEACION ("Ventas Totales"): C facturas, D pesos, E kilos, F clientes.
+
+        Ojo con los kilos: esta fila los trae en KILOS, mientras que las filas de
+        zona de más abajo los traen en gramos (es el pivote viejo, que multiplica
+        por mil al detallar). Los números salen de fórmulas de Excel, así que
+        llegan como float y se pasan a Decimal por su texto para no arrastrar
+        basura binaria; aun así conviene compararlos con tolerancia.
+        """
+        fila = next(self._libro[HOJA_PLANEACION].iter_rows(min_row=3, max_row=3, max_col=6, values_only=True))
+
+        def numero(indice: int) -> Decimal:
+            texto = _texto(fila[indice])
+            return Decimal(texto) if texto else Decimal("0")
+
+        return TotalesPlaneacion(
+            facturas=int(numero(2)),
+            pesos=numero(3),
+            kilos=numero(4),
+            clientes=int(numero(5)),
+        )
 
     def leer_rutas(self) -> Iterator[FilaRutaBase]:
         """Lee el segundo bloque de BASE: arranca tras la fila-encabezado 'Ruta'

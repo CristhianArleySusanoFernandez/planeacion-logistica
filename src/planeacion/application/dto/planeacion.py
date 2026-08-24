@@ -10,7 +10,7 @@ from datetime import date
 from decimal import Decimal
 
 from planeacion.application.dto.pivote import ClienteNoResueltoDTO, FacturaDTO
-from planeacion.domain.modelo import ResultadoBalanceo
+from planeacion.domain.modelo import AsignacionZona, ResultadoBalanceo
 
 
 @dataclass(frozen=True)
@@ -40,3 +40,20 @@ class PlaneacionCompleta:
     facturas_no_resueltas: int = 0
     pesos_no_resueltos: Decimal = Decimal("0")
     kilos_no_resueltos: Decimal = Decimal("0")
+
+    def asignaciones(self) -> list[AsignacionZona]:
+        """El reparto aplanado a filas zona→carro, como lo esperan la persistencia
+        y la comparación contra planeaciones manuales."""
+        return [
+            AsignacionZona(
+                zona=zona.zona,
+                carro=carga.carro,
+                facturas=zona.facturas,
+                clientes=zona.clientes,
+                pesos=zona.pesos,
+                kilos=zona.kilos,
+            )
+            for cargas in self.resultado.cargas_por_municipio.values()
+            for carga in cargas
+            for zona in carga.zonas
+        ]

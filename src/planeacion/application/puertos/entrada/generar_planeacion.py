@@ -15,8 +15,14 @@ class GenerarPlaneacion(Protocol):
         ruta_ecom: Path,
         fecha: date | None = None,
         reglas: ReglasBalanceo = REGLAS_POR_DEFECTO,
+        usar_historico: bool = True,
+        todas_las_fechas: bool = False,
     ) -> PlaneacionCompleta:
-        """Pivote + carros por municipio + warm-start + balanceo. NO persiste."""
+        """Pivote + carros por municipio + warm-start + balanceo. NO persiste.
+
+        Con ``usar_historico=False`` no consulta la planeación previa y reparte
+        desde cero; ``todas_las_fechas`` se pasa tal cual al pivote.
+        """
         ...
 
     def guardar(self, planeacion: PlaneacionCompleta) -> int:

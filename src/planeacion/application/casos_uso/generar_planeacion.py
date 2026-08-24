@@ -16,7 +16,7 @@ from planeacion.application.puertos.salida.repositorios import (
     RepositorioPlaneaciones,
     RepositorioZonas,
 )
-from planeacion.domain.modelo import AsignacionZona, Carro, ReglasBalanceo, ZonaAgregada, dia_de
+from planeacion.domain.modelo import Carro, ReglasBalanceo, ZonaAgregada, dia_de
 from planeacion.domain.modelo.balanceo import REGLAS_POR_DEFECTO
 from planeacion.domain.servicios.balanceador import Balanceador
 
@@ -46,8 +46,10 @@ class CasoDeUsoGenerarPlaneacion:
         ruta_ecom: Path,
         fecha: date | None = None,
         reglas: ReglasBalanceo = REGLAS_POR_DEFECTO,
+        usar_historico: bool = True,
+        todas_las_fechas: bool = False,
     ) -> PlaneacionCompleta:
-        pivote = self._pivote.ejecutar(ruta_ecom, fecha=fecha)
+        pivote = self._pivote.ejecutar(ruta_ecom, fecha=fecha, todas_las_fechas=todas_las_fechas)
 
         # El pivote entrega DTOs planos; se reconstruye la Zona de dominio (con su
         # regla de Chiquinquirá) casando el nombre contra la tabla de zonas.
@@ -76,7 +78,10 @@ class CasoDeUsoGenerarPlaneacion:
                 dia_semana,
             )
 
-        previa = self._planeaciones.obtener_asignacion_previa(dia_semana)
+        # Sin histórico el balanceo arranca de cero (round-robin). Lo usa la
+        # validación contra planeaciones manuales: si partiera de una planeación
+        # guardada de ese mismo día, estaría midiéndose contra sí misma.
+        previa = self._planeaciones.obtener_asignacion_previa(dia_semana) if usar_historico else None
         resultado = self._balanceador.balancear(
             zonas_agregadas=zonas_agregadas,
             carros_por_municipio=self._carros_por_municipio(),
@@ -102,20 +107,9 @@ class CasoDeUsoGenerarPlaneacion:
         )
 
     def guardar(self, planeacion: PlaneacionCompleta) -> int:
-        asignaciones = [
-            AsignacionZona(
-                zona=zona.zona,
-                carro=carga.carro,
-                facturas=zona.facturas,
-                clientes=zona.clientes,
-                pesos=zona.pesos,
-                kilos=zona.kilos,
-            )
-            for cargas in planeacion.resultado.cargas_por_municipio.values()
-            for carga in cargas
-            for zona in carga.zonas
-        ]
-        return self._planeaciones.guardar_planeacion(planeacion.fecha, planeacion.dia_semana, asignaciones)
+        return self._planeaciones.guardar_planeacion(
+            planeacion.fecha, planeacion.dia_semana, planeacion.asignaciones()
+        )
 
     def _carros_por_municipio(self) -> dict[str, list[Carro]]:
         """Los carros activos agrupados por municipio, en orden estable por número
