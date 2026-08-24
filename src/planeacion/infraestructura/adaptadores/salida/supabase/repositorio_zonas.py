@@ -114,24 +114,44 @@ class RepositorioZonasSupabase:
         return movidas
 
     def _fusionar_repertorio(self, id_variante: int, id_canonica: int) -> int:
-        """carro_zonas tiene unique (carro_id, zona_id): los carros que ya tenían
-        la canónica solo pierden su fila de la variante, no se duplican."""
+        """carro_zonas tiene unique (carro_id, zona_id, dia_semana): los pares que
+        ya existían con la canónica solo pierden su fila de la variante.
+
+        La clave de comparación incluye el DÍA: un carro puede tener la variante
+        los lunes y la canónica los martes, y esas dos filas no se pisan entre sí.
+        Deduplicar solo por carro (como antes de la migración 003) borraría la del
+        lunes sin reemplazarla. La frecuencia observada viaja con la fila.
+        """
         respuesta = (
             self._cliente.table("carro_zonas")
-            .select("carro_id, zona_id")
+            .select("carro_id, zona_id, dia_semana, frecuencia")
             .in_("zona_id", [id_variante, id_canonica])
-            .limit(10000)
+            .limit(100000)
             .execute()
         )
         filas = como_filas(respuesta.data)
-        con_variante = {int(f["carro_id"]) for f in filas if int(f["zona_id"]) == id_variante}
-        con_canonica = {int(f["carro_id"]) for f in filas if int(f["zona_id"]) == id_canonica}
+        con_variante = {
+            (int(f["carro_id"]), str(f["dia_semana"])): int(f["frecuencia"] or 0)
+            for f in filas
+            if int(f["zona_id"]) == id_variante
+        }
+        con_canonica = {
+            (int(f["carro_id"]), str(f["dia_semana"])) for f in filas if int(f["zona_id"]) == id_canonica
+        }
 
         self._cliente.table("carro_zonas").delete().eq("zona_id", id_variante).execute()
-        por_agregar = sorted(con_variante - con_canonica)
+        por_agregar = sorted(clave for clave in con_variante if clave not in con_canonica)
         if por_agregar:
             self._cliente.table("carro_zonas").insert(
-                [{"carro_id": carro_id, "zona_id": id_canonica} for carro_id in por_agregar]
+                [
+                    {
+                        "carro_id": carro_id,
+                        "zona_id": id_canonica,
+                        "dia_semana": dia,
+                        "frecuencia": con_variante[(carro_id, dia)],
+                    }
+                    for carro_id, dia in por_agregar
+                ]
             ).execute()
         return len(con_variante)
 

@@ -16,11 +16,9 @@ from planeacion.application.puertos.salida.repositorios import (
     RepositorioPlaneaciones,
     RepositorioZonas,
 )
-from planeacion.domain.modelo import AsignacionZona, Carro, ReglasBalanceo, ZonaAgregada
+from planeacion.domain.modelo import AsignacionZona, Carro, ReglasBalanceo, ZonaAgregada, dia_de
 from planeacion.domain.modelo.balanceo import REGLAS_POR_DEFECTO
 from planeacion.domain.servicios.balanceador import Balanceador
-
-DIAS_SEMANA = ("lunes", "martes", "miercoles", "jueves", "viernes", "sabado", "domingo")
 
 logger = logging.getLogger(__name__)
 
@@ -65,14 +63,19 @@ class CasoDeUsoGenerarPlaneacion:
             for dto in pivote.zonas
         ]
 
-        repertorio = self._carro_zonas.obtener_todos()
+        dia_semana = dia_de(pivote.fecha)
+        # El repertorio depende del día: la misma zona la atiende un carro u otro
+        # según sea lunes o sábado. Se resuelve el día ACÁ y al Balanceador se le
+        # pasa solo el repertorio de ese día, así él sigue viendo un mapa plano
+        # carro → zonas y no necesita saber que los días existen.
+        repertorio = self._carro_zonas.obtener_por_dia(dia_semana)
         if not any(repertorio.values()):
             logger.warning(
-                "La tabla carro_zonas está vacía: se balancea sin repertorio "
-                "(cualquier carro del municipio puede atender cualquier zona)."
+                "No hay repertorio configurado para %s: se balancea sin él "
+                "(cualquier carro del municipio puede atender cualquier zona).",
+                dia_semana,
             )
 
-        dia_semana = DIAS_SEMANA[pivote.fecha.weekday()]
         previa = self._planeaciones.obtener_asignacion_previa(dia_semana)
         resultado = self._balanceador.balancear(
             zonas_agregadas=zonas_agregadas,

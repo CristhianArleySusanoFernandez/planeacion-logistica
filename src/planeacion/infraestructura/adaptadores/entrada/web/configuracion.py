@@ -181,11 +181,21 @@ def _tab_carros(contenedor: Contenedor) -> None:
 
 
 def _carros_que_atienden(contenedor: Contenedor) -> dict[str, str]:
-    """Zona → 'números de carro que la tienen en su repertorio' (vista inversa)."""
+    """Zona → 'números de carro que la tienen en su repertorio' (vista inversa).
+
+    Se juntan los siete días a propósito: acá la pregunta es si la zona la atiende
+    ALGUIEN alguna vez, porque una zona sin ningún carro en ningún día es la que
+    queda huérfana. El detalle por día se edita en la matriz de "Zonas por carro".
+    """
     atienden: dict[str, list[str]] = {}
-    for numero, zonas in contenedor.carro_zonas.obtener_todos().items():
-        for nombre in zonas:
-            atienden.setdefault(nombre, []).append(numero)
+    por_carro_por_dia = contenedor.carro_zonas.obtener_matriz()
+    numeros_por_zona: dict[str, set[str]] = {}
+    for por_carro in por_carro_por_dia.values():
+        for numero, zonas in por_carro.items():
+            for nombre in zonas:
+                numeros_por_zona.setdefault(nombre, set()).add(numero)
+    for nombre, numeros in numeros_por_zona.items():
+        atienden[nombre] = sorted(numeros)
     return {
         nombre: ", ".join(sorted(numeros, key=lambda n: (len(n), n))) for nombre, numeros in atienden.items()
     }

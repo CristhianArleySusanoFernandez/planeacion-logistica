@@ -7,7 +7,7 @@ la siembra pueda resolver las llaves foráneas en el borde.
 
 from collections.abc import Mapping, Sequence
 from datetime import date
-from typing import Protocol
+from typing import NamedTuple, Protocol
 
 from planeacion.application.dto.planeacion import AsignacionPrevia
 from planeacion.domain.modelo import (
@@ -122,24 +122,67 @@ class RepositorioOverrides(Protocol):
     def eliminar(self, cliente_codigo: str) -> None: ...
 
 
+class ParRepertorio(NamedTuple):
+    """Una fila del repertorio: este carro atiende esta zona este día.
+
+    ``frecuencia`` es cuántas veces se observó el par en el histórico; 0 es "lo
+    puso alguien a mano, nunca se vio". Deja distinguir una regla estable de un
+    reemplazo puntual, que es lo que la usuaria decide en la interfaz.
+    """
+
+    numero_carro: str
+    nombre_zona: str
+    dia_semana: str
+    frecuencia: int = 0
+
+
 class RepositorioCarroZonas(Protocol):
-    """El repertorio: qué zonas puede atender cada carro (tabla carro_zonas)."""
+    """El repertorio: qué zonas puede atender cada carro, por día de la semana
+    (tabla carro_zonas). Una zona-día con un solo carro queda fijada; con varios,
+    el balanceador elige entre ellos."""
 
-    def obtener_todos(self) -> dict[str, set[str]]:
-        """Número de carro → nombres de zona permitidos. {} si no hay nada configurado."""
+    def obtener_por_dia(self, dia_semana: str) -> dict[str, set[str]]:
+        """Número de carro → zonas permitidas ESE día. {} si no hay nada configurado.
+
+        Es lo único que necesita el balanceo: el caso de uso ya sabe la fecha, así
+        que resuelve el día acá y el ``Balanceador`` sigue viendo un repertorio
+        plano, sin enterarse de que existen los días.
+        """
         ...
 
-    def asignar(self, numero_carro: str, nombre_zona: str) -> None:
-        """Agrega una zona al repertorio del carro (idempotente). LookupError si
-        el carro o la zona no existen en la base."""
+    def obtener_matriz(self) -> dict[str, dict[str, set[str]]]:
+        """Día → carro → zonas permitidas. Para las pantallas de configuración,
+        que muestran un día pero necesitan poder copiar de otro."""
         ...
 
-    def asignar_lote(self, pares: Sequence[tuple[str, str]]) -> int:
-        """Upsert idempotente de pares (numero_carro, nombre_zona) ya validados.
-        Devuelve cuántos pares intentó sembrar. LookupError si algo no existe."""
+    def frecuencias(self) -> dict[ParRepertorio, int]:
+        """(carro, zona, día) → veces observado en el histórico. Lo usa la matriz
+        para marcar los pares vistos una sola vez, que suelen ser reemplazos."""
         ...
 
-    def quitar(self, numero_carro: str, nombre_zona: str) -> None: ...
+    def asignar(self, numero_carro: str, nombre_zona: str, dia_semana: str) -> None:
+        """Agrega una zona al repertorio del carro para ese día (idempotente).
+        LookupError si el carro o la zona no existen en la base."""
+        ...
+
+    def asignar_lote(self, pares: Sequence[ParRepertorio]) -> int:
+        """Upsert idempotente de pares ya validados; la frecuencia se pisa con la
+        del par. Devuelve cuántos pares intentó sembrar. LookupError si algo no existe."""
+        ...
+
+    def quitar(self, numero_carro: str, nombre_zona: str, dia_semana: str) -> None: ...
+
+    def quitar_sin_observaciones(self) -> int:
+        """Borra los pares con ``frecuencia = 0`` y devuelve cuántos borró.
+
+        Son los que no salieron de ningún histórico: configuración puesta a mano o
+        restos del backfill de la migración 003, que replicó a los seis días lo que
+        estaba sin día. Mientras siguen ahí habilitan combinaciones que el
+        histórico nunca vio y diluyen la dimensión del día, pero borrarlos es
+        destructivo, así que solo lo pide explícitamente la siembra con
+        ``--borrar-frecuencia-cero``.
+        """
+        ...
 
 
 class RepositorioPlaneaciones(Protocol):
