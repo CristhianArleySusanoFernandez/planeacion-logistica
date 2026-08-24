@@ -15,6 +15,7 @@ import streamlit as st
 from planeacion.config.contenedor import Contenedor
 from planeacion.domain.errores import ZonaInvalida
 from planeacion.domain.modelo import (
+    DIAS_LABORALES,
     Carro,
     Cliente,
     CorreccionUbicacion,
@@ -28,11 +29,17 @@ from planeacion.infraestructura.adaptadores.entrada.web import clientes_maestra,
 from planeacion.infraestructura.adaptadores.entrada.web.repertorio_matriz import (
     TODOS,
     FiltroMatriz,
+    FrecuenciasDelDia,
+    Repertorio,
     aplicar_cambios,
     cambios_desde_edicion,
+    cambios_para_copiar,
     carros_visibles,
     contar_carros_de_zona,
     contar_sin_carro,
+    frecuencias_del_dia,
+    pares_sospechosos,
+    resumen_de_frecuencias,
     zonas_visibles,
 )
 from planeacion.infraestructura.adaptadores.entrada.web.tablas import (
@@ -281,7 +288,11 @@ def _tab_zonas(contenedor: Contenedor) -> None:
 
 
 def _guardar_matriz(
-    contenedor: Contenedor, clave_editor: str, orden_zonas: list[str], numeros_carros: list[str]
+    contenedor: Contenedor,
+    clave_editor: str,
+    orden_zonas: list[str],
+    numeros_carros: list[str],
+    dia_semana: str,
 ) -> None:
     """Callback del data_editor: persiste de una vez la(s) casilla(s) que cambiaron.
 
@@ -295,11 +306,73 @@ def _guardar_matriz(
     st.session_state["matriz_nonce"] = st.session_state.get("matriz_nonce", 0) + 1
     if not cambios:
         return
-    errores = aplicar_cambios(contenedor.carro_zonas, cambios)
+    errores = aplicar_cambios(contenedor.carro_zonas, cambios, dia_semana)
     if errores:
         st.session_state["matriz_errores"] = errores
     if len(cambios) > len(errores):
         st.toast("Guardado ✓")
+
+
+def _copiar_de_otro_dia(
+    contenedor: Contenedor,
+    dia_destino: str,
+    matriz: dict[str, dict[str, set[str]]],
+) -> None:
+    """Toma el repertorio de otro día como base para el que se está editando.
+
+    La mayoría de los días se parecen entre sí, así que copiar y ajustar las pocas
+    diferencias ahorra muchísimo trabajo. Reemplaza, no acumula: el día queda igual
+    al de origen, altas y bajas incluidas. Por eso pide confirmación y muestra
+    cuántas casillas va a mover antes de tocar nada.
+
+    Recibe la matriz completa en vez de consultar el día de origen: Streamlit
+    ejecuta el contenido del popover en cada rerun, esté abierto o cerrado, así
+    que consultar acá sería una ida a la base por cada tecla en cualquier filtro.
+    """
+    otros = [d for d in DIAS_LABORALES if d != dia_destino]
+    with st.popover(f"Copiar la configuración de otro día a {dia_destino}"):
+        origen = st.selectbox("Copiar desde", otros, key="matriz_copiar_origen")
+        cambios = cambios_para_copiar(matriz.get(origen, {}), matriz.get(dia_destino, {}))
+        altas = sum(1 for c in cambios if c.marcado)
+        if not cambios:
+            st.caption(f"El {dia_destino} ya está igual que el {origen}: no hay nada que copiar.")
+            return
+        st.warning(
+            f"El {dia_destino} va a quedar **igual** que el {origen}: "
+            f"{altas} casilla(s) se marcan y {len(cambios) - altas} se desmarcan."
+        )
+        if st.button("Copiar", type="primary", key="matriz_copiar_confirmar"):
+            errores = aplicar_cambios(contenedor.carro_zonas, cambios, dia_destino)
+            st.session_state["matriz_errores"] = errores
+            st.session_state["matriz_nonce"] = st.session_state.get("matriz_nonce", 0) + 1
+            st.toast(f"{len(cambios) - len(errores)} casilla(s) copiadas de {origen} ✓")
+            st.rerun()
+
+
+def _revisar_sospechosos(filas: list[Zona], repertorio: Repertorio, frecuencias: FrecuenciasDelDia) -> None:
+    """El panel de repaso: los pares vistos UNA sola vez en el histórico.
+
+    Son los candidatos a borrar. La app no los quita sola —puede ser una regla
+    real que solo se dio una vez en el período medido— pero los junta para que
+    revisarlos sea un rato y no una cacería por la matriz.
+    """
+    sospechosos = pares_sospechosos(filas, repertorio, frecuencias)
+    if not sospechosos:
+        return
+    st.markdown(
+        estilos.badge(f"⚠ {len(sospechosos)} par(es) vistos una sola vez", "ambar"),
+        unsafe_allow_html=True,
+    )
+    with st.expander("Revisar los pares vistos una sola vez"):
+        st.caption(
+            "Un par que aparece una única vez en todo el histórico suele ser un reemplazo "
+            "de ese día (el conductor de siempre faltó), no una regla del negocio. "
+            "Desmarcá en la matriz los que no correspondan."
+        )
+        estilos.tabla_marca(
+            ["Zona", "Carro"],
+            [[zona, numero] for zona, numero in sospechosos],
+        )
 
 
 def _tab_repertorio(contenedor: Contenedor) -> None:
@@ -314,10 +387,26 @@ def _tab_repertorio(contenedor: Contenedor) -> None:
         st.info("No hay carros activos en la base: siembra primero con planeacion-sembrar.")
         return
     zonas = [z for z in contenedor.zonas.listar() if z.activa]
-    repertorio = contenedor.carro_zonas.obtener_todos()
 
     for error in st.session_state.pop("matriz_errores", []):
         st.error(error)
+
+    col_dia, col_copiar = st.columns([1, 2], vertical_alignment="bottom")
+    dia = col_dia.selectbox(
+        "Día de la semana",
+        DIAS_LABORALES,
+        key="matriz_dia",
+        help="El repertorio depende del día: la misma zona puede ir en un carro "
+        "los martes y en otro los sábados.",
+    )
+    # Una sola lectura de la matriz completa por render: la usan el día en
+    # pantalla y el popover de copiar, que Streamlit ejecuta aunque esté cerrado.
+    matriz = contenedor.carro_zonas.obtener_matriz()
+    repertorio = matriz.get(dia, {})
+    with col_copiar:
+        _copiar_de_otro_dia(contenedor, dia, matriz)
+
+    frecuencias = frecuencias_del_dia(contenedor.carro_zonas.frecuencias(), dia)
 
     col_municipio, col_sin_carro, col_buscar = st.columns([2, 2, 3], vertical_alignment="bottom")
     municipio = col_municipio.selectbox(
@@ -358,12 +447,13 @@ def _tab_repertorio(contenedor: Contenedor) -> None:
             "zona": zona.nombre,
             **{numero: zona.nombre in repertorio.get(numero, set()) for numero in numeros},
             "n_carros": contar_carros_de_zona(zona.nombre, repertorio),
+            "frecuencias": resumen_de_frecuencias(zona.nombre, repertorio, frecuencias),
         }
         for zona in filas
     ]
     # El nonce recrea el editor tras cada guardado (ver _guardar_matriz).
     nonce = st.session_state.setdefault("matriz_nonce", 0)
-    clave_editor = f"matriz_{municipio}_{int(solo_sin_carro)}_{normalizar(texto)}_{nonce}"
+    clave_editor = f"matriz_{dia}_{municipio}_{int(solo_sin_carro)}_{normalizar(texto)}_{nonce}"
     st.data_editor(
         datos,
         key=clave_editor,
@@ -384,11 +474,20 @@ def _tab_repertorio(contenedor: Contenedor) -> None:
                 disabled=True,
                 help="Cuántos carros atienden la zona (0 = huérfana, sin nadie que la reparta).",
             ),
+            "frecuencias": st.column_config.TextColumn(
+                "Veces visto",
+                disabled=True,
+                help="Cuántas veces se observó cada par carro-zona ESE día en el histórico. "
+                "«3×8» = el carro 3 lo hizo 8 veces. ⚠ marca la fila donde algún carro "
+                "aparece una sola vez (probable reemplazo puntual, no una regla). "
+                "0 = configurado a mano, nunca observado.",
+            ),
         },
         on_change=_guardar_matriz,
-        args=(contenedor, clave_editor, orden_zonas, numeros),
+        args=(contenedor, clave_editor, orden_zonas, numeros, dia),
     )
     st.caption(f"{len(filas)} zona(s) y {len(columnas)} carro(s) en la vista.")
+    _revisar_sospechosos(filas, repertorio, frecuencias)
 
     with st.expander("Resumen por carro"):
         estilos.tabla_marca(

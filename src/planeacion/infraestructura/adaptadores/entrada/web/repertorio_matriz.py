@@ -1,19 +1,31 @@
 """Lógica pura de la matriz de repertorios (zonas × carros) de Configuración:
-filtros, contadores y traducción/persistencia de los cambios de casillas.
-Sin Streamlit a propósito, para poder probarla con pytest.
+filtros, contadores, frecuencias, copia entre días y traducción/persistencia de
+los cambios de casillas. Sin Streamlit a propósito, para poder probarla con pytest.
+
+La matriz muestra **un día a la vez**: el repertorio depende del día de la semana
+(ver migración 003), así que todo lo de acá trabaja sobre el repertorio de un día
+ya resuelto por quien llama.
 """
 
 from collections.abc import Collection, Mapping, Sequence
 from dataclasses import dataclass
 
-from planeacion.application.puertos.salida.repositorios import RepositorioCarroZonas
+from planeacion.application.puertos.salida.repositorios import ParRepertorio, RepositorioCarroZonas
 from planeacion.domain.modelo import Carro, Zona
 from planeacion.infraestructura.adaptadores.entrada.web.tablas import normalizar
 
 TODOS = "Todos"
 
-# numero de carro → nombres de zona permitidos (lo que da obtener_todos()).
+# numero de carro → nombres de zona permitidos (lo que da obtener_por_dia()).
 Repertorio = Mapping[str, set[str]]
+
+# (numero de carro, nombre de zona) → veces observado ese día en el histórico.
+FrecuenciasDelDia = Mapping[tuple[str, str], int]
+
+# Un par visto UNA sola vez suele ser un reemplazo puntual (el conductor de
+# siempre faltó ese día), no una regla del negocio. Se marca para que la usuaria
+# lo revise; la decisión de conservarlo o no es de ella, no del programa.
+FRECUENCIA_SOSPECHOSA = 1
 
 
 @dataclass(frozen=True)
@@ -102,20 +114,92 @@ def cambios_desde_edicion(
     return cambios
 
 
-def aplicar_cambios(repositorio: RepositorioCarroZonas, cambios: Sequence[CambioCelda]) -> list[str]:
-    """Persiste cada cambio (marcado → asignar, desmarcado → quitar) y devuelve los
-    mensajes de error de los que fallaron; los demás quedan guardados. La casilla
-    de un cambio fallido se revierte en la UI al recargar la matriz desde la base."""
+def aplicar_cambios(
+    repositorio: RepositorioCarroZonas, cambios: Sequence[CambioCelda], dia_semana: str
+) -> list[str]:
+    """Persiste cada cambio del día en pantalla (marcado → asignar, desmarcado →
+    quitar) y devuelve los mensajes de error de los que fallaron; los demás quedan
+    guardados. La casilla de un cambio fallido se revierte en la UI al recargar la
+    matriz desde la base."""
     errores: list[str] = []
     for cambio in cambios:
         try:
             if cambio.marcado:
-                repositorio.asignar(cambio.numero_carro, cambio.nombre_zona)
+                repositorio.asignar(cambio.numero_carro, cambio.nombre_zona, dia_semana)
             else:
-                repositorio.quitar(cambio.numero_carro, cambio.nombre_zona)
+                repositorio.quitar(cambio.numero_carro, cambio.nombre_zona, dia_semana)
         except Exception as error:  # error de red o de datos: se reporta sin frenar el resto
             accion = "asignar" if cambio.marcado else "quitar"
             errores.append(
-                f"No se pudo {accion} {cambio.nombre_zona} al carro {cambio.numero_carro}: {error}"
+                f"No se pudo {accion} {cambio.nombre_zona} al carro {cambio.numero_carro} "
+                f"({dia_semana}): {error}"
             )
     return errores
+
+
+def frecuencias_del_dia(frecuencias: Mapping[ParRepertorio, int], dia_semana: str) -> FrecuenciasDelDia:
+    """Las frecuencias de un solo día, con la clave que usa la matriz."""
+    return {
+        (par.numero_carro, par.nombre_zona): veces
+        for par, veces in frecuencias.items()
+        if par.dia_semana == dia_semana
+    }
+
+
+def resumen_de_frecuencias(nombre_zona: str, repertorio: Repertorio, frecuencias: FrecuenciasDelDia) -> str:
+    """La celda de resumen de una fila: "13×8 · 12×1", con ⚠ si algún par se vio
+    una sola vez.
+
+    Existe como columna aparte porque una casilla de ``st.data_editor`` es un
+    checkbox y no puede llevar el número al lado; el resumen por fila deja la
+    frecuencia junto a los checks de esa zona, que es donde hace falta leerla.
+    """
+    marcados = sorted(
+        (numero for numero, zonas in repertorio.items() if nombre_zona in zonas),
+        key=lambda n: (len(n), n),
+    )
+    if not marcados:
+        return ""
+    partes = [f"{numero}×{frecuencias.get((numero, nombre_zona), 0)}" for numero in marcados]
+    hay_sospechoso = any(
+        frecuencias.get((numero, nombre_zona), 0) == FRECUENCIA_SOSPECHOSA for numero in marcados
+    )
+    return ("⚠ " if hay_sospechoso else "") + " · ".join(partes)
+
+
+def pares_sospechosos(
+    zonas: Sequence[Zona], repertorio: Repertorio, frecuencias: FrecuenciasDelDia
+) -> list[tuple[str, str]]:
+    """(zona, carro) de los pares vistos una sola vez, ordenados por zona.
+
+    Son los candidatos a borrar: la usuaria los revisa y decide si eran una regla
+    o el reemplazo de un día suelto.
+    """
+    sospechosos = [
+        (zona.nombre, numero)
+        for zona in zonas
+        for numero, permitidas in repertorio.items()
+        if zona.nombre in permitidas and frecuencias.get((numero, zona.nombre), 0) == FRECUENCIA_SOSPECHOSA
+    ]
+    return sorted(sospechosos, key=lambda par: (par[0], len(par[1]), par[1]))
+
+
+def cambios_para_copiar(origen: Repertorio, destino: Repertorio) -> list[CambioCelda]:
+    """Los cambios que dejan a ``destino`` igual que ``origen``.
+
+    Copiar un día sobre otro es la forma rápida de configurar: la mayoría de los
+    días se parecen entre sí, así que se copia y después se ajustan las pocas
+    diferencias. Devuelve altas y BAJAS: el resultado es el día de origen tal cual,
+    no la unión de los dos (si no, un día nunca podría quedar con menos pares que
+    otro y la copia sería irreversible).
+    """
+    numeros = set(origen) | set(destino)
+    cambios: list[CambioCelda] = []
+    for numero in sorted(numeros, key=lambda n: (len(n), n)):
+        permitidas_origen = set(origen.get(numero, set()))
+        permitidas_destino = set(destino.get(numero, set()))
+        for zona in sorted(permitidas_origen - permitidas_destino):
+            cambios.append(CambioCelda(numero, zona, True))
+        for zona in sorted(permitidas_destino - permitidas_origen):
+            cambios.append(CambioCelda(numero, zona, False))
+    return cambios

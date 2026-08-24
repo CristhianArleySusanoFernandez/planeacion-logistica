@@ -1,5 +1,6 @@
 """Pruebas de la lógica pura de la matriz de repertorios (zonas × carros)."""
 
+from planeacion.application.puertos.salida.repositorios import ParRepertorio
 from planeacion.domain.modelo import Carro, Municipio, Zona
 from planeacion.infraestructura.adaptadores.entrada.web.repertorio_matriz import (
     TODOS,
@@ -7,9 +8,13 @@ from planeacion.infraestructura.adaptadores.entrada.web.repertorio_matriz import
     FiltroMatriz,
     aplicar_cambios,
     cambios_desde_edicion,
+    cambios_para_copiar,
     carros_visibles,
     contar_carros_de_zona,
     contar_sin_carro,
+    frecuencias_del_dia,
+    pares_sospechosos,
+    resumen_de_frecuencias,
     zonas_visibles,
 )
 
@@ -129,40 +134,143 @@ class TestCambiosDesdeEdicion:
 
 class _RepoFalso:
     def __init__(self, falla_en: tuple[str, str] | None = None) -> None:
-        self.asignados: list[tuple[str, str]] = []
-        self.quitados: list[tuple[str, str]] = []
+        self.asignados: list[tuple[str, str, str]] = []
+        self.quitados: list[tuple[str, str, str]] = []
         self._falla_en = falla_en
 
     def _verificar(self, numero: str, zona: str) -> None:
         if (numero, zona) == self._falla_en:
             raise ConnectionError("sin red")
 
-    def asignar(self, numero_carro: str, nombre_zona: str) -> None:
+    def asignar(self, numero_carro: str, nombre_zona: str, dia_semana: str) -> None:
         self._verificar(numero_carro, nombre_zona)
-        self.asignados.append((numero_carro, nombre_zona))
+        self.asignados.append((numero_carro, nombre_zona, dia_semana))
 
-    def quitar(self, numero_carro: str, nombre_zona: str) -> None:
+    def quitar(self, numero_carro: str, nombre_zona: str, dia_semana: str) -> None:
         self._verificar(numero_carro, nombre_zona)
-        self.quitados.append((numero_carro, nombre_zona))
+        self.quitados.append((numero_carro, nombre_zona, dia_semana))
 
 
 class TestAplicarCambios:
+    """El repertorio se edita un día a la vez: los cambios van a ese día y solo a ese."""
+
     def test_marcar_asigna_y_desmarcar_quita(self) -> None:
         repo = _RepoFalso()
         errores = aplicar_cambios(
             repo,  # type: ignore[arg-type]  # doble estructural del Protocol
             [CambioCelda("3", "ZONA A", True), CambioCelda("4", "ZONA B", False)],
+            "jueves",
         )
         assert errores == []
-        assert repo.asignados == [("3", "ZONA A")]
-        assert repo.quitados == [("4", "ZONA B")]
+        assert repo.asignados == [("3", "ZONA A", "jueves")]
+        assert repo.quitados == [("4", "ZONA B", "jueves")]
 
     def test_un_fallo_se_reporta_y_no_frena_el_resto(self) -> None:
         repo = _RepoFalso(falla_en=("3", "ZONA A"))
         errores = aplicar_cambios(
             repo,  # type: ignore[arg-type]
             [CambioCelda("3", "ZONA A", True), CambioCelda("4", "ZONA B", True)],
+            "sabado",
         )
         assert len(errores) == 1
         assert "ZONA A" in errores[0] and "carro 3" in errores[0]
-        assert repo.asignados == [("4", "ZONA B")]
+        assert "sabado" in errores[0]  # el día importa para saber qué casilla falló
+        assert repo.asignados == [("4", "ZONA B", "sabado")]
+
+
+# ---- La dimensión del día: frecuencias y copia entre días --------------------
+
+
+_FRECUENCIAS = {
+    ParRepertorio("3", "(BARBOSA):  CITE", "jueves", 8),
+    ParRepertorio("4", "(BARBOSA):  CITE", "jueves", 1),
+    ParRepertorio("3", "(BARBOSA):  VÉLEZ", "jueves", 5),
+    ParRepertorio("3", "(BARBOSA):  CITE", "sabado", 2),
+}
+_POR_PAR = {par: par.frecuencia for par in _FRECUENCIAS}
+
+
+class TestFrecuencias:
+    def test_se_quedan_solo_las_del_dia_en_pantalla(self) -> None:
+        """El sábado tiene su propia frecuencia para el mismo par: no se mezclan."""
+        del_jueves = frecuencias_del_dia(_POR_PAR, "jueves")
+
+        assert del_jueves[("3", "(BARBOSA):  CITE")] == 8
+        assert ("3", "(BARBOSA):  VÉLEZ") in del_jueves
+        assert frecuencias_del_dia(_POR_PAR, "sabado") == {("3", "(BARBOSA):  CITE"): 2}
+
+    def test_el_resumen_de_la_fila_lista_cada_carro_con_su_conteo(self) -> None:
+        repertorio = {"3": {"(BARBOSA):  CITE"}, "4": {"(BARBOSA):  CITE"}}
+
+        resumen = resumen_de_frecuencias(
+            "(BARBOSA):  CITE", repertorio, frecuencias_del_dia(_POR_PAR, "jueves")
+        )
+
+        assert resumen == "⚠ 3×8 · 4×1"  # el ⚠ porque el carro 4 se vio una sola vez
+
+    def test_sin_pares_de_una_sola_vez_no_hay_aviso(self) -> None:
+        repertorio = {"3": {"(BARBOSA):  CITE"}}
+
+        resumen = resumen_de_frecuencias(
+            "(BARBOSA):  CITE", repertorio, frecuencias_del_dia(_POR_PAR, "jueves")
+        )
+
+        assert resumen == "3×8"
+
+    def test_una_zona_sin_carro_no_tiene_resumen(self) -> None:
+        assert resumen_de_frecuencias("RUTA MUZO", {"3": {"OTRA"}}, {}) == ""
+
+    def test_un_par_puesto_a_mano_cuenta_cero_no_uno(self) -> None:
+        """frecuencia 0 = configurado a mano, nunca observado. No es sospechoso:
+        alguien lo decidió a propósito, a diferencia del visto una sola vez."""
+        repertorio = {"9": {"(BARBOSA):  CITE"}}
+
+        resumen = resumen_de_frecuencias("(BARBOSA):  CITE", repertorio, {})
+
+        assert resumen == "9×0"
+
+    def test_los_pares_de_una_sola_vez_se_pueden_listar_para_revisarlos(self) -> None:
+        repertorio = {"3": {"(BARBOSA):  CITE"}, "4": {"(BARBOSA):  CITE"}}
+        zonas = [_zona("(BARBOSA):  CITE", "BARBOSA")]
+
+        sospechosos = pares_sospechosos(zonas, repertorio, frecuencias_del_dia(_POR_PAR, "jueves"))
+
+        assert sospechosos == [("(BARBOSA):  CITE", "4")]
+
+
+class TestCopiarDeOtroDia:
+    def test_el_destino_queda_igual_al_origen(self) -> None:
+        origen = {"3": {"ZONA A", "ZONA B"}, "4": {"ZONA C"}}
+        destino = {"3": {"ZONA A"}}
+
+        cambios = cambios_para_copiar(origen, destino)
+
+        assert CambioCelda("3", "ZONA B", True) in cambios
+        assert CambioCelda("4", "ZONA C", True) in cambios
+        assert len(cambios) == 2  # ZONA A ya estaba: no se toca
+
+    def test_tambien_borra_lo_que_el_origen_no_tiene(self) -> None:
+        """Copiar reemplaza, no acumula: si fuera unión, un día nunca podría
+        quedar con menos pares que otro y la copia sería irreversible."""
+        origen = {"3": {"ZONA A"}}
+        destino = {"3": {"ZONA A", "ZONA B"}, "5": {"ZONA C"}}
+
+        cambios = cambios_para_copiar(origen, destino)
+
+        assert sorted((c.numero_carro, c.nombre_zona, c.marcado) for c in cambios) == [
+            ("3", "ZONA B", False),
+            ("5", "ZONA C", False),
+        ]
+
+    def test_copiar_un_dia_sobre_si_mismo_no_cambia_nada(self) -> None:
+        repertorio = {"3": {"ZONA A", "ZONA B"}}
+
+        assert cambios_para_copiar(repertorio, repertorio) == []
+
+    def test_copiar_sobre_un_dia_vacio_lo_llena_entero(self) -> None:
+        origen = {"3": {"ZONA A"}, "4": {"ZONA B"}}
+
+        cambios = cambios_para_copiar(origen, {})
+
+        assert all(c.marcado for c in cambios)
+        assert len(cambios) == 2
