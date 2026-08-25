@@ -16,6 +16,7 @@ import pytest
 
 from planeacion.application.casos_uso.generar_planeacion import CasoDeUsoGenerarPlaneacion
 from planeacion.application.dto.pivote import PivotePorZonaDTO, ZonaAgregadaDTO
+from planeacion.application.puertos.salida.repositorios import ParRepertorio
 from planeacion.domain.modelo import Carro, ReglasBalanceo, ResultadoBalanceo
 from planeacion.domain.servicios.parseo_zonas import crear_zona
 
@@ -95,6 +96,11 @@ class _CarroZonasFalso:
     def obtener_por_dia(self, dia_semana: str) -> dict[str, set[str]]:
         self.dias_pedidos.append(dia_semana)
         return {carro: set(zonas) for carro, zonas in self._por_dia.get(dia_semana, {}).items()}
+
+    def frecuencias(self) -> dict[ParRepertorio, int]:
+        """Estas pruebas miran el día, no la costumbre: sin frecuencias el desempate
+        por frecuencia no entra y el reparto lo decide solo el balance."""
+        return {}
 
 
 def _planear(fecha: date, repertorio: dict[str, dict[str, set[str]]]) -> ResultadoBalanceo:

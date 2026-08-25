@@ -22,12 +22,61 @@ def zona_permitida(repertorio: Repertorio, nombre_zona: str, numero_carro: str) 
     return nombre_zona in repertorio.get(numero_carro, frozenset())
 
 
+# Frecuencias: (número de carro, nombre de zona) → cuántas veces se observó ese
+# par en el histórico DEL DÍA que se está planeando. El día ya viene resuelto de
+# afuera, igual que el repertorio: acá adentro es un mapa plano.
+Frecuencias = Mapping[tuple[str, str], int]
+
+
+def penalizaciones_por_frecuencia(
+    repertorio: Repertorio, frecuencias: Frecuencias
+) -> dict[tuple[str, str], float]:
+    """Cuánto "cuesta" la costumbre: 0 para el carro dominante de cada zona y hasta
+    casi 1 para el más minoritario, según ``1 - f / F``.
+
+    ``F`` es la frecuencia máxima entre los carros ELEGIBLES de esa zona, así que
+    la penalización es relativa a la zona y no a la escala global. Dos casos se
+    tratan como neutros (penalización 0), a propósito:
+
+    - ``f == 0``: par configurado a mano, sin evidencia histórica. No es un mal
+      par, es uno del que no se sabe nada; penalizarlo sería peor que tratar a un
+      par visto una sola vez.
+    - ``F == 0``: ninguna de las opciones de esa zona se observó nunca. Sin
+      evidencia no hay preferencia y manda el balance, como antes.
+    """
+    if not repertorio or not frecuencias:
+        return {}
+    carros_por_zona: dict[str, list[str]] = {}
+    for numero_carro, zonas in repertorio.items():
+        for nombre_zona in zonas:
+            carros_por_zona.setdefault(nombre_zona, []).append(numero_carro)
+
+    penalizaciones: dict[tuple[str, str], float] = {}
+    for nombre_zona, carros in carros_por_zona.items():
+        dominante = max(frecuencias.get((numero, nombre_zona), 0) for numero in carros)
+        if dominante == 0:
+            continue
+        for numero in carros:
+            observado = frecuencias.get((numero, nombre_zona), 0)
+            if observado == 0:
+                continue
+            penalizaciones[(numero, nombre_zona)] = 1.0 - observado / dominante
+    return penalizaciones
+
+
 @dataclass(frozen=True)
 class ReglasBalanceo:
     """Pesos de la función de costo y tope de iteraciones de la heurística."""
 
     w_clientes: float = 0.5
     w_pesos: float = 0.5
+    # Peso de la costumbre: cuánto pesa, frente al balance, que una zona caiga en
+    # el carro que históricamente la atiende. Deliberadamente bajo — rompe empates
+    # y sesga decisiones marginales, no debe sobrecargar un carro por costumbre.
+    # Con 0 el balanceo se comporta exactamente como antes de existir este término.
+    # 0,30 salió de medir julio 2026 contra el reparto manual: 93,4 % → 95,2 % de
+    # coincidencia sin mover los CV de ningún municipio (ver docs/dominio.md § 10).
+    w_frecuencia: float = 0.30
     max_iteraciones: int = 500
 
 

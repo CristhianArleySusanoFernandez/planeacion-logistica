@@ -33,6 +33,7 @@ from planeacion.application.dto.planeacion import PlaneacionCompleta
 from planeacion.config.contenedor import crear_contenedor, crear_generar_planeacion
 from planeacion.config.settings import Settings
 from planeacion.domain.errores import ErrorDeDominio
+from planeacion.domain.modelo.balanceo import REGLAS_POR_DEFECTO, ReglasBalanceo
 from planeacion.domain.servicios.comparador_asignaciones import (
     ComparacionAsignaciones,
     comparar_asignaciones,
@@ -181,6 +182,40 @@ def _imprimir_resumen(resultados: list[ResultadoValidacion]) -> None:
     print(f"{'PROMEDIO':45s} {'':6s} {'':10s} {sum(porcentajes) / len(porcentajes):7.1%}")
     print(f"{'MINIMO':45s} {'':6s} {'':10s} {min(porcentajes):7.1%}")
     print(f"{'MAXIMO':45s} {'':6s} {'':10s} {max(porcentajes):7.1%}")
+    _imprimir_balance(resultados)
+
+
+def _imprimir_balance(resultados: list[ResultadoValidacion]) -> None:
+    """CV promedio por municipio sobre todos los días medidos.
+
+    Va desglosado y no solo en total porque un municipio se puede desbalancear
+    sin que el promedio general lo muestre: Chiquinquirá tiene tres carros y
+    Tunja muchos más, así que el promedio los diluye.
+    """
+    clientes: dict[str, list[float]] = {}
+    pesos: dict[str, list[float]] = {}
+    for resultado in resultados:
+        for municipio, metricas in resultado.planeacion.resultado.metricas_finales.items():
+            clientes.setdefault(municipio, []).append(metricas.cv_clientes)
+            pesos.setdefault(municipio, []).append(metricas.cv_pesos)
+    print("\nBALANCE (CV promedio de los dias medidos, mas bajo es mejor)")
+    print(f"{'Municipio':45s} {'Dias':>6s} {'CV clientes':>12s} {'CV pesos':>12s}")
+    for municipio in sorted(clientes):
+        muestras_clientes = clientes[municipio]
+        muestras_pesos = pesos[municipio]
+        print(
+            f"{municipio[:45]:45s} {len(muestras_clientes):6d} "
+            f"{sum(muestras_clientes) / len(muestras_clientes):12.1%} "
+            f"{sum(muestras_pesos) / len(muestras_pesos):12.1%}"
+        )
+    todos_clientes = [cv for muestras in clientes.values() for cv in muestras]
+    todos_pesos = [cv for muestras in pesos.values() for cv in muestras]
+    if todos_clientes:
+        print(
+            f"{'TODOS':45s} {len(todos_clientes):6d} "
+            f"{sum(todos_clientes) / len(todos_clientes):12.1%} "
+            f"{sum(todos_pesos) / len(todos_pesos):12.1%}"
+        )
 
 
 def _exportar_csv(resultados: list[ResultadoValidacion], destino: Path) -> int:
@@ -238,6 +273,15 @@ def main() -> int:
     parser.add_argument(
         "--exportar-csv", type=Path, default=None, help="vuelca todas las diferencias a un CSV"
     )
+    parser.add_argument(
+        "--w-frecuencia",
+        type=float,
+        default=REGLAS_POR_DEFECTO.w_frecuencia,
+        help=(
+            "peso del desempate por costumbre (default "
+            f"{REGLAS_POR_DEFECTO.w_frecuencia}); con 0 se mide el balanceo sin ese termino"
+        ),
+    )
     args = parser.parse_args()
 
     archivos = _elegir_archivos(args.rutas, args.muestra, args.semilla)
@@ -256,12 +300,14 @@ def main() -> int:
         return 1
 
     caso_uso = crear_generar_planeacion(crear_contenedor(settings), lector=LectorEcomEmbebido())
+    reglas = ReglasBalanceo(w_frecuencia=args.w_frecuencia)
+    print(f"Peso del desempate por frecuencia: {args.w_frecuencia}")
     resultados: list[ResultadoValidacion] = []
     fallidos: list[str] = []
     for ruta in archivos:
         print(f"\nProcesando {ruta.name} (puede tardar ~1 min)...")
         try:
-            planeacion = caso_uso.ejecutar(ruta, usar_historico=False, todas_las_fechas=True)
+            planeacion = caso_uso.ejecutar(ruta, reglas=reglas, usar_historico=False, todas_las_fechas=True)
             manual, totales = _leer_manual(ruta)
         except (ErrorDeDominio, FormatoEcomInvalido, KeyError) as error:
             sys.stdout.flush()

@@ -67,6 +67,15 @@ pueda revisarlo y ajustarlo.
    > mano, nunca visto", y un `1` suele ser un reemplazo puntual más que una regla. Es información
    > para que la usuaria decida en la interfaz, no un filtro que aplique la siembra.
 
+   > **Desempate por costumbre**: cuando una zona-día tiene varios carros elegibles, la elegibilidad
+   > sola no alcanza —para el balanceador un carro que atendió la zona 8 veces y otro que la atendió 1
+   > son igual de válidos— y elegía por carga. Por eso la función de costo lleva un tercer término,
+   > `w_frecuencia * penalización media`, donde cada zona paga `1 - f/F` (`f` = veces que ese carro la
+   > atendió ese día, `F` = el máximo entre sus carros elegibles): 0 para el dominante y hasta casi 1
+   > para el más minoritario. La frecuencia `0` es **neutra** (no hay evidencia, no hay castigo), no
+   > la peor opción. El peso es bajo a propósito: el balance sigue mandando y la costumbre solo
+   > inclina lo marginal. Sigue siendo la máquina proponiendo: no fija zonas ni quita opciones.
+
    > **Qué día es "el día"**: siempre el de los **pedidos**, nunca el de entrega. El nombre del
    > archivo (`DEL 01 PARA EL 04 AGOSTO`) nombra los dos, pero el pivote, el warm-start y
    > `planeaciones.dia_semana` se manejan con la fecha de los pedidos, así que la siembra la deriva
@@ -277,6 +286,13 @@ El proyecto se desarrolló en seis etapas, todas terminadas:
 6. **Validación por lotes**: `planeacion-validar` reprocesa `.xlsm` históricos desde su propio ECOM
    embebido y coteja la propuesta contra el reparto manual, sin warm-start. Sobre 5 archivos al azar
    (agosto 2026, semilla 20260810): **81,2 %** de coincidencia promedio, entre 79,2 % y 84,5 %.
+7. **Repertorio por día y desempate por costumbre**: medido sobre los 22 días de julio 2026 que cuadran
+   con sus propios totales, la coincidencia promedio pasó de **81,7 %** (repertorio sin día) a
+   **93,4 %** (con día) y a **95,2 %** con el desempate por frecuencia en 0,30 — 96,4 % dejando fuera
+   el archivo que planeó dos jornadas juntas. Sobre los dos archivos que nunca entraron a la siembra
+   (13 y 14 de agosto), **94,5 %**. Los CV por municipio no se movieron en ninguno de los dos pasos.
+   El peso se ajusta con `planeacion-validar --w-frecuencia N` y `planeacion-balancear --w-frecuencia N`
+   (0 lo apaga y reproduce el comportamiento anterior).
 
 ### Fuera del alcance entregado
 

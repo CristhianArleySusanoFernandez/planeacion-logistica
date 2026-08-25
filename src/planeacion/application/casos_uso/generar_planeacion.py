@@ -71,6 +71,14 @@ class CasoDeUsoGenerarPlaneacion:
         # pasa solo el repertorio de ese día, así él sigue viendo un mapa plano
         # carro → zonas y no necesita saber que los días existen.
         repertorio = self._carro_zonas.obtener_por_dia(dia_semana)
+        # La frecuencia de cada par (carro, zona) EN ESE DÍA: le sirve al balanceador
+        # para desempatar entre carros elegibles a favor del que la operación real
+        # viene usando. Se resuelve el día acá, igual que el repertorio.
+        frecuencias = {
+            (par.numero_carro, par.nombre_zona): veces
+            for par, veces in self._carro_zonas.frecuencias().items()
+            if par.dia_semana == dia_semana
+        }
         if not any(repertorio.values()):
             logger.warning(
                 "No hay repertorio configurado para %s: se balancea sin él "
@@ -88,6 +96,7 @@ class CasoDeUsoGenerarPlaneacion:
             asignacion_previa=previa.zona_a_carro if previa else None,
             reglas=reglas,
             repertorio=repertorio,
+            frecuencias=frecuencias,
         )
         return PlaneacionCompleta(
             fecha=pivote.fecha,

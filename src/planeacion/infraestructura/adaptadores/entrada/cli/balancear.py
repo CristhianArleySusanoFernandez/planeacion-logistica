@@ -33,6 +33,7 @@ from planeacion.domain.modelo import (
     ReglasBalanceo,
     clasificar_cv,
 )
+from planeacion.domain.modelo.balanceo import REGLAS_POR_DEFECTO
 from planeacion.infraestructura.adaptadores.salida.excel.lector_ecom import FormatoEcomInvalido
 
 _MAX_RESULTADOS_BUSQUEDA = 15
@@ -223,6 +224,16 @@ def main() -> int:
         help="peso del balance por plata en la función de costo (default 0.5)",
     )
     parser.add_argument(
+        "--w-frecuencia",
+        type=float,
+        default=REGLAS_POR_DEFECTO.w_frecuencia,
+        help=(
+            "peso del desempate por costumbre: entre carros elegibles prefiere al que "
+            f"históricamente atiende la zona ese día (default {REGLAS_POR_DEFECTO.w_frecuencia}; "
+            "0 lo apaga)"
+        ),
+    )
+    parser.add_argument(
         "--interactivo", action="store_true", help="permite mover zonas entre carros con recálculo en vivo"
     )
     args = parser.parse_args()
@@ -242,7 +253,7 @@ def main() -> int:
         return 1
 
     caso_uso = crear_generar_planeacion(crear_contenedor(settings))
-    reglas = ReglasBalanceo(w_clientes=args.w_clientes, w_pesos=args.w_pesos)
+    reglas = ReglasBalanceo(w_clientes=args.w_clientes, w_pesos=args.w_pesos, w_frecuencia=args.w_frecuencia)
     print(f"Leyendo {args.ruta_ecom}, pivoteando y balanceando...")
     try:
         planeacion = caso_uso.ejecutar(args.ruta_ecom, fecha=args.fecha, reglas=reglas)

@@ -5,7 +5,15 @@ Puro (solo stdlib). Arranca de la planeación previa del mismo día de semana
 mejora con movimientos e intercambios de zonas entre carros del mismo municipio
 mientras baje la función de costo:
 
-    costo(municipio) = w_clientes * cv(clientes por carro) + w_pesos * cv(pesos por carro)
+    costo(municipio) = w_clientes * cv(clientes por carro)
+                     + w_pesos * cv(pesos por carro)
+                     + w_frecuencia * penalizacion media por costumbre
+
+El tercer término es el desempate por costumbre: entre los carros que TIENEN
+permitida una zona, prefiere al que históricamente la atiende (ver
+``penalizaciones_por_frecuencia``). Es deliberadamente liviano — mueve
+decisiones marginales, no debe sobrecargar un carro; con ``w_frecuencia`` en 0
+o sin frecuencias el balanceo se comporta exactamente como antes.
 
 Repertorio (carro → zonas permitidas): cuando viene configurado, una zona solo
 puede caer en un carro que la tenga permitida — en el reparto inicial, en el
@@ -37,7 +45,16 @@ from planeacion.domain.modelo import (
     ResultadoBalanceo,
     ZonaAgregada,
 )
-from planeacion.domain.modelo.balanceo import REGLAS_POR_DEFECTO, Repertorio, zona_permitida
+from planeacion.domain.modelo.balanceo import (
+    REGLAS_POR_DEFECTO,
+    Frecuencias,
+    Repertorio,
+    penalizaciones_por_frecuencia,
+    zona_permitida,
+)
+
+# (número de carro, nombre de zona) → cuánto penaliza esa combinación, en [0, 1).
+Penalizaciones = Mapping[tuple[str, str], float]
 
 _MEJORA_MINIMA = 1e-9
 
@@ -64,11 +81,31 @@ def calcular_metricas(municipio: str, cargas: Sequence[CargaCarro]) -> MetricasD
     )
 
 
-def calcular_costo(cargas: Sequence[CargaCarro], reglas: ReglasBalanceo) -> float:
+def _penalizacion_media(cargas: Sequence[CargaCarro], penalizaciones: Penalizaciones) -> float:
+    """Promedio de la penalización de las zonas repartidas, en [0, 1).
+
+    Va promediado y no sumado para quedar en la misma escala que los CV: así
+    ``w_frecuencia`` es comparable con ``w_clientes`` y ``w_pesos`` sin depender
+    de cuántas zonas tenga el municipio.
+    """
+    zonas = [(carga.carro.numero, zona.zona.nombre) for carga in cargas for zona in carga.zonas]
+    if not zonas:
+        return 0.0
+    return sum(penalizaciones.get(par, 0.0) for par in zonas) / len(zonas)
+
+
+def calcular_costo(
+    cargas: Sequence[CargaCarro],
+    reglas: ReglasBalanceo,
+    penalizaciones: Penalizaciones | None = None,
+) -> float:
     """La función que la heurística minimiza dentro de cada municipio."""
-    return reglas.w_clientes * _cv([float(carga.clientes) for carga in cargas]) + reglas.w_pesos * _cv(
+    costo = reglas.w_clientes * _cv([float(carga.clientes) for carga in cargas]) + reglas.w_pesos * _cv(
         [float(carga.pesos) for carga in cargas]
     )
+    if penalizaciones and reglas.w_frecuencia:
+        costo += reglas.w_frecuencia * _penalizacion_media(cargas, penalizaciones)
+    return costo
 
 
 def _esta_fijada(zona: ZonaAgregada) -> bool:
@@ -83,9 +120,11 @@ class Balanceador:
         asignacion_previa: Mapping[str, str] | None,
         reglas: ReglasBalanceo = REGLAS_POR_DEFECTO,
         repertorio: Repertorio | None = None,
+        frecuencias: Frecuencias | None = None,
     ) -> ResultadoBalanceo:
         # Un carro con repertorio declarado pero vacío cuenta como no configurado.
         repertorio_limpio = {n: frozenset(zs) for n, zs in (repertorio or {}).items() if zs}
+        penalizaciones = penalizaciones_por_frecuencia(repertorio_limpio, frecuencias or {})
         municipio_de_carro = {
             carro.numero: municipio for municipio, carros in carros_por_municipio.items() for carro in carros
         }
@@ -108,7 +147,7 @@ class Balanceador:
             desde_historico = desde_historico or uso_previa
             self._aplicar_reglas_duras(cargas)
             metricas_iniciales[municipio] = calcular_metricas(municipio, cargas)
-            self._mejorar(cargas, reglas, repertorio_limpio)
+            self._mejorar(cargas, reglas, repertorio_limpio, penalizaciones)
             metricas_finales[municipio] = calcular_metricas(municipio, cargas)
             cargas_por_municipio[municipio] = cargas
 
@@ -225,18 +264,28 @@ class Balanceador:
                     carga.quitar(zona.zona.nombre)
                     objetivo.agregar(zona)
 
-    def _mejorar(self, cargas: list[CargaCarro], reglas: ReglasBalanceo, repertorio: Repertorio) -> None:
+    def _mejorar(
+        self,
+        cargas: list[CargaCarro],
+        reglas: ReglasBalanceo,
+        repertorio: Repertorio,
+        penalizaciones: Penalizaciones,
+    ) -> None:
         """Best-improvement: en cada pasada ejecuta el mejor movimiento/intercambio que baje el costo."""
         for _ in range(reglas.max_iteraciones):
-            mejor = self._mejor_movimiento(cargas, reglas, repertorio)
+            mejor = self._mejor_movimiento(cargas, reglas, repertorio, penalizaciones)
             if mejor is None:
                 return
             mejor()
 
     def _mejor_movimiento(
-        self, cargas: list[CargaCarro], reglas: ReglasBalanceo, repertorio: Repertorio
+        self,
+        cargas: list[CargaCarro],
+        reglas: ReglasBalanceo,
+        repertorio: Repertorio,
+        penalizaciones: Penalizaciones,
     ) -> Callable[[], None] | None:
-        costo_actual = calcular_costo(cargas, reglas)
+        costo_actual = calcular_costo(cargas, reglas, penalizaciones)
         mejor_costo = costo_actual - _MEJORA_MINIMA
         mejor_accion: Callable[[], None] | None = None
 
@@ -250,7 +299,7 @@ class Balanceador:
                     permitida_en_destino = zona_permitida(repertorio, zona.zona.nombre, destino.carro.numero)
                     # Probar mover la zona de A a B (y revertir).
                     if permitida_en_destino:
-                        costo = self._costo_si_mueve(cargas, reglas, origen, destino, zona)
+                        costo = self._costo_si_mueve(cargas, reglas, origen, destino, zona, penalizaciones)
                         if costo < mejor_costo:
                             mejor_costo = costo
                             mejor_accion = self._accion_mover(origen, destino, zona)
@@ -261,7 +310,9 @@ class Balanceador:
                                 repertorio, zona_b.zona.nombre, origen.carro.numero
                             ):
                                 continue
-                            costo = self._costo_si_intercambia(cargas, reglas, origen, destino, zona, zona_b)
+                            costo = self._costo_si_intercambia(
+                                cargas, reglas, origen, destino, zona, zona_b, penalizaciones
+                            )
                             if costo < mejor_costo:
                                 mejor_costo = costo
                                 mejor_accion = self._accion_intercambiar(origen, destino, zona, zona_b)
@@ -274,10 +325,11 @@ class Balanceador:
         origen: CargaCarro,
         destino: CargaCarro,
         zona: ZonaAgregada,
+        penalizaciones: Penalizaciones,
     ) -> float:
         origen.quitar(zona.zona.nombre)
         destino.agregar(zona)
-        costo = calcular_costo(cargas, reglas)
+        costo = calcular_costo(cargas, reglas, penalizaciones)
         destino.quitar(zona.zona.nombre)
         origen.agregar(zona)
         return costo
@@ -290,12 +342,13 @@ class Balanceador:
         destino: CargaCarro,
         zona_a: ZonaAgregada,
         zona_b: ZonaAgregada,
+        penalizaciones: Penalizaciones,
     ) -> float:
         origen.quitar(zona_a.zona.nombre)
         destino.quitar(zona_b.zona.nombre)
         origen.agregar(zona_b)
         destino.agregar(zona_a)
-        costo = calcular_costo(cargas, reglas)
+        costo = calcular_costo(cargas, reglas, penalizaciones)
         origen.quitar(zona_b.zona.nombre)
         destino.quitar(zona_a.zona.nombre)
         origen.agregar(zona_a)
