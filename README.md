@@ -323,6 +323,20 @@ Notas del entorno:
 - El logo es opcional: se muestra si existe
   `src/planeacion/infraestructura/adaptadores/entrada/web/assets/logo.png`.
 
+### Limitación conocida del plan gratuito: Supabase se pausa
+
+Un proyecto de Supabase en el plan gratuito **se pausa solo tras varios días sin actividad**. Con el
+proyecto pausado la app no puede leer nada, y muestra un mensaje explicando cómo reactivarlo
+(*supabase.com → el proyecto → Restore/Resume*, y recargar 1-2 minutos después). Es una intervención
+manual, así que si la herramienta no se usa todos los días conviene resolverlo de una de dos formas:
+
+- **Mantenerlo despierto**: agregar una consulta liviana programada (por ejemplo un workflow de
+  GitHub Actions cada pocas horas) a la misma automatización que ya evita que Streamlit se duerma.
+- **Plan pago**: si la empresa depende de que la herramienta esté disponible sin que nadie tenga que
+  entrar a reactivarla, un plan pago de Supabase elimina la pausa por inactividad.
+
+Ninguna de las dos está implementada todavía.
+
 ## Desarrollo
 
 ```bash

@@ -25,7 +25,7 @@ from planeacion.domain.modelo import (
     Zona,
 )
 from planeacion.domain.servicios.parseo_zonas import crear_zona
-from planeacion.infraestructura.adaptadores.entrada.web import clientes_maestra, estilos
+from planeacion.infraestructura.adaptadores.entrada.web import clientes_maestra, conexion, estilos
 from planeacion.infraestructura.adaptadores.entrada.web.repertorio_matriz import (
     TODOS,
     FiltroMatriz,
@@ -306,11 +306,14 @@ def _guardar_matriz(
     st.session_state["matriz_nonce"] = st.session_state.get("matriz_nonce", 0) + 1
     if not cambios:
         return
-    errores = aplicar_cambios(contenedor.carro_zonas, cambios, dia_semana)
-    if errores:
-        st.session_state["matriz_errores"] = errores
-    if len(cambios) > len(errores):
-        st.toast("Guardado ✓")
+    # Este es un callback: corre fuera del cuerpo del script, así que el envoltorio
+    # de app.py no lo alcanza y necesita el suyo. Sin ``st.stop()``, que acá no aplica.
+    with conexion.errores_de_conexion(detener=False):
+        errores = aplicar_cambios(contenedor.carro_zonas, cambios, dia_semana)
+        if errores:
+            st.session_state["matriz_errores"] = errores
+        if len(cambios) > len(errores):
+            st.toast("Guardado ✓")
 
 
 def _copiar_de_otro_dia(

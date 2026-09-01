@@ -13,6 +13,7 @@ from planeacion.application.dto.pivote import PivotePorZonaDTO
 from planeacion.config.contenedor import Contenedor, crear_contenedor
 from planeacion.config.settings import Settings
 from planeacion.infraestructura.adaptadores.entrada.web import (
+    conexion,
     configuracion,
     estado,
     estilos,
@@ -92,7 +93,8 @@ def main() -> None:
         st.logo(str(logo), size="large")
 
     try:
-        contenedor = _obtener_contenedor()
+        with conexion.errores_de_conexion():
+            contenedor = _obtener_contenedor()
     except ValidationError:
         st.error(
             "Faltan las credenciales de la base de datos (SUPABASE_URL / SUPABASE_KEY). "
@@ -117,16 +119,20 @@ def main() -> None:
     detalle = f"día cargado: {pivote.fecha.isoformat()}" if pivote else "sin archivo cargado"
     estilos.encabezado_pagina("Planeación Logística", detalle)
 
-    if paso == estado.PASO_CARGAR:
-        paso1_cargar.mostrar(contenedor)
-    elif paso == estado.PASO_CLIENTES:
-        paso2_clientes_nuevos.mostrar(contenedor)
-    elif paso == estado.PASO_REPARTO:
-        paso3_reparto.mostrar(contenedor)
-    elif paso == estado.PASO_EXPORTAR:
-        paso4_exportar.mostrar(contenedor)
-    else:
-        configuracion.mostrar(contenedor)
+    # Un solo envoltorio para las cinco páginas (Configuración incluye sus cuatro
+    # pestañas): si la base no responde, ninguna sigue dibujando con datos que no
+    # llegaron. Ver web/conexion.py.
+    with conexion.errores_de_conexion():
+        if paso == estado.PASO_CARGAR:
+            paso1_cargar.mostrar(contenedor)
+        elif paso == estado.PASO_CLIENTES:
+            paso2_clientes_nuevos.mostrar(contenedor)
+        elif paso == estado.PASO_REPARTO:
+            paso3_reparto.mostrar(contenedor)
+        elif paso == estado.PASO_EXPORTAR:
+            paso4_exportar.mostrar(contenedor)
+        else:
+            configuracion.mostrar(contenedor)
 
 
 main()

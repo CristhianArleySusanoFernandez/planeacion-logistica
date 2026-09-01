@@ -9,11 +9,17 @@ en session_state (sin tocar Supabase ni leer archivos): tanto los botones
 from datetime import date
 from decimal import Decimal
 from pathlib import Path
+from typing import Any, cast
 
+import httpx
+import pytest
+import streamlit as st
 from streamlit.testing.v1 import AppTest
 
 from planeacion.application.dto.pivote import PivotePorZonaDTO
 from planeacion.application.dto.planeacion import PlaneacionCompleta
+from planeacion.config import contenedor as contenedor_mod
+from planeacion.config.contenedor import Contenedor
 from planeacion.domain.modelo import (
     CargaCarro,
     Carro,
@@ -127,3 +133,68 @@ def test_navegar_los_cuatro_pasos_con_los_botones() -> None:
     # Y de vuelta al inicio por el botón de navegación de la sidebar.
     _clic(aplicacion, "nav_0")
     assert aplicacion.session_state[estado.CLAVE_PASO] == estado.PASO_CARGAR
+
+
+def _contenedor_caido(excepcion: Exception) -> Contenedor:
+    """Un contenedor cuyos repositorios revientan apenas se los toca."""
+
+    class _RepoCaido:
+        def __getattr__(self, _nombre: str) -> Any:
+            def _reventar(*_args: Any, **_kwargs: Any) -> Any:
+                raise excepcion
+
+            return _reventar
+
+    caido = cast(Any, _RepoCaido())
+    return Contenedor(
+        municipios=caido,
+        zonas=caido,
+        carros=caido,
+        carro_zonas=caido,
+        clientes=caido,
+        correcciones=caido,
+        overrides=caido,
+        planeaciones=caido,
+    )
+
+
+def _app_con_contenedor(monkeypatch: pytest.MonkeyPatch, contenedor: Contenedor) -> AppTest:
+    st.cache_resource.clear()  # si no, la app reusa el contenedor real de otra prueba
+    monkeypatch.setattr(contenedor_mod, "crear_contenedor", lambda *_a, **_k: contenedor)
+    return AppTest.from_file(str(_RUTA_APP), default_timeout=60)
+
+
+def test_sin_conexion_la_pagina_muestra_el_mensaje_amigable(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Supabase pausado: en vez del traceback, las instrucciones para reactivarlo."""
+    aplicacion = _app_con_contenedor(monkeypatch, _contenedor_caido(httpx.ConnectError("sin red")))
+    aplicacion.session_state[estado.CLAVE_PASO] = estado.PAGINA_CONFIGURACION
+    aplicacion.run()
+
+    assert not aplicacion.exception, aplicacion.exception
+    assert any("No se pudo conectar con la base de datos" in e.value for e in aplicacion.error)
+    assert any("Restore" in e.value for e in aplicacion.error)
+
+
+def test_sin_conexion_al_cablear_tampoco_revienta(monkeypatch: pytest.MonkeyPatch) -> None:
+    """La caída puede ser antes de la página, al crear el cliente de Supabase."""
+    st.cache_resource.clear()
+
+    def _reventar(*_args: Any, **_kwargs: Any) -> Contenedor:
+        raise httpx.ConnectTimeout("timeout")
+
+    monkeypatch.setattr(contenedor_mod, "crear_contenedor", _reventar)
+    aplicacion = AppTest.from_file(str(_RUTA_APP), default_timeout=60)
+    aplicacion.run()
+
+    assert not aplicacion.exception, aplicacion.exception
+    assert any("No se pudo conectar con la base de datos" in e.value for e in aplicacion.error)
+
+
+def test_un_error_que_no_es_de_conexion_sigue_propagandose(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Solo los errores de red muestran «puede estar pausado»; los de datos, no."""
+    aplicacion = _app_con_contenedor(monkeypatch, _contenedor_caido(ValueError("dato inválido")))
+    aplicacion.session_state[estado.CLAVE_PASO] = estado.PAGINA_CONFIGURACION
+    aplicacion.run()
+
+    assert aplicacion.exception, "el error de datos tenía que propagarse como antes"
+    assert not any("No se pudo conectar" in e.value for e in aplicacion.error)
