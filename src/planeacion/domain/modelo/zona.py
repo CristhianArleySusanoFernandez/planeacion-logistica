@@ -7,7 +7,13 @@ from planeacion.domain.modelo.municipio import Municipio
 
 
 class ReglaChiquinquira(Enum):
-    """Regla dura de Chiquinquirá: SUR → carro 1, NORTE → carro 2."""
+    """De qué lado de Chiquinquirá es una zona (y, en la flota, una ruta).
+
+    La regla dura: una zona del sur solo puede caer en una ruta del sur. Vale
+    para el PAR de rutas de cada lado (hoy SUR → {1, 2} y NORTE → {3, 4}), no
+    para una ruta concreta; entre las del lado correcto deciden el repertorio y
+    el balance.
+    """
 
     SUR = "SUR"
     NORTE = "NORTE"

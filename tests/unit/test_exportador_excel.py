@@ -204,6 +204,35 @@ def test_hoja_base_resume_por_carro(tmp_path: Path) -> None:
     assert hoja["A4"].value is None  # solo carros con zonas
 
 
+def test_la_hoja_base_lleva_el_destino_real_de_las_viajeras(tmp_path: Path) -> None:
+    """CIUDAD como en el archivo de la empresa: MUZO, no OTROS. La ruta balancea
+    en el pool OTROS, pero eso es un detalle de la app y facturación lee el destino."""
+    planeacion = _planeacion_de_ejemplo()
+    viajera = CargaCarro(
+        carro=Carro(
+            numero="8",
+            conductor="CAMILO SOTELO",
+            municipio=Municipio(nombre="OTROS"),
+            municipio_real="MUZO",
+        ),
+        zonas=[
+            ZonaAgregada(
+                zona=Zona(nombre="MUZO", municipio=Municipio(nombre="OTROS")),
+                facturas=1,
+                clientes=1,
+                pesos=Decimal("100"),
+                kilos=Decimal("1"),
+            )
+        ],
+    )
+    planeacion.resultado.cargas_por_municipio["OTROS"] = [viajera]
+
+    hoja = load_workbook(ExportadorExcelPlaneacion().exportar(planeacion, tmp_path / "s.xlsx"))["BASE"]
+
+    # La ruta 8 va primera por número (1, 2, 8, 10, 20 y no 10, 20, 8).
+    assert (hoja["A2"].value, hoja["F2"].value, hoja["H2"].value) == ("8", "CAMILO SOTELO", "MUZO")
+
+
 def test_hoja_pedidos_una_fila_por_factura(tmp_path: Path) -> None:
     hoja = load_workbook(_exportar(tmp_path))["PEDIDOS"]
     assert tuple(hoja.cell(row=1, column=c).value for c in range(1, 13)) == ENCABEZADO_PEDIDOS

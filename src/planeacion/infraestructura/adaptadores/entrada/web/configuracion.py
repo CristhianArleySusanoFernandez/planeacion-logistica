@@ -23,6 +23,8 @@ from planeacion.domain.modelo import (
     OverrideZona,
     ReglaChiquinquira,
     Zona,
+    clave_conductor,
+    clave_orden_carro,
 )
 from planeacion.domain.servicios.parseo_zonas import crear_zona
 from planeacion.infraestructura.adaptadores.entrada.web import clientes_maestra, conexion, estilos
@@ -121,32 +123,47 @@ def _reportar_guardado(guardadas: int, eliminadas: int, errores: list[str]) -> N
 
 
 def _carro_desde_fila(fila: Fila) -> Carro:
+    conductor = fila.get("conductor") or None
+    lado = fila.get("lado_chiquinquira") or None
     return Carro(
         numero=str(fila["numero"]).strip(),
-        conductor=fila.get("conductor") or None,
+        conductor=conductor,
         placa=fila.get("placa") or None,
         auxiliar=fila.get("auxiliar") or None,
         municipio=Municipio(fila["municipio"]) if fila.get("municipio") else None,
         es_externo=bool(fila.get("es_externo")),
         costo_diario=Decimal(str(fila.get("costo_diario") or 0)),
         activo=fila.get("activo") is not False,  # una fila nueva sin marcar nace activa
+        # Si se deja vacía se deriva del nombre: lo normal es que la clave sea el
+        # conductor sin el sufijo, y escribirla a mano en cada fila es pedir erratas.
+        conductor_clave=(fila.get("conductor_clave") or None) or clave_conductor(conductor),
+        municipio_real=fila.get("municipio_real") or None,
+        lado_chiquinquira=ReglaChiquinquira(str(lado)) if lado else None,
     )
 
 
 def _tab_carros(contenedor: Contenedor) -> None:
     estilos.titulo_seccion("Flota de carros")
     st.caption(
-        "Activa/desactiva carros y cambia su municipio: eso define el pool que usa el "
-        "balanceador. El carro externo lleva `es_externo` y su `costo_diario`. Un carro "
-        "con planeaciones guardadas no se puede borrar: desactívalo."
+        "Una fila por **ruta**: un mismo conductor puede llevar dos (`FABIAN 1` y "
+        "`FABIAN 2`), y `conductor_clave` —el nombre sin el sufijo— es lo que las junta "
+        "en el resumen por conductor. Si la dejas vacía se deduce del nombre. "
+        "`municipio` define el pool que usa el balanceador y `municipio_real` es "
+        "informativo: las rutas viajeras balancean en OTROS pero van a MUZO, FLORIAN, "
+        "GARAGOA, MIRAFLORES o VILLA DELEYVA. `lado_chiquinquira` es regla dura: una "
+        "zona del sur solo cae en una ruta del sur. Un carro con planeaciones guardadas "
+        "no se puede borrar: desactívalo."
     )
     originales: list[Fila] = [
         {
             "numero": c.numero,
             "conductor": c.conductor,
+            "conductor_clave": c.conductor_clave,
             "placa": c.placa,
             "auxiliar": c.auxiliar,
             "municipio": c.municipio.nombre if c.municipio else None,
+            "municipio_real": c.municipio_real,
+            "lado_chiquinquira": c.lado_chiquinquira.value if c.lado_chiquinquira else None,
             "es_externo": c.es_externo,
             "costo_diario": float(c.costo_diario),
             "activo": c.activo,
@@ -158,8 +175,20 @@ def _tab_carros(contenedor: Contenedor) -> None:
         originales,
         column_config={
             "numero": st.column_config.TextColumn("numero", required=True),
+            "conductor_clave": st.column_config.TextColumn(
+                "conductor_clave", help="El conductor sin el sufijo de ruta. Vacío = se deduce del nombre."
+            ),
             "municipio": st.column_config.SelectboxColumn(
                 "municipio", options=_municipios(contenedor), required=False
+            ),
+            "municipio_real": st.column_config.TextColumn(
+                "municipio_real", help="Informativo: el destino real de las rutas viajeras."
+            ),
+            "lado_chiquinquira": st.column_config.SelectboxColumn(
+                "lado_chiquinquira",
+                options=[lado.value for lado in ReglaChiquinquira],
+                help="Solo Chiquinquirá: de qué lado reparte la ruta (regla dura).",
+                required=False,
             ),
         },
     )
@@ -203,9 +232,7 @@ def _carros_que_atienden(contenedor: Contenedor) -> dict[str, str]:
                 numeros_por_zona.setdefault(nombre, set()).add(numero)
     for nombre, numeros in numeros_por_zona.items():
         atienden[nombre] = sorted(numeros)
-    return {
-        nombre: ", ".join(sorted(numeros, key=lambda n: (len(n), n))) for nombre, numeros in atienden.items()
-    }
+    return {nombre: ", ".join(sorted(numeros, key=clave_orden_carro)) for nombre, numeros in atienden.items()}
 
 
 def _zona_desde_fila(fila: Fila, es_nueva: bool) -> Zona:
@@ -505,7 +532,7 @@ def _tab_repertorio(contenedor: Contenedor) -> None:
                         "" if repertorio.get(c.numero) else estilos.badge("⚠ sin configurar", "ambar")
                     ),
                 ]
-                for c in sorted(carros, key=lambda c: (len(c.numero), c.numero))
+                for c in sorted(carros, key=lambda c: clave_orden_carro(c.numero))
             ],
             numericas=("Zonas permitidas",),
         )

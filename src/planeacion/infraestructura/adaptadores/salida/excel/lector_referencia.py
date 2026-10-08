@@ -7,6 +7,7 @@ lectura se corta tras una racha de filas sin código.
 
 from collections.abc import Iterator
 from dataclasses import dataclass
+from datetime import date
 from decimal import Decimal
 from pathlib import Path
 from types import TracebackType
@@ -14,11 +15,22 @@ from typing import Any
 
 import openpyxl
 
+from planeacion.infraestructura.adaptadores.salida.excel.lector_ecom import (
+    convertir_fecha,
+    normalizar_encabezado,
+)
+
 HOJA_MAESTRA = "MAESTRA"
 HOJA_CAMBIOS = "CAMBIOS"
 HOJA_OVERRIDES = "martha ojo"
 HOJA_BASE = "BASE"
 HOJA_PLANEACION = "PLANEACION"
+HOJA_MAESTRA_COMPLETA = "MAESTRA COMPLETA"
+HOJA_PEDIDOS = "PEDIDOS"
+
+# El bloque de ECOM de la hoja PEDIDOS nunca empieza antes de la columna S: a su
+# izquierda hay otra tabla con encabezados homónimos (ver docs/dominio.md § 5).
+_PRIMERA_COLUMNA_DEL_BLOQUE = 18
 
 HOJAS_DE_SIEMBRA = (HOJA_MAESTRA, HOJA_CAMBIOS, HOJA_OVERRIDES, HOJA_BASE)
 
@@ -48,6 +60,19 @@ class FilaMaestra:
     ciudad: str | None
     barrio: str | None
     ruta: str | None
+
+
+@dataclass(frozen=True)
+class FilaMaestraCompleta:
+    """Una fila de MAESTRA COMPLETA: B=Codigo Ecom, E=Documento, G=Ra. Social.
+
+    Es la única fuente de ``documento`` y ``razon_social``; la hoja MAESTRA no los
+    trae y en la base están vacíos para casi todos los clientes.
+    """
+
+    codigo: str
+    documento: str | None
+    razon_social: str | None
 
 
 @dataclass(frozen=True)
@@ -93,6 +118,10 @@ class FilaRutaBase:
     conductor: str | None
     auxiliar: str | None
     ciudad: str | None
+    # Columna I: la zona que la ruta atiende como principal. No se siembra como
+    # repertorio (eso sale de PLANEACION); se usa para leer de qué lado de
+    # Chiquinquirá reparte la ruta, que el nombre de la zona dice ("RUTA SUR 4").
+    zona_principal: str | None = None
 
 
 def _texto(valor: Any) -> str | None:
@@ -171,6 +200,25 @@ class LectorReferenciaExcel:
                 ruta=_texto(fila[5]),
             )
 
+    def leer_maestra_completa(self) -> Iterator[FilaMaestraCompleta]:
+        """El código va en la columna B y no en la A (la A es el 'Cod AC' del
+        mayorista), así que esta hoja no puede usar ``_filas_con_codigo``."""
+        vacias_seguidas = 0
+        filas = self._libro[HOJA_MAESTRA_COMPLETA].iter_rows(min_row=2, max_col=7, values_only=True)
+        for fila in filas:
+            codigo = _texto(fila[1]) if fila and len(fila) > 1 else None
+            if codigo is None:
+                vacias_seguidas += 1
+                if vacias_seguidas > _MAX_FILAS_VACIAS_SEGUIDAS:
+                    return
+                continue
+            vacias_seguidas = 0
+            yield FilaMaestraCompleta(
+                codigo=codigo,
+                documento=_texto(fila[4]),
+                razon_social=_texto(fila[6]),
+            )
+
     def leer_cambios(self) -> Iterator[FilaCambio]:
         for codigo, fila in self._filas_con_codigo(HOJA_CAMBIOS, max_col=7):
             yield FilaCambio(
@@ -233,12 +281,47 @@ class LectorReferenciaExcel:
             clientes=int(numero(5)),
         )
 
+    def fecha_de_pedidos(self) -> date | None:
+        """La fecha de los pedidos del bloque de ECOM, sin parsear el bloque entero.
+
+        Sirve para emparejar cada .xlsm con el .xls suelto del mismo día sin pagar
+        la lectura completa (30 MB por archivo). La columna ``Fecha`` se busca solo
+        de la S en adelante, igual que el lector del bloque: a la izquierda hay otra
+        tabla con un ``Fecha`` propio que ganaría el match por estar primero.
+        """
+        if HOJA_PEDIDOS not in self._libro.sheetnames:
+            return None
+        hoja = self._libro[HOJA_PEDIDOS]
+        filas = hoja.iter_rows(values_only=True)
+        encabezados = next(filas, None)
+        if encabezados is None:
+            return None
+        columna = next(
+            (
+                indice
+                for indice, valor in enumerate(encabezados)
+                if indice >= _PRIMERA_COLUMNA_DEL_BLOQUE and normalizar_encabezado(valor) == "fecha"
+            ),
+            None,
+        )
+        if columna is None:
+            return None
+        for fila in filas:
+            if len(fila) <= columna:
+                continue
+            # La fecha del bloque viene como texto ISO, no como fecha de Excel; se
+            # convierte con el mismo parseo que el lector de ECOM para no tener dos.
+            fecha = convertir_fecha(fila[columna])
+            if fecha is not None:
+                return fecha
+        return None
+
     def leer_rutas(self) -> Iterator[FilaRutaBase]:
         """Lee el segundo bloque de BASE: arranca tras la fila-encabezado 'Ruta'
-        (columnas A=Ruta B=Facturas F=CONDUCTOR G=AUX H=CIUDAD) y corta en la
-        primera fila cuya primera celda no sea un número de ruta."""
+        (columnas A=Ruta B=Facturas F=CONDUCTOR G=AUX H=CIUDAD I=zona principal)
+        y corta en la primera fila cuya primera celda no sea un número de ruta."""
         en_bloque = False
-        for fila in self._libro[HOJA_BASE].iter_rows(max_col=8, values_only=True):
+        for fila in self._libro[HOJA_BASE].iter_rows(max_col=9, values_only=True):
             primera = _texto(fila[0]) if fila else None
             if not en_bloque:
                 en_bloque = primera is not None and primera.strip().upper() == "RUTA"
@@ -252,4 +335,5 @@ class LectorReferenciaExcel:
                 conductor=_texto(fila[5]),
                 auxiliar=_texto(fila[6]),
                 ciudad=_texto(fila[7]),
+                zona_principal=_texto(fila[8]),
             )

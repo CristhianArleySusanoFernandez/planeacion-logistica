@@ -16,7 +16,7 @@ from planeacion.application.puertos.salida.repositorios import (
     RepositorioPlaneaciones,
     RepositorioZonas,
 )
-from planeacion.domain.modelo import Carro, ReglasBalanceo, ZonaAgregada, dia_de
+from planeacion.domain.modelo import Carro, ReglasBalanceo, ZonaAgregada, clave_orden_carro, dia_de
 from planeacion.domain.modelo.balanceo import REGLAS_POR_DEFECTO
 from planeacion.domain.servicios.balanceador import Balanceador
 
@@ -128,5 +128,5 @@ class CasoDeUsoGenerarPlaneacion:
             if carro.activo and carro.municipio is not None:
                 agrupados.setdefault(carro.municipio.nombre, []).append(carro)
         for carros in agrupados.values():
-            carros.sort(key=lambda c: (len(c.numero), c.numero))
+            carros.sort(key=lambda c: clave_orden_carro(c.numero))
         return agrupados

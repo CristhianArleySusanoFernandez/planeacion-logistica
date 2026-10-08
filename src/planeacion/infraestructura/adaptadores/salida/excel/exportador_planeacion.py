@@ -27,7 +27,7 @@ from openpyxl.styles import Font, PatternFill
 from openpyxl.worksheet.worksheet import Worksheet
 
 from planeacion.application.dto.planeacion import PlaneacionCompleta
-from planeacion.domain.modelo import CargaCarro
+from planeacion.domain.modelo import CargaCarro, clave_orden_carro
 
 _GRAMOS_POR_KILO = Decimal("1000")
 _SIN_CARRO = "#N/A"
@@ -59,11 +59,6 @@ ENCABEZADO_PEDIDOS = (
     "CUADRANTE",
     "CARRO",
 )
-
-
-def _clave_carro(numero: str) -> tuple[int, str]:
-    """Orden estable de números de carro ('9' antes que '108')."""
-    return (len(numero), numero)
 
 
 def _escribir_encabezado(hoja: Worksheet, fila: int, valores: tuple[str, ...], columna: int = 1) -> None:
@@ -110,7 +105,7 @@ class ExportadorExcelPlaneacion:
 
         clientes = sorted(
             carro_por_cliente.items(),
-            key=lambda par: (par[1] is None, _clave_carro(par[1] or ""), par[0]),
+            key=lambda par: (par[1] is None, clave_orden_carro(par[1] or ""), par[0]),
         )
         fila = 4
         for codigo, carro in clientes:
@@ -188,7 +183,7 @@ class ExportadorExcelPlaneacion:
                 for carga in cargas_municipio
                 if carga.zonas
             ),
-            key=lambda carga: _clave_carro(carga.carro.numero),
+            key=lambda carga: clave_orden_carro(carga.carro.numero),
         )
         for fila, carga in enumerate(cargas, start=2):
             hoja.cell(row=fila, column=1, value=carga.carro.numero)
@@ -198,8 +193,11 @@ class ExportadorExcelPlaneacion:
             hoja.cell(row=fila, column=5, value=carga.kilos)
             hoja.cell(row=fila, column=6, value=carga.carro.conductor)
             hoja.cell(row=fila, column=7, value=carga.carro.auxiliar)
-            municipio = carga.carro.municipio.nombre if carga.carro.municipio else None
-            hoja.cell(row=fila, column=8, value=municipio)
+            # CIUDAD lleva el destino REAL, como en el archivo de Julián: las rutas
+            # viajeras balancean en el pool OTROS pero van a MUZO o VILLA DELEYVA, y
+            # facturación necesita leer eso, no el nombre del pool.
+            pool = carga.carro.municipio.nombre if carga.carro.municipio else None
+            hoja.cell(row=fila, column=8, value=carga.carro.municipio_real or pool)
             zonas = ", ".join(sorted(zona.zona.nombre for zona in carga.zonas))
             hoja.cell(row=fila, column=9, value=zonas)
         _ajustar_anchos(

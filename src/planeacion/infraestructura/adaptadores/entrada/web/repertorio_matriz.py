@@ -11,7 +11,7 @@ from collections.abc import Collection, Mapping, Sequence
 from dataclasses import dataclass
 
 from planeacion.application.puertos.salida.repositorios import ParRepertorio, RepositorioCarroZonas
-from planeacion.domain.modelo import Carro, Zona
+from planeacion.domain.modelo import Carro, Zona, clave_orden_carro
 from planeacion.infraestructura.adaptadores.entrada.web.tablas import normalizar
 
 TODOS = "Todos"
@@ -69,8 +69,8 @@ def zonas_visibles(zonas: Sequence[Zona], repertorio: Repertorio, filtro: Filtro
     return sorted(visibles, key=lambda z: (z.municipio.nombre, z.nombre))
 
 
-def _orden_carro(carro: Carro) -> tuple[int, str]:
-    return (len(carro.numero), carro.numero)
+def _orden_carro(carro: Carro) -> tuple[int, int, str]:
+    return clave_orden_carro(carro.numero)
 
 
 def carros_visibles(
@@ -156,7 +156,7 @@ def resumen_de_frecuencias(nombre_zona: str, repertorio: Repertorio, frecuencias
     """
     marcados = sorted(
         (numero for numero, zonas in repertorio.items() if nombre_zona in zonas),
-        key=lambda n: (len(n), n),
+        key=clave_orden_carro,
     )
     if not marcados:
         return ""
@@ -195,7 +195,7 @@ def cambios_para_copiar(origen: Repertorio, destino: Repertorio) -> list[CambioC
     """
     numeros = set(origen) | set(destino)
     cambios: list[CambioCelda] = []
-    for numero in sorted(numeros, key=lambda n: (len(n), n)):
+    for numero in sorted(numeros, key=clave_orden_carro):
         permitidas_origen = set(origen.get(numero, set()))
         permitidas_destino = set(destino.get(numero, set()))
         for zona in sorted(permitidas_origen - permitidas_destino):

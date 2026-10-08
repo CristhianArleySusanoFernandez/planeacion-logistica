@@ -23,12 +23,16 @@ carro (p. ej. RAQUIRA, de OTROS, viaja en el carro 2 de Chiquinquirá); si ning�
 carro activo la permite queda en ``zonas_sin_carro``. Con repertorio vacío
 (base sin configurar) todo funciona como antes.
 
-Convención de la regla dura de Chiquinquirá: el PRIMER carro del pool del
-municipio (en el orden recibido) es el "sur" y el SEGUNDO el "norte"; esta
-regla prevalece sobre el repertorio. La convención es posicional porque la
-flota no guarda una marca sur/norte por carro: mientras no exista esa columna,
-el orden estable por número que arma el caso de uso es lo que fija cuál es
-cuál (en los datos reales calza: la ruta 1 es "RUTA SUR" y la 2 "RUTA 1 NORTE").
+Regla dura de Chiquinquirá: una zona del sur solo puede caer en una ruta del
+sur, y lo mismo el norte. El lado es un DATO de la ruta (``carro.lado_chiquinquira``,
+que sale de su zona principal en la hoja BASE), no una posición en el pool: el
+municipio tiene cuatro rutas —1 y 2 al sur, 3 y 4 al norte— y la regla aplica al
+par de cada lado. Entre las rutas del lado correcto deciden el repertorio y el
+balance, que es lo que hace el resto del servicio; medido sobre septiembre y
+octubre de 2026, el lado se respeta en 81 de 93 asignaciones pero el reparto
+dentro del lado se mueve todo el tiempo. La regla prevalece sobre el repertorio.
+Si ninguna ruta del pool trae lado (base sin configurar), no hay regla que
+aplicar y manda el balance, como con el repertorio vacío.
 """
 
 from collections.abc import Callable, Mapping, Sequence
@@ -40,7 +44,6 @@ from planeacion.domain.modelo import (
     CargaCarro,
     Carro,
     MetricasDesbalance,
-    ReglaChiquinquira,
     ReglasBalanceo,
     ResultadoBalanceo,
     ZonaAgregada,
@@ -108,8 +111,17 @@ def calcular_costo(
     return costo
 
 
-def _esta_fijada(zona: ZonaAgregada) -> bool:
-    return zona.zona.regla_chiquinquira is not None
+def _lado_compatible(zona: ZonaAgregada, carro: Carro) -> bool:
+    """¿Puede esta zona caer en esta ruta sin romper la regla de Chiquinquirá?
+
+    Las dos puertas de escape son deliberadas: una zona sin lado (todo lo que no
+    es Chiquinquirá) va a donde sea, y una ruta sin lado configurado acepta todo,
+    para que una base a medio configurar no se quede sin reparto.
+    """
+    lado_zona = zona.zona.regla_chiquinquira
+    if lado_zona is None or carro.lado_chiquinquira is None:
+        return True
+    return carro.lado_chiquinquira is lado_zona
 
 
 class Balanceador:
@@ -145,7 +157,7 @@ class Balanceador:
                 )
             cargas, uso_previa = self._inicializar(zonas, carros, asignacion_previa, repertorio_limpio)
             desde_historico = desde_historico or uso_previa
-            self._aplicar_reglas_duras(cargas)
+            self._aplicar_reglas_duras(cargas, repertorio_limpio)
             metricas_iniciales[municipio] = calcular_metricas(municipio, cargas)
             self._mejorar(cargas, reglas, repertorio_limpio, penalizaciones)
             metricas_finales[municipio] = calcular_metricas(municipio, cargas)
@@ -249,20 +261,32 @@ class Balanceador:
 
         return cargas, uso_previa
 
-    def _aplicar_reglas_duras(self, cargas: list[CargaCarro]) -> None:
-        """Chiquinquirá: SUR → 1er carro del pool, NORTE → 2º (convención documentada arriba)."""
+    def _aplicar_reglas_duras(self, cargas: list[CargaCarro], repertorio: Repertorio) -> None:
+        """Chiquinquirá: devuelve al lado correcto las zonas que cayeron del otro.
+
+        Solo corrige lo que está mal; una zona que ya está en una ruta de su lado
+        no se mueve, y el reparto dentro del lado lo sigue decidiendo ``_mejorar``.
+        Entre las rutas candidatas elige la menos cargada que además tenga la zona
+        en su repertorio, y si ninguna la tiene, la menos cargada del lado: la
+        regla dura prevalece sobre el repertorio, no al revés.
+        """
         if len(cargas) < 2:
-            return  # con un solo carro no hay a dónde forzar
-        destino_por_regla = {ReglaChiquinquira.SUR: cargas[0], ReglaChiquinquira.NORTE: cargas[1]}
+            return  # con una sola ruta no hay a dónde forzar
         for carga in cargas:
             for zona in list(carga.zonas):
-                regla = zona.zona.regla_chiquinquira
-                if regla is None:
+                if _lado_compatible(zona, carga.carro):
                     continue
-                objetivo = destino_por_regla[regla]
-                if objetivo is not carga:
-                    carga.quitar(zona.zona.nombre)
-                    objetivo.agregar(zona)
+                candidatas = [otra for otra in cargas if _lado_compatible(zona, otra.carro)]
+                if not candidatas:
+                    continue  # el lado no existe en este pool: mejor dejarla donde está
+                con_repertorio = [
+                    otra
+                    for otra in candidatas
+                    if zona_permitida(repertorio, zona.zona.nombre, otra.carro.numero)
+                ]
+                objetivo = min(con_repertorio or candidatas, key=lambda c: (c.pesos, c.clientes))
+                carga.quitar(zona.zona.nombre)
+                objetivo.agregar(zona)
 
     def _mejorar(
         self,
@@ -294,7 +318,7 @@ class Balanceador:
                 if origen is destino:
                     continue
                 for zona in list(origen.zonas):
-                    if _esta_fijada(zona):
+                    if not _lado_compatible(zona, destino.carro):
                         continue
                     permitida_en_destino = zona_permitida(repertorio, zona.zona.nombre, destino.carro.numero)
                     # Probar mover la zona de A a B (y revertir).
@@ -306,7 +330,7 @@ class Balanceador:
                     # Probar intercambios solo en una dirección (A<B) para no evaluar doble.
                     if indice_a < indice_b and permitida_en_destino:
                         for zona_b in list(destino.zonas):
-                            if _esta_fijada(zona_b) or not zona_permitida(
+                            if not _lado_compatible(zona_b, origen.carro) or not zona_permitida(
                                 repertorio, zona_b.zona.nombre, origen.carro.numero
                             ):
                                 continue
@@ -382,6 +406,7 @@ class AjustadorDeAsignacion:
     Sin repertorio configurado rige la regla clásica (solo carros del mismo
     municipio); con repertorio, el destino válido es cualquier carro de la
     planeación que tenga la zona permitida (incluye a las viajeras cruzadas).
+    Una zona de Chiquinquirá sí se puede mover, pero solo entre rutas de su lado.
     """
 
     def mover(self, resultado: ResultadoBalanceo, nombre_zona: str, numero_carro: str) -> ResultadoBalanceo:
@@ -391,11 +416,11 @@ class AjustadorDeAsignacion:
         if encontrado is None:
             raise MovimientoInvalido(f"el carro {numero_carro} no está en la planeación")
         municipio_destino, destino = encontrado
-        if _esta_fijada(zona):
+        if not _lado_compatible(zona, destino.carro):
             regla = zona.zona.regla_chiquinquira
             raise MovimientoInvalido(
-                f"{nombre_zona} tiene regla dura de Chiquinquirá ({regla.value if regla else '?'}) "
-                "y no se puede mover"
+                f"{nombre_zona} es del {regla.value if regla else '?'} de Chiquinquirá y el carro "
+                f"{numero_carro} reparte del otro lado (regla dura)"
             )
         if destino is origen:
             raise MovimientoInvalido(f"{nombre_zona} ya está en el carro {numero_carro}")

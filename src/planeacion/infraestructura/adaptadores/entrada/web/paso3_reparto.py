@@ -18,7 +18,9 @@ from planeacion.domain.modelo import (
     UMBRAL_CV_ATENCION,
     CargaCarro,
     MetricasDesbalance,
+    clave_orden_carro,
 )
+from planeacion.domain.servicios.agrupacion_por_conductor import agrupar_por_conductor
 from planeacion.infraestructura.adaptadores.entrada.web import estado, estilos
 
 
@@ -52,6 +54,8 @@ def mostrar(contenedor: Contenedor) -> None:
         )
 
     _resumen_balance(resultado.metricas_iniciales, resultado.metricas_finales, resultado.cargas_por_municipio)
+
+    _resumen_por_conductor(resultado.cargas_por_municipio)
 
     municipios = sorted(resultado.cargas_por_municipio)
     for tab, municipio in zip(st.tabs(municipios), municipios, strict=True):
@@ -142,6 +146,35 @@ def _resumen_balance(
     )
 
 
+def _resumen_por_conductor(cargas_por_municipio: dict[str, list[CargaCarro]]) -> None:
+    """Lo mismo que el reparto, visto por quien maneja.
+
+    El balanceador reparte por ruta, que es la unidad real, pero un conductor con
+    dos rutas (`FABIAN 1` y `FABIAN 2`) puede tenerlas parejas entre sí y cargar
+    el doble que el resto; en la tabla por ruta eso no se ve.
+    """
+    cargas = [carga for lista in cargas_por_municipio.values() for carga in lista]
+    agrupadas = agrupar_por_conductor(cargas)
+    if len(agrupadas) == len(cargas):
+        return  # un conductor por ruta: la tabla no agregaría nada
+    with st.expander(f"Resumen por conductor ({len(agrupadas)} conductores, {len(cargas)} rutas)"):
+        estilos.tabla_marca(
+            ["Conductor", "Rutas", "Facturas", "Clientes", "Pesos", "Kilos"],
+            [
+                [
+                    grupo.conductor,
+                    " + ".join(grupo.rutas),
+                    f"{grupo.facturas:,}",
+                    f"{grupo.clientes:,}",
+                    f"${grupo.pesos:,.0f}",
+                    f"{grupo.kilos:,.0f}",
+                ]
+                for grupo in agrupadas
+            ],
+            numericas=("Facturas", "Clientes", "Pesos", "Kilos"),
+        )
+
+
 def _mostrar_municipio(municipio: str, cargas: list[CargaCarro], planeacion: PlaneacionCompleta) -> None:
     for carga in cargas:
         _mostrar_carga(municipio, carga, cargas, planeacion)
@@ -202,7 +235,7 @@ def _destinos_para(
         for c in candidatas
         if c is not origen and resultado.carro_permite(c.carro.numero, nombre_zona)
     ]
-    return sorted(numeros, key=lambda n: (len(n), n))
+    return sorted(numeros, key=clave_orden_carro)
 
 
 def _controles_mover(

@@ -5,7 +5,13 @@ from decimal import Decimal
 import pytest
 
 from planeacion.domain.errores import SinCarrosParaMunicipio
-from planeacion.domain.modelo import Carro, ReglasBalanceo, ResultadoBalanceo, ZonaAgregada
+from planeacion.domain.modelo import (
+    Carro,
+    ReglaChiquinquira,
+    ReglasBalanceo,
+    ResultadoBalanceo,
+    ZonaAgregada,
+)
 from planeacion.domain.servicios.balanceador import Balanceador
 from planeacion.domain.servicios.parseo_zonas import crear_zona
 
@@ -80,24 +86,44 @@ def test_previa_que_no_casa_nada_equivale_a_arrancar_de_cero() -> None:
     assert resultado.desde_historico is False
 
 
-def test_reglas_duras_fijan_sur_al_primer_carro_y_norte_al_segundo() -> None:
+def test_la_regla_dura_de_chiquinquira_encierra_cada_zona_en_su_lado() -> None:
+    """Dos rutas al sur y una al norte: el sur se reparte entre las suyas y la
+    zona norte no se mueve de la ruta norte, aunque el balance lo pidiera."""
     zonas = [
         _zona("(CHIQUINQUIRA):  CHIQUIN RUTA SUR 1", 80, "800"),
         _zona("(CHIQUINQUIRA):  CHIQUIN RUTA SUR 2", 70, "700"),
         _zona("(CHIQUINQUIRA):  CHIQUIN NORTE 1", 5, "50"),
     ]
-    # Con muchas iteraciones: aunque mover el SUR al carro vacío mejoraría el
-    # balance, la regla dura lo prohíbe.
-    resultado = Balanceador().balancear(
-        zonas, {"CHIQUINQUIRA": _carros("820", "985", "986")}, None, ReglasBalanceo()
-    )
+    carros = [
+        Carro(numero="1", lado_chiquinquira=ReglaChiquinquira.SUR),
+        Carro(numero="2", lado_chiquinquira=ReglaChiquinquira.SUR),
+        Carro(numero="3", lado_chiquinquira=ReglaChiquinquira.NORTE),
+    ]
 
-    assert _zonas_de(resultado, "CHIQUINQUIRA", "820") == {
+    resultado = Balanceador().balancear(zonas, {"CHIQUINQUIRA": carros}, None, ReglasBalanceo())
+
+    # La zona norte se queda sola en la ruta norte: mover una SUR ahí bajaría el
+    # CV (150 clientes contra 5) y la regla dura es lo único que lo impide.
+    assert _zonas_de(resultado, "CHIQUINQUIRA", "3") == {"(CHIQUINQUIRA): CHIQUIN NORTE 1"}
+    # Y las dos del sur quedan una en cada ruta del sur: ahí sí manda el balance.
+    assert _zonas_de(resultado, "CHIQUINQUIRA", "1") | _zonas_de(resultado, "CHIQUINQUIRA", "2") == {
         "(CHIQUINQUIRA): CHIQUIN RUTA SUR 1",
         "(CHIQUINQUIRA): CHIQUIN RUTA SUR 2",
     }
-    assert _zonas_de(resultado, "CHIQUINQUIRA", "985") == {"(CHIQUINQUIRA): CHIQUIN NORTE 1"}
-    assert _zonas_de(resultado, "CHIQUINQUIRA", "986") == set()
+    assert _zonas_de(resultado, "CHIQUINQUIRA", "1") != _zonas_de(resultado, "CHIQUINQUIRA", "2")
+
+
+def test_sin_lado_configurado_en_la_flota_no_hay_regla_dura_que_aplicar() -> None:
+    """Base a medio configurar: sin lado en las rutas manda el balance, igual que
+    con el repertorio vacío. Es la puerta de escape, no el caso normal."""
+    zonas = [
+        _zona("(CHIQUINQUIRA):  CHIQUIN RUTA SUR 1", 80, "800"),
+        _zona("(CHIQUINQUIRA):  CHIQUIN RUTA SUR 2", 70, "700"),
+    ]
+
+    resultado = Balanceador().balancear(zonas, {"CHIQUINQUIRA": _carros("1", "2")}, None, ReglasBalanceo())
+
+    assert _zonas_de(resultado, "CHIQUINQUIRA", "1") and _zonas_de(resultado, "CHIQUINQUIRA", "2")
 
 
 def test_la_mejora_baja_el_cv_de_un_reparto_muy_desbalanceado() -> None:

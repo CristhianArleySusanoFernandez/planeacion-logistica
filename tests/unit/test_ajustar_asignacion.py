@@ -5,7 +5,13 @@ from decimal import Decimal
 import pytest
 
 from planeacion.domain.errores import MovimientoInvalido
-from planeacion.domain.modelo import Carro, ReglasBalanceo, ResultadoBalanceo, ZonaAgregada
+from planeacion.domain.modelo import (
+    Carro,
+    ReglaChiquinquira,
+    ReglasBalanceo,
+    ResultadoBalanceo,
+    ZonaAgregada,
+)
 from planeacion.domain.servicios.balanceador import AjustadorDeAsignacion, Balanceador
 from planeacion.domain.servicios.parseo_zonas import crear_zona
 
@@ -33,7 +39,13 @@ def _resultado() -> ResultadoBalanceo:
     carros = {
         "TUNJA": [Carro(numero="t1"), Carro(numero="t2")],
         "BARBOSA": [Carro(numero="b1"), Carro(numero="b2")],
-        "CHIQUINQUIRA": [Carro(numero="c1"), Carro(numero="c2")],
+        # Dos rutas al sur y una al norte, como la Chiquinquirá real (1 y 2 sur,
+        # 3 y 4 norte): la regla dura es por lado, no por ruta.
+        "CHIQUINQUIRA": [
+            Carro(numero="c1", lado_chiquinquira=ReglaChiquinquira.SUR),
+            Carro(numero="c2", lado_chiquinquira=ReglaChiquinquira.SUR),
+            Carro(numero="c3", lado_chiquinquira=ReglaChiquinquira.NORTE),
+        ],
     }
     return Balanceador().balancear(zonas, carros, None, SIN_MEJORA)
 
@@ -64,11 +76,26 @@ def test_mover_a_un_carro_de_otro_municipio_es_invalido() -> None:
         AjustadorDeAsignacion().mover(resultado, "(TUNJA): NIEVES", "b1")
 
 
-def test_mover_una_zona_con_regla_dura_es_invalido() -> None:
+def test_mover_una_zona_al_otro_lado_de_chiquinquira_es_invalido() -> None:
     resultado = _resultado()
 
     with pytest.raises(MovimientoInvalido, match="regla dura"):
-        AjustadorDeAsignacion().mover(resultado, "(CHIQUINQUIRA): CHIQUIN SUR 1", "c2")
+        AjustadorDeAsignacion().mover(resultado, "(CHIQUINQUIRA): CHIQUIN SUR 1", "c3")
+
+
+def test_mover_una_zona_entre_rutas_del_mismo_lado_si_se_puede() -> None:
+    """La regla fija el lado, no la ruta: dentro del sur el movimiento es válido."""
+    resultado = _resultado()
+    origen = next(
+        c.carro.numero
+        for c in resultado.cargas_por_municipio["CHIQUINQUIRA"]
+        if "(CHIQUINQUIRA): CHIQUIN SUR 1" in {z.zona.nombre for z in c.zonas}
+    )
+    destino = "c2" if origen == "c1" else "c1"
+
+    AjustadorDeAsignacion().mover(resultado, "(CHIQUINQUIRA): CHIQUIN SUR 1", destino)
+
+    assert "(CHIQUINQUIRA): CHIQUIN SUR 1" in _carga_de(resultado, "CHIQUINQUIRA", destino)
 
 
 def test_mover_una_zona_inexistente_es_invalido() -> None:

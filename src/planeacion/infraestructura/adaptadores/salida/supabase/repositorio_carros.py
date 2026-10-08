@@ -7,11 +7,14 @@ from typing import Any
 from postgrest.types import CountMethod
 from supabase import Client
 
-from planeacion.domain.modelo import Carro, Municipio
+from planeacion.domain.modelo import Carro, Municipio, ReglaChiquinquira, clave_orden_carro
 from planeacion.infraestructura.adaptadores.salida.supabase._filas import como_filas
 
 TABLA = "carros"
-_COLUMNAS = "numero, conductor, placa, auxiliar, es_externo, costo_diario, activo, municipios(nombre)"
+_COLUMNAS = (
+    "numero, conductor, placa, auxiliar, es_externo, costo_diario, activo, "
+    "conductor_clave, municipio_real, lado_chiquinquira, municipios(nombre)"
+)
 
 
 def a_fila(carro: Carro, ids_municipios: Mapping[str, int]) -> dict[str, Any]:
@@ -26,6 +29,9 @@ def a_fila(carro: Carro, ids_municipios: Mapping[str, int]) -> dict[str, Any]:
         # str porque Decimal no es serializable a JSON; Postgres lo castea a numeric.
         "costo_diario": str(carro.costo_diario),
         "activo": carro.activo,
+        "conductor_clave": carro.conductor_clave,
+        "municipio_real": carro.municipio_real,
+        "lado_chiquinquira": carro.lado_chiquinquira.value if carro.lado_chiquinquira else None,
     }
 
 
@@ -40,6 +46,9 @@ def desde_fila(fila: dict[str, Any]) -> Carro:
         es_externo=fila["es_externo"],
         costo_diario=Decimal(str(fila["costo_diario"])),
         activo=fila["activo"],
+        conductor_clave=fila.get("conductor_clave"),
+        municipio_real=fila.get("municipio_real"),
+        lado_chiquinquira=ReglaChiquinquira(lado) if (lado := fila.get("lado_chiquinquira")) else None,
     )
 
 
@@ -54,8 +63,11 @@ class RepositorioCarrosSupabase:
         return len(filas)
 
     def listar(self) -> list[Carro]:
-        respuesta = self._cliente.table(TABLA).select(_COLUMNAS).order("numero").execute()
-        return [desde_fila(fila) for fila in como_filas(respuesta.data)]
+        # El orden lo pone el dominio y no Postgres: `numero` es texto, así que
+        # order("numero") devolvería 1, 10, 11, 2 en vez de 1, 2, 10, 11.
+        respuesta = self._cliente.table(TABLA).select(_COLUMNAS).execute()
+        carros = [desde_fila(fila) for fila in como_filas(respuesta.data)]
+        return sorted(carros, key=lambda carro: clave_orden_carro(carro.numero))
 
     def actualizar_carro(self, carro: Carro) -> None:
         ids_municipios = self._ids_municipios()

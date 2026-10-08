@@ -26,9 +26,16 @@ from planeacion.domain.modelo import (
     CorreccionUbicacion,
     Municipio,
     OverrideZona,
+    ReglaChiquinquira,
     Zona,
+    clave_conductor,
 )
-from planeacion.domain.servicios.parseo_zonas import crear_zona, normalizar_nombre_zona
+from planeacion.domain.servicios.parseo_zonas import (
+    crear_zona,
+    detectar_regla_chiquinquira,
+    normalizar_nombre_zona,
+    parsear_municipio,
+)
 from planeacion.infraestructura.adaptadores.salida.excel.lector_referencia import (
     HOJA_BASE,
     HOJA_CAMBIOS,
@@ -45,7 +52,9 @@ _MAPEO_DECLARADO = {
     HOJA_MAESTRA: "A=Codigo  B=Direccion  C=Codigo_Postal  D=Ciudad  E=Barrio  F=RUTA (zona)",
     HOJA_CAMBIOS: "A=Codigo  F=Ciudad Real  G=Barrio Real",
     HOJA_OVERRIDES: "A=Codigo  H=Zona forzada (sin encabezado)",
-    HOJA_BASE: "bloque 2 (desde la fila 'Ruta'): A=Ruta  B=Facturas  F=CONDUCTOR  G=AUX  H=CIUDAD",
+    HOJA_BASE: (
+        "bloque 2 (desde la fila 'Ruta'): A=Ruta  B=Facturas  F=CONDUCTOR  G=AUX  H=CIUDAD  I=zona principal"
+    ),
 }
 
 # Rutas de reparto (bloque 2 de BASE): la flota son las rutas fijas 1..18. La 18
@@ -82,6 +91,19 @@ def _municipio_de_ciudad(ciudad: str | None) -> Municipio:
     return Municipio(nombre=MUNICIPIO_OTROS)
 
 
+def _lado_de_la_ruta(zona_principal: str | None) -> ReglaChiquinquira | None:
+    """De qué lado de Chiquinquirá reparte la ruta, leído de su zona principal.
+
+    El nombre de la zona lo dice ("... RUTA SUR 4", "CHIQUIN RUTA 1 NORTE") y es
+    el mismo parseo que usan las zonas, así que ruta y zona no pueden discrepar.
+    Fuera de Chiquinquirá devuelve None y la regla dura no aplica.
+    """
+    if not zona_principal:
+        return None
+    nombre = normalizar_nombre_zona(zona_principal)
+    return detectar_regla_chiquinquira(nombre, parsear_municipio(nombre))
+
+
 def _construir_carros(rutas_crudas: list[FilaRutaBase]) -> list[Carro]:
     carros: list[Carro] = []
     for fila in rutas_crudas:
@@ -98,6 +120,9 @@ def _construir_carros(rutas_crudas: list[FilaRutaBase]) -> list[Carro]:
                 es_externo=es_externa,
                 costo_diario=_COSTO_RUTA_EXTERNA if es_externa else Decimal("0"),
                 activo=fila.facturas > 0,
+                conductor_clave=clave_conductor(fila.conductor),
+                municipio_real=fila.ciudad,
+                lado_chiquinquira=_lado_de_la_ruta(fila.zona_principal),
             )
         )
     return carros

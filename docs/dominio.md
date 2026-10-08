@@ -27,21 +27,40 @@ pueda revisarlo y ajustarlo.
   el formato `(MUNICIPIO):  NOMBRE`, por ejemplo `(BARBOSA):  BARBOSA-PUENTE`.
 - **Municipio**: el prefijo de la zona. Los principales son `BARBOSA`, `CHIQUINQUIRA`, `TUNJA`. Las zonas sin
   prefijo (rutas "viajeras" o sueltas como `VILLA DE LEYVA`, `RUTA MUZO`) se agrupan en un municipio especial
-  llamado `OTROS`.
-- **Carro**: vehículo de reparto. Son **17 carros fijos**, cada uno con conductor, placa y auxiliar. Cada
-  carro pertenece a un municipio (a un "pool" de carros que atiende ese municipio).
+  llamado `OTROS`. Las rutas **8 a 13** son las viajeras: su `municipio` es `OTROS` —ese es el pool con el
+  que se balancean— y `municipio_real` conserva el destino de verdad (`MUZO`, `FLORIAN`, `GARAGOA`,
+  `MIRAFLORES`, `VILLA DELEYVA`), que es lo que va a la columna CIUDAD de la hoja `BASE` de salida.
+  Municipio por ruta, constante en los 15 archivos de septiembre–octubre de 2026: 1–4 CHIQUINQUIRA,
+  5–7 BARBOSA, 8 MUZO, 9 FLORIAN, 10 GARAGOA, 11 MIRAFLORES, 12–13 VILLA DELEYVA, 14–22 TUNJA.
+- **Carro / ruta**: la unidad de reparto. Son **22 rutas**, numeradas 1–22 con numeración estable, cada
+  una con conductor, auxiliar y municipio (el "pool" con el que se balancea). Un mismo conductor puede
+  llevar **dos rutas** con el mismo vehículo y el mismo auxiliar, y el sufijo numérico del nombre es lo
+  que las distingue: `FABIAN 1`/`FABIAN 2` (rutas 1 y 2), `ANGELICA ARIAS 1`/`2` (3 y 4), `RAUL 1`/`2`
+  (12 y 13), `JAIRO GARZON 1`/`2` (14 y 15), `CARLOS 1`/`2` (16 y 17). `conductor` guarda el nombre
+  completo (es lo que espera facturación) y `conductor_clave` el nombre sin el sufijo, que es con lo que
+  se vuelven a juntar las rutas de una persona (`agrupar_por_conductor`, el resumen del Paso 3).
 - **Pedido / Factura**: una orden de un cliente. Un pedido tiene **varias líneas** (una por producto).
 - **Planeación**: el trabajo diario. Consiste en **repartir las zonas del día entre los carros del
   municipio**, buscando que los carros queden **balanceados en cantidad de clientes y en plata (pesos)**.
 
 ### Reglas de negocio (importantes)
 
-1. **Chiquinquirá** usa 2 carros: las zonas "sur" van al **carro 1** y las "norte" al **carro 2** (regla dura).
+1. **Chiquinquirá** usa 4 rutas y la regla dura es por **lado**, no por ruta: una zona del sur solo puede
+   caer en una ruta del sur (hoy `{1, 2}`) y una del norte en una del norte (`{3, 4}`). El lado de la
+   zona se lee de su nombre (`RUTA SUR 4`, `CHIQUIN RUTA 1 NORTE`) y el de la ruta sale de su zona
+   principal en la hoja `BASE`, guardado en `carros.lado_chiquinquira`; es un dato de la ruta y no una
+   posición en el pool. **Entre las rutas del lado correcto deciden el repertorio y el balance.** Medido
+   sobre los 15 archivos de septiembre–octubre de 2026, el lado se respeta en 81 de 93 asignaciones (las
+   rutas 3 y 4 atendieron 11 zonas del sur y la 1 una del norte), así que no se puede fijar la ruta: eso
+   vaciaría las rutas 3 y 4, que es lo que hacía la versión posicional anterior. Si ninguna ruta del pool
+   trae lado configurado, no hay regla que aplicar y manda el balance.
 2. **Barbosa** usa ~3 carros; no hay regla explícita de geografía, se hereda de la planeación de la semana
    pasada (cercanía aprendida).
-3. **Tunja** usa varios carros e incluye un **carro externo (nº 16)** que cuesta **$160.000/día**. Si al
-   repartir un carro queda con pocos clientes, hay que evaluar **no prender el 16** y repartir esa carga al
-   carro 13 (propio). Esta decisión de costo la toma finalmente Rudy, pero la app la recomienda.
+3. **Tunja** usa varias rutas (14–22). Hasta agosto de 2026 incluía un **carro externo (nº 16)** que
+   costaba **$160.000/día** y había que evaluar no prenderlo; en la operación de octubre de 2026 **no hay
+   carro externo** (la 16 es `CARLOS 1`, propia) y las tres apariciones de una ruta 23 en los archivos son
+   refuerzos puntuales, no un externo recurrente. La flota conserva `es_externo` y `costo_diario` porque
+   la figura puede volver, pero hoy están en `false` y `0` en las 22 rutas.
 4. **Ciclo semanal**: la planeación de un día se parece mucho a la del **mismo día de la semana anterior**.
    Por eso el motor de balanceo arranca ("warm-start") desde la planeación del mismo día de semana previa.
 5. **Repertorio de zonas por carro y día** (tabla `carro_zonas`, migraciones 002 y 003): cada carro solo
@@ -62,6 +81,15 @@ pueda revisarlo y ajustarlo.
    > puntos donde ya respetaba el repertorio (reparto inicial, warm-start, movimientos, intercambios)
    > y `AjustadorDeAsignacion` —que valida contra el `repertorio` que viaja dentro de
    > `ResultadoBalanceo`— pasaron a respetar el del día sin cambiar una línea.
+
+   > **Resembrado en octubre de 2026.** La numeración de las rutas cambió de significado
+   > (la 13 era de Tunja y hoy es Villa de Leyva; la 16 era el carro externo y hoy es
+   > `CARLOS 1`, propia), así que ningún par viejo seguía siendo válido: el repertorio se
+   > **vació** —respaldado antes a `salidas/carro_zonas_respaldo_<fecha>.csv` con
+   > `planeacion-sembrar-repertorio --vaciar`— y se resembró desde los 16 archivos de
+   > septiembre–octubre de 2026. Quedaron **647 pares** con frecuencia ≥ 1 y ninguno en 0:
+   > lunes 117, martes 103, miércoles 93, jueves 98, viernes 111, sábado 125. Las filas de
+   > la ruta 23 (refuerzos puntuales, no flota) se descartan y se reportan.
 
    > La columna `frecuencia` cuenta cuántas veces se observó el par en el histórico: `0` es "puesto a
    > mano, nunca visto", y un `1` suele ser un reemplazo puntual más que una regla. Es información
@@ -156,11 +184,20 @@ Es un `.xlsx` con una hoja llamada `Hoja1`. Tiene **una fila por línea de produ
 productos ocupa 5 filas). Columnas relevantes:
 
 > **Extensiones aceptadas.** El mismo export llega a veces como `.xlsm` (el mismo OOXML, solo que
-> guardado desde un libro con macros) o como `.xls` (el binario BIFF anterior a 2007, típico de
-> "Guardar como" en Excel viejo). Los tres se cargan igual: `LectorEcomExcel` abre los dos primeros
-> con openpyxl y traduce el tercero con `xlrd` a un libro en memoria
-> (`lector_ecom_xls.abrir_xls_como_libro`) antes de pasarlo al mismo mapeo de columnas. Ni el nombre
-> ni la cantidad de hojas importan: la hoja se elige por su encabezado.
+> guardado desde un libro con macros) o como `.xls`. Todos se cargan igual: `LectorEcomExcel` abre
+> los OOXML con openpyxl y traduce los demás a un libro en memoria antes de pasarlos al mismo mapeo
+> de columnas. Ni el nombre ni la cantidad de hojas importan: la hoja se elige por su encabezado.
+>
+> **Un `.xls` son dos formatos distintos y se decide por el contenido, no por el nombre.** Puede ser
+> el binario BIFF anterior a 2007 (típico de "Guardar como" en Excel viejo), que traduce
+> `lector_ecom_xls` con `xlrd`; o —y esto es lo que descarga hoy la empresa del portal— una **tabla
+> HTML con la extensión cambiada**, que arranca con
+> `<html xmlns:o="urn:schemas-microsoft-com:office:office">` y traduce `lector_ecom_html` con
+> `html.parser` de la stdlib. Excel abre las dos sin chistar, así que la diferencia no se nota hasta
+> que falla: `xlrd` muere con *"Expected BOF record; found b'				<htm'"*. El HTML trae una sola
+> `<table>` con las 38 columnas de siempre, las fechas en ISO y los totales y kilos como texto —el
+> mismo material que el bloque pegado—, declara `charset=us-ascii` mintiendo (los bytes son cp1252)
+> y no usa `rowspan`. De haber varias tablas se toma la que más filas tiene: la de datos.
 
 | Col | Campo        | Uso                                                           |
 |-----|--------------|---------------------------------------------------------------|
@@ -233,8 +270,11 @@ Mapeo esperado:
   ... | CIUDAD`): son las **rutas de reparto 1–18** que usan Rudy y facturación, con conductor,
   auxiliar y municipio deducido de CIUDAD (lo que no es Barbosa/Chiquinquirá/Tunja → OTROS). La ruta
   **16** es el carro externo (`es_externo = true`, `costo_diario = 160000`) y la **18** un refuerzo
-  esporádico (`activo = false` si no facturó). El bloque 1 de la hoja (vehículos físicos con código y
-  placa) NO se siembra; el cruce ruta↔vehículo está en `docs/mapeo-vehiculos-rutas.md`.
+  esporádico (`activo = false` si no facturó). La columna **I** (sin encabezado) trae la **zona
+  principal** de la ruta, de donde se lee el lado de Chiquinquirá. El bloque 1 de la hoja (vehículos
+  físicos con código y placa) NO se siembra; el cruce ruta↔vehículo está en
+  `docs/mapeo-vehiculos-rutas.md`. **Ojo con los archivos de octubre de 2026**: ahí el bloque 1 está
+  desactualizado y sus conductores no coinciden con el bloque 2, así que no sirve ni para la placa.
 
 Hojas del Excel que **NO** se migran (son solo andamiaje de fórmulas que la app hará internamente):
 `INFORMACIÓN DE LA MAESTRA`, `DN BARRIOS`, `cta cliente`, `Copia_PLANEACION`. Las hojas

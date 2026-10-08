@@ -15,8 +15,21 @@ from planeacion.infraestructura.adaptadores.salida.excel.lector_referencia impor
 )
 
 
-def _fila(numero: str, facturas: int, ciudad: str | None = "TUNJA") -> FilaRutaBase:
-    return FilaRutaBase(numero=numero, facturas=facturas, conductor="ALGUIEN", auxiliar=None, ciudad=ciudad)
+def _fila(
+    numero: str,
+    facturas: int,
+    ciudad: str | None = "TUNJA",
+    conductor: str | None = "ALGUIEN",
+    zona_principal: str | None = None,
+) -> FilaRutaBase:
+    return FilaRutaBase(
+        numero=numero,
+        facturas=facturas,
+        conductor=conductor,
+        auxiliar=None,
+        ciudad=ciudad,
+        zona_principal=zona_principal,
+    )
 
 
 def test_municipio_se_deduce_de_la_ciudad() -> None:
@@ -27,6 +40,43 @@ def test_municipio_se_deduce_de_la_ciudad() -> None:
     assert _municipio_de_ciudad("MUZO").nombre == "OTROS"
     assert _municipio_de_ciudad("VILLA DELEYVA").nombre == "OTROS"
     assert _municipio_de_ciudad(None).nombre == "OTROS"
+
+
+def test_la_ciudad_real_se_conserva_aunque_el_pool_sea_otros() -> None:
+    """Las viajeras balancean en OTROS, pero el destino real no se pierde: la hoja
+    BASE que lee facturación lo necesita y la flota en pantalla sin él es ilegible."""
+    carros = _construir_carros([_fila("8", 75, ciudad="MUZO"), _fila("12", 37, ciudad="VILLA DELEYVA")])
+
+    assert [(c.municipio.nombre if c.municipio else None, c.municipio_real) for c in carros] == [
+        ("OTROS", "MUZO"),
+        ("OTROS", "VILLA DELEYVA"),
+    ]
+
+
+def test_las_rutas_de_un_mismo_conductor_quedan_con_la_misma_clave() -> None:
+    carros = _construir_carros([_fila("1", 37, conductor="FABIAN 1"), _fila("2", 48, conductor="FABIAN 2")])
+
+    assert [c.conductor for c in carros] == ["FABIAN 1", "FABIAN 2"]
+    assert [c.conductor_clave for c in carros] == ["FABIAN", "FABIAN"]
+
+
+def test_el_lado_de_chiquinquira_sale_de_la_zona_principal_de_la_ruta() -> None:
+    """Es el mismo parseo que usan las zonas, así que ruta y zona no discrepan."""
+    carros = _construir_carros(
+        [
+            _fila(
+                "1", 37, ciudad="CHIQUINQUIRA", zona_principal="(CHIQUINQUIRA):  CHIQUIN CENTRO RUTA SUR 3"
+            ),
+            _fila("3", 68, ciudad="CHIQUINQUIRA", zona_principal="(CHIQUINQUIRA):   CHIQUIN  RUTA 1 NORTE"),
+            _fila("20", 74, ciudad="TUNJA", zona_principal="(TUNJA):   RUTA CENTRO 2"),
+        ]
+    )
+
+    assert [c.lado_chiquinquira.value if c.lado_chiquinquira else None for c in carros] == [
+        "SUR",
+        "NORTE",
+        None,  # fuera de Chiquinquirá no hay lado y la regla dura no aplica
+    ]
 
 
 def test_la_ruta_16_es_el_carro_externo() -> None:
@@ -63,7 +113,19 @@ def test_leer_rutas_lee_solo_el_bloque_2(tmp_path: Path) -> None:
     hoja.append([])
     # Bloque 2: las rutas de reparto.
     hoja.append(["Ruta", "Facturas", "Clientes", "Pesos", "Kilos", "CONDUCTOR", "AUX", "CIUDAD"])
-    hoja.append([1, 81, 70, 6724920.37, 207.06, "FABIAN ", None, "CHIQUINQUIRA"])
+    hoja.append(
+        [
+            1,
+            81,
+            70,
+            6724920.37,
+            207.06,
+            "FABIAN ",
+            None,
+            "CHIQUINQUIRA",
+            "(CHIQUINQUIRA):  CHIQUIN CENTRO RUTA SUR 3",
+        ]
+    )
     hoja.append([18, 0, 0, 0, 0, None, None, None])
     hoja.append(["Total", 81, 70, 0, 0, None, None, None])  # cierre: corta la lectura
     ruta = tmp_path / "referencia.xlsx"
@@ -72,7 +134,7 @@ def test_leer_rutas_lee_solo_el_bloque_2(tmp_path: Path) -> None:
     with LectorReferenciaExcel(ruta) as lector:
         rutas = list(lector.leer_rutas())
 
-    assert [(r.numero, r.facturas, r.conductor, r.ciudad) for r in rutas] == [
-        ("1", 81, "FABIAN", "CHIQUINQUIRA"),
-        ("18", 0, None, None),
+    assert [(r.numero, r.facturas, r.conductor, r.ciudad, r.zona_principal) for r in rutas] == [
+        ("1", 81, "FABIAN", "CHIQUINQUIRA", "(CHIQUINQUIRA):  CHIQUIN CENTRO RUTA SUR 3"),
+        ("18", 0, None, None, None),
     ]

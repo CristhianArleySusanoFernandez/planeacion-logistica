@@ -11,7 +11,7 @@ from planeacion.domain.modelo.balanceo import (
     ResultadoBalanceo,
     clasificar_cv,
 )
-from planeacion.domain.modelo.carro import Carro
+from planeacion.domain.modelo.carro import Carro, clave_conductor, clave_orden_carro
 from planeacion.domain.modelo.cliente import Cliente, CorreccionUbicacion, OverrideZona
 from planeacion.domain.modelo.dia_semana import DIAS_LABORALES, DIAS_SEMANA, dia_de
 from planeacion.domain.modelo.municipio import MUNICIPIO_OTROS, Municipio
@@ -52,5 +52,7 @@ __all__ = [
     "Zona",
     "ZonaAgregada",
     "clasificar_cv",
+    "clave_conductor",
+    "clave_orden_carro",
     "dia_de",
 ]

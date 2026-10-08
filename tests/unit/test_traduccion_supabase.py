@@ -72,6 +72,43 @@ class TestTraduccionCarros:
         fila = repositorio_carros.a_fila(Carro(numero="108"), {"TUNJA": 3})
         assert fila["municipio_id"] is None
 
+    def test_ida_y_vuelta_de_una_ruta_viajera_con_lado(self) -> None:
+        """Las tres columnas de la migración 004: clave del conductor, destino real
+        y lado de Chiquinquirá (que viaja como texto y vuelve como enum)."""
+        carro = Carro(
+            numero="12",
+            conductor="RAUL 1",
+            municipio=Municipio(nombre="OTROS"),
+            conductor_clave="RAUL",
+            municipio_real="VILLA DELEYVA",
+            lado_chiquinquira=ReglaChiquinquira.SUR,
+        )
+        fila = repositorio_carros.a_fila(carro, {"OTROS": 9})
+        assert (fila["conductor_clave"], fila["municipio_real"], fila["lado_chiquinquira"]) == (
+            "RAUL",
+            "VILLA DELEYVA",
+            "SUR",
+        )
+
+        reconstruido = repositorio_carros.desde_fila({**fila, "municipios": {"nombre": "OTROS"}})
+        assert reconstruido == carro
+
+    def test_una_base_sin_migrar_todavia_se_puede_leer(self) -> None:
+        """Las columnas nuevas pueden no venir: la lectura no puede fallar por eso."""
+        carro = repositorio_carros.desde_fila(
+            {
+                "numero": "5",
+                "conductor": "JULIAN COY",
+                "placa": None,
+                "auxiliar": None,
+                "es_externo": False,
+                "costo_diario": "0",
+                "activo": True,
+                "municipios": None,
+            }
+        )
+        assert (carro.conductor_clave, carro.municipio_real, carro.lado_chiquinquira) == (None, None, None)
+
 
 class TestTraduccionClientes:
     def test_a_fila_resuelve_zona(self) -> None:

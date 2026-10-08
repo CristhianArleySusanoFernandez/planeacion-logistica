@@ -7,7 +7,13 @@ Vacío = comportamiento clásico (regresión).
 
 from decimal import Decimal
 
-from planeacion.domain.modelo import Carro, ReglasBalanceo, ResultadoBalanceo, ZonaAgregada
+from planeacion.domain.modelo import (
+    Carro,
+    ReglaChiquinquira,
+    ReglasBalanceo,
+    ResultadoBalanceo,
+    ZonaAgregada,
+)
 from planeacion.domain.servicios.balanceador import Balanceador
 from planeacion.domain.servicios.parseo_zonas import crear_zona
 
@@ -123,13 +129,15 @@ def test_zona_viajera_se_balancea_en_el_pool_de_su_carro_elegible() -> None:
 
 def test_la_regla_dura_de_chiquinquira_prevalece_sobre_el_repertorio() -> None:
     zonas = [_zona("(CHIQUINQUIRA):  CHIQUIN RUTA SUR 1", 10, "100")]
-    # El repertorio dice que la SUR solo la permite el carro 2, pero la regla
-    # dura la fija al primer carro del pool (documentado en el balanceador).
+    # El repertorio dice que la zona SUR solo la permite el carro 2, que reparte
+    # del norte. El lado manda: la zona termina en el carro del sur igual.
     repertorio = {"2": {"(CHIQUINQUIRA): CHIQUIN RUTA SUR 1"}}
+    carros = [
+        Carro(numero="1", lado_chiquinquira=ReglaChiquinquira.SUR),
+        Carro(numero="2", lado_chiquinquira=ReglaChiquinquira.NORTE),
+    ]
 
-    resultado = Balanceador().balancear(
-        zonas, {"CHIQUINQUIRA": _carros("1", "2")}, None, ReglasBalanceo(), repertorio
-    )
+    resultado = Balanceador().balancear(zonas, {"CHIQUINQUIRA": carros}, None, ReglasBalanceo(), repertorio)
 
     assert _carro_de(resultado, "(CHIQUINQUIRA): CHIQUIN RUTA SUR 1") == "1"
 

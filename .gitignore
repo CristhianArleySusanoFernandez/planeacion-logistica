@@ -18,6 +18,9 @@ __pycache__/
 dist/
 *.egg-info/
 
-# Datos crudos (los .xlsm/.xlsx pesan ~30 MB cada uno)
-datos/
+# Datos crudos (los .xlsm/.xlsx pesan ~30 MB cada uno). Con barra inicial, para
+# que no se trague tests/unit/datos/, que SÍ se versiona (fixtures recortados).
+/datos/
+/datos_historico/
+/salidas/
 ~$*
