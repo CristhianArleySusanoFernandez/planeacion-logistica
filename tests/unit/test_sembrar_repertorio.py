@@ -1,8 +1,11 @@
 """Pruebas de la siembra del repertorio: lectura de la hoja PLANEACION, descarte
 de archivos no confiables, conteo de frecuencias y cruce con la base."""
 
+import csv
 from collections import Counter
 from pathlib import Path
+from types import SimpleNamespace
+from typing import Any
 
 import openpyxl
 
@@ -14,6 +17,7 @@ from planeacion.infraestructura.adaptadores.entrada.cli.sembrar_repertorio impor
     distribucion_de_frecuencias,
     minimo_de_zonas,
     motivo_de_descarte,
+    respaldar_repertorio,
     zonas_que_quedarian_huerfanas,
 )
 from planeacion.infraestructura.adaptadores.salida.excel.lector_referencia import (
@@ -211,3 +215,40 @@ class TestBorrarFrecuenciaCero:
 
     def test_sin_repertorio_no_hay_huerfanas(self) -> None:
         assert zonas_que_quedarian_huerfanas({}) == []
+
+
+class TestRespaldoDelRepertorio:
+    """El CSV que se escribe antes de vaciar: si esto falla, el vaciado es a ciegas."""
+
+    class _CarroZonasFalso:
+        def __init__(self, frecuencias: dict[ParRepertorio, int]) -> None:
+            self._frecuencias = frecuencias
+
+        def frecuencias(self) -> dict[ParRepertorio, int]:
+            return self._frecuencias
+
+    def _contenedor(self, frecuencias: dict[ParRepertorio, int]) -> Any:
+        falso = self._CarroZonasFalso(frecuencias)
+        return SimpleNamespace(carro_zonas=falso)
+
+    def test_escribe_un_par_por_fila_con_su_frecuencia(self, tmp_path: Path) -> None:
+        frecuencias = {
+            ParRepertorio("10", "(TUNJA): NIEVES", "lunes", 3): 3,
+            ParRepertorio("2", "(TUNJA): ASIS", "lunes", 1): 1,
+        }
+        ruta = tmp_path / "respaldo.csv"
+
+        guardados = respaldar_repertorio(self._contenedor(frecuencias), ruta)
+
+        assert guardados == 2
+        filas = list(csv.reader(ruta.read_text(encoding="utf-8").splitlines()))
+        assert filas[0] == ["numero_carro", "nombre_zona", "dia_semana", "frecuencia"]
+        # Ordenado por día y por número de carro de verdad: el 2 antes del 10.
+        assert [fila[0] for fila in filas[1:]] == ["2", "10"]
+        assert filas[2] == ["10", "(TUNJA): NIEVES", "lunes", "3"]
+
+    def test_un_repertorio_vacio_deja_el_csv_con_solo_el_encabezado(self, tmp_path: Path) -> None:
+        ruta = tmp_path / "respaldo.csv"
+
+        assert respaldar_repertorio(self._contenedor({}), ruta) == 0
+        assert ruta.read_text(encoding="utf-8").strip() == "numero_carro,nombre_zona,dia_semana,frecuencia"

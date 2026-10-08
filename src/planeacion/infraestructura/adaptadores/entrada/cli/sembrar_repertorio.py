@@ -23,11 +23,13 @@ el repertorio (ver `motivo_de_descarte`).
 """
 
 import argparse
+import csv
 import statistics
 import sys
 from collections import Counter
 from collections.abc import Mapping
 from dataclasses import dataclass
+from datetime import date
 from pathlib import Path
 
 from pydantic import ValidationError
@@ -35,7 +37,7 @@ from pydantic import ValidationError
 from planeacion.application.puertos.salida.repositorios import ParRepertorio
 from planeacion.config.contenedor import Contenedor, crear_contenedor
 from planeacion.config.settings import Settings
-from planeacion.domain.modelo import dia_de
+from planeacion.domain.modelo import clave_orden_carro, dia_de
 from planeacion.domain.servicios.parseo_zonas import normalizar_nombre_zona
 from planeacion.infraestructura.adaptadores.salida.excel.lector_ecom_embebido import LectorEcomEmbebido
 from planeacion.infraestructura.adaptadores.salida.excel.lector_referencia import (
@@ -213,11 +215,17 @@ def _reportar(contenedor: Contenedor, sembrados: int) -> None:
     for dias in matriz.values():
         for numero, zonas in dias.items():
             por_carro[numero] += len(zonas)
-    for carro in sorted(contenedor.carros.listar(), key=lambda c: (len(c.numero), c.numero)):
+    for carro in sorted(contenedor.carros.listar(), key=lambda c: clave_orden_carro(c.numero)):
         total = por_carro.get(carro.numero, 0)
         marca = "" if total else "  <- sin configurar"
         conductor = carro.conductor or "sin conductor"
         print(f"  carro {carro.numero:>2} ({conductor}): {total} pares{marca}")
+
+    print("\nPares por día:")
+    for dia, del_dia in sorted(matriz.items()):
+        pares_del_dia = sum(len(zonas) for zonas in del_dia.values())
+        carros_del_dia = sum(1 for zonas in del_dia.values() if zonas)
+        print(f"  {dia:<10} {pares_del_dia:>4} pares en {carros_del_dia} carro(s)")
 
     con_carro = {zona for dias in matriz.values() for zonas in dias.values() for zona in zonas}
     activas = [zona.nombre for zona in contenedor.zonas.listar() if zona.activa]
@@ -226,6 +234,13 @@ def _reportar(contenedor: Contenedor, sembrados: int) -> None:
         f"\nZonas activas sin ningún carro en ningún día: {len(sin_carro)} de {len(activas)} "
         "(configurables en la UI: Configuración > Zonas por carro)."
     )
+    # Desglosado por día además del total, porque una zona puede estar cubierta
+    # toda la semana y quedar sin nadie justo el sábado, y el total no lo muestra.
+    print("Y por día (zonas activas que ese día no tienen ningún carro):")
+    for dia, del_dia in sorted(matriz.items()):
+        cubiertas = {zona for zonas in del_dia.values() for zona in zonas}
+        faltan = sum(1 for nombre in activas if nombre not in cubiertas)
+        print(f"  {dia:<10} {faltan:>4} de {len(activas)}")
 
     # Los que quedan en 0 no salieron de este histórico: son configuración puesta
     # a mano o restos del backfill de la migración 003, que replicó a los seis
@@ -241,6 +256,39 @@ def _reportar(contenedor: Contenedor, sembrados: int) -> None:
         print("  por día: " + ", ".join(f"{dia}={n}" for dia, n in sorted(por_dia.items())))
         print("  Son configuración manual o restos del backfill de la migración 003.")
         print("  Para borrarlos, re-correr con --borrar-frecuencia-cero.")
+
+
+def respaldar_repertorio(contenedor: Contenedor, ruta_csv: Path) -> int:
+    """Vuelca el repertorio actual a un CSV y devuelve cuántos pares guardó.
+
+    Se hace antes de vaciar: el repertorio es trabajo de configuración de meses y
+    no se reconstruye a mano. Con ``(carro, zona, día, frecuencia)`` alcanza para
+    volver a cargarlo, que es lo único que un respaldo tiene que garantizar.
+    """
+    pares = sorted(
+        contenedor.carro_zonas.frecuencias().items(),
+        key=lambda item: (
+            item[0].dia_semana,
+            clave_orden_carro(item[0].numero_carro),
+            item[0].nombre_zona,
+        ),
+    )
+    ruta_csv.parent.mkdir(parents=True, exist_ok=True)
+    with ruta_csv.open("w", encoding="utf-8", newline="") as archivo:
+        escritor = csv.writer(archivo)
+        escritor.writerow(["numero_carro", "nombre_zona", "dia_semana", "frecuencia"])
+        for par, veces in pares:
+            escritor.writerow([par.numero_carro, par.nombre_zona, par.dia_semana, veces])
+    print(f"  respaldo: {len(pares)} par(es) -> {ruta_csv}")
+    return len(pares)
+
+
+def _vaciar(contenedor: Contenedor, carpeta_salidas: Path) -> None:
+    """Respalda y borra el repertorio entero."""
+    print("\nVACIANDO el repertorio (la numeración de las rutas cambió de significado):")
+    respaldar_repertorio(contenedor, carpeta_salidas / f"carro_zonas_respaldo_{date.today().isoformat()}.csv")
+    borrados = contenedor.carro_zonas.vaciar()
+    print(f"  borrados: {borrados} par(es). La tabla queda vacía antes de sembrar.")
 
 
 def _borrar_frecuencia_cero(contenedor: Contenedor) -> None:
@@ -261,6 +309,18 @@ def main() -> int:
         description="Siembra la tabla carro_zonas desde las hojas PLANEACION de .xlsm históricos."
     )
     parser.add_argument("rutas", nargs="+", help="rutas (o globs) de los .xlsm de planeación")
+    parser.add_argument(
+        "--vaciar",
+        action="store_true",
+        help="antes de sembrar, respalda el repertorio a salidas/ y lo BORRA completo. Para cuando "
+        "la numeración de las rutas cambió de significado y ningún par viejo sigue siendo válido.",
+    )
+    parser.add_argument(
+        "--salidas",
+        type=Path,
+        default=Path("salidas"),
+        help="carpeta donde queda el respaldo del repertorio (por defecto: salidas/)",
+    )
     parser.add_argument(
         "--borrar-frecuencia-cero",
         action="store_true",
@@ -321,6 +381,8 @@ def main() -> int:
 
     frecuencias = contar_frecuencias(usables)
     contenedor = crear_contenedor(settings)
+    if args.vaciar:
+        _vaciar(contenedor, args.salidas)
     numeros_carros = {carro.numero for carro in contenedor.carros.listar()}
     nombres_zonas = {zona.nombre for zona in contenedor.zonas.listar()}
     validos, carros_desconocidos, zonas_desconocidas = cruzar_pares(
@@ -333,7 +395,7 @@ def main() -> int:
         print(f"  visto {etiqueta}: {cuantos} par(es)")
     if carros_desconocidos:
         print("\nAVISO: carros del histórico que NO están en la base (se saltan):")
-        for numero in sorted(carros_desconocidos, key=lambda n: (len(n), n)):
+        for numero in sorted(carros_desconocidos, key=clave_orden_carro):
             dias_del_carro = ", ".join(sorted(carros_desconocidos[numero]))
             print(f"  - carro {numero}: aparece en {dias_del_carro}")
         print("  Si son refuerzos reales, darlos de alta en Configuración > Carros y re-sembrar.")

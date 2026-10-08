@@ -172,6 +172,17 @@ class RepositorioCarroZonas(Protocol):
 
     def quitar(self, numero_carro: str, nombre_zona: str, dia_semana: str) -> None: ...
 
+    def vaciar(self) -> int:
+        """Borra TODO el repertorio y devuelve cuántos pares borró.
+
+        Es para cuando la numeración de las rutas cambió de significado: en octubre
+        de 2026 la ruta 13 pasó de ser de Tunja a ser Villa de Leyva, así que cada
+        par viejo habilita una combinación que nunca existió. Fusionar o borrar solo
+        lo de frecuencia 0 dejaría sobrevivientes inválidos; hay que vaciar.
+        DESTRUCTIVO: quien lo llame respalda antes.
+        """
+        ...
+
     def quitar_sin_observaciones(self) -> int:
         """Borra los pares con ``frecuencia = 0`` y devuelve cuántos borró.
 

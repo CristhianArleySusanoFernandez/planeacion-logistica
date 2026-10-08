@@ -117,6 +117,19 @@ class RepositorioCarroZonasSupabase:
             ).execute()
         return len(filas)
 
+    def vaciar(self) -> int:
+        """Borra el repertorio completo (ver el puerto) y devuelve cuántos borró.
+
+        El filtro `id >= 0` está porque PostgREST no acepta un delete sin `where`:
+        es su red de seguridad contra un borrado accidental de toda la tabla, y acá
+        el borrado de toda la tabla es justo lo que se quiere.
+        """
+        respuesta = self._cliente.table(TABLA).select("id", count=CountMethod.exact, head=True).execute()
+        borrados = respuesta.count or 0
+        if borrados:
+            self._cliente.table(TABLA).delete().gte("id", 0).execute()
+        return borrados
+
     def quitar_sin_observaciones(self) -> int:
         """Borra los pares con frecuencia 0 (ver el puerto) y devuelve cuántos borró.
 
