@@ -28,10 +28,12 @@ así que hay que contar cerca de un minuto por día analizado.
 
 import argparse
 import csv
+import gc
 import random
 import re
 import statistics
 import sys
+from collections.abc import Mapping
 from dataclasses import dataclass
 from datetime import date, datetime
 from decimal import Decimal
@@ -84,13 +86,23 @@ _ENCABEZADOS_CSV = (
 
 @dataclass(frozen=True)
 class ResultadoValidacion:
-    """Lo que deja un archivo analizado: para la tabla resumen y para el CSV."""
+    """El RESUMEN de un archivo analizado: para la tabla, el balance y el CSV.
+
+    Deliberadamente no guarda la ``PlaneacionCompleta``: ahí viajan todas las
+    facturas del día (miles de DTO) y la planeación entera, y con 16 días en una
+    sola corrida eso es lo que hacía que el proceso se quedara sin memoria. Todo
+    lo que los reportes necesitan se extrae al cerrar cada día, y la planeación
+    se puede soltar enseguida.
+    """
 
     archivo: str
-    planeacion: PlaneacionCompleta
-    manual: dict[str, str]  # zona -> carro, tal como lo repartio la operacion
-    comparacion: ComparacionAsignaciones
+    fecha: date
+    dia_semana: str
+    totales_app: TotalesPlaneacion
     totales_manuales: TotalesPlaneacion
+    comparacion: ComparacionAsignaciones
+    metricas: dict[str, MetricasDesbalance]  # el reparto que propuso la app
+    metricas_manual: dict[str, MetricasDesbalance]  # el que hizo la operación
     zonas_sin_carro: int
     descuadres: tuple[str, ...]  # vacío = la entrada reconstruida es la que se planeó
 
@@ -161,18 +173,17 @@ def _descuadres(planeacion: PlaneacionCompleta, manuales: TotalesPlaneacion) -> 
 
 
 def _imprimir_detalle(resultado: ResultadoValidacion) -> None:
-    planeacion = resultado.planeacion
     comparacion = resultado.comparacion
     print("=" * 100)
-    print(f"{resultado.archivo} — {planeacion.fecha.isoformat()} ({planeacion.dia_semana})")
+    print(f"{resultado.archivo} — {resultado.fecha.isoformat()} ({resultado.dia_semana})")
     print("Balanceo SIN warm-start: reparto desde cero, sin mirar planeaciones guardadas.")
     print("Pivote sin filtro de fecha: se toma el bloque de ECOM completo del archivo.")
     print("-" * 100)
 
     print(
-        f"  Totales app        : {planeacion.total_facturas} facturas | "
-        f"{planeacion.total_clientes} clientes | ${planeacion.total_pesos:,.2f} | "
-        f"{planeacion.total_kilos:,.2f} kg"
+        f"  Totales app        : {resultado.totales_app.facturas} facturas | "
+        f"{resultado.totales_app.clientes} clientes | ${resultado.totales_app.pesos:,.2f} | "
+        f"{resultado.totales_app.kilos:,.2f} kg"
     )
     print(
         f"  Totales PLANEACION : {resultado.totales_manuales.facturas} facturas | "
@@ -234,7 +245,9 @@ def _imprimir_resumen(resultados: list[ResultadoValidacion]) -> None:
     _imprimir_peor_dia(resultados)
 
 
-def metricas_del_manual(resultado: ResultadoValidacion) -> dict[str, MetricasDesbalance]:
+def metricas_del_manual(
+    planeacion: PlaneacionCompleta, manual: Mapping[str, str]
+) -> dict[str, MetricasDesbalance]:
     """CV del reparto que hizo la operación, para poder compararlo con el propuesto.
 
     Para que la comparación sea justa, lo único que cambia respecto del CV de la
@@ -247,11 +260,11 @@ def metricas_del_manual(resultado: ResultadoValidacion) -> dict[str, MetricasDes
     cálculo, porque contarla mezclaría los pools.
     """
     por_municipio: dict[str, MetricasDesbalance] = {}
-    for municipio, cargas in resultado.planeacion.resultado.cargas_por_municipio.items():
+    for municipio, cargas in planeacion.resultado.cargas_por_municipio.items():
         zonas_por_carro: dict[str, list[ZonaAgregada]] = {carga.carro.numero: [] for carga in cargas}
         for carga in cargas:
             for zona in carga.zonas:
-                numero = resultado.manual.get(zona.zona.nombre)
+                numero = manual.get(zona.zona.nombre)
                 if numero in zonas_por_carro:
                     zonas_por_carro[numero].append(zona)
         por_municipio[municipio] = calcular_metricas(
@@ -267,25 +280,19 @@ def _imprimir_por_dia(resultados: list[ResultadoValidacion]) -> None:
     El promedio esconde la forma de los datos: un día flojo y uno perfecto dan el
     mismo promedio que dos regulares, y no se arreglan igual.
     """
-    municipios = sorted(
-        {
-            municipio
-            for resultado in resultados
-            for municipio in resultado.planeacion.resultado.metricas_finales
-        }
-    )
+    municipios = sorted({municipio for resultado in resultados for municipio in resultado.metricas})
     encabezado = f"{'Fecha':12s} {'Dia':10s} {'Coincide':>9s}"
     for municipio in municipios:
         encabezado += f" {municipio[:11]:>11s}"
     print("\nPOR DIA (el CV por municipio va como clientes/pesos; mas bajo es mejor)")
     print(encabezado)
-    for resultado in sorted(resultados, key=lambda r: r.planeacion.fecha):
+    for resultado in sorted(resultados, key=lambda r: r.fecha):
         fila = (
-            f"{resultado.planeacion.fecha.isoformat():12s} "
-            f"{resultado.planeacion.dia_semana:10s} "
+            f"{resultado.fecha.isoformat():12s} "
+            f"{resultado.dia_semana:10s} "
             f"{resultado.comparacion.porcentaje:9.1%}"
         )
-        finales = resultado.planeacion.resultado.metricas_finales
+        finales = resultado.metricas
         for municipio in municipios:
             metricas = finales.get(municipio)
             celda = f"{metricas.cv_clientes:.0%}/{metricas.cv_pesos:.0%}" if metricas is not None else "-"
@@ -304,8 +311,8 @@ def _imprimir_peor_dia(resultados: list[ResultadoValidacion]) -> None:
     comparacion = peor.comparacion
     print("\n" + "=" * 100)
     print(
-        f"PEOR DIA: {peor.archivo} — {peor.planeacion.fecha.isoformat()} "
-        f"({peor.planeacion.dia_semana}), {comparacion.porcentaje:.1%} "
+        f"PEOR DIA: {peor.archivo} — {peor.fecha.isoformat()} "
+        f"({peor.dia_semana}), {comparacion.porcentaje:.1%} "
         f"({comparacion.coincidencias}/{comparacion.comparables})"
     )
     print("=" * 100)
@@ -340,10 +347,10 @@ def _imprimir_balance(resultados: list[ResultadoValidacion]) -> None:
     clientes_manual: dict[str, list[float]] = {}
     pesos_manual: dict[str, list[float]] = {}
     for resultado in resultados:
-        for municipio, metricas in resultado.planeacion.resultado.metricas_finales.items():
+        for municipio, metricas in resultado.metricas.items():
             clientes.setdefault(municipio, []).append(metricas.cv_clientes)
             pesos.setdefault(municipio, []).append(metricas.cv_pesos)
-        for municipio, metricas in metricas_del_manual(resultado).items():
+        for municipio, metricas in resultado.metricas_manual.items():
             clientes_manual.setdefault(municipio, []).append(metricas.cv_clientes)
             pesos_manual.setdefault(municipio, []).append(metricas.cv_pesos)
 
@@ -388,7 +395,7 @@ def _exportar_csv(resultados: list[ResultadoValidacion], destino: Path) -> int:
                 escritor.writerow(
                     [
                         resultado.archivo,
-                        resultado.planeacion.fecha.isoformat(),
+                        resultado.fecha.isoformat(),
                         diferencia.zona,
                         diferencia.municipio,
                         diferencia.carro_manual,
@@ -519,15 +526,28 @@ def main() -> int:
             continue
         resultado = ResultadoValidacion(
             archivo=ruta.name,
-            planeacion=planeacion,
-            manual=manual,
-            comparacion=comparar_asignaciones(manual, planeacion.asignaciones()),
+            fecha=planeacion.fecha,
+            dia_semana=planeacion.dia_semana,
+            totales_app=TotalesPlaneacion(
+                facturas=planeacion.total_facturas,
+                pesos=planeacion.total_pesos,
+                kilos=planeacion.total_kilos,
+                clientes=planeacion.total_clientes,
+            ),
             totales_manuales=totales,
+            comparacion=comparar_asignaciones(manual, planeacion.asignaciones()),
+            metricas=dict(planeacion.resultado.metricas_finales),
+            metricas_manual=metricas_del_manual(planeacion, manual),
             zonas_sin_carro=len(planeacion.resultado.zonas_sin_carro),
             descuadres=tuple(_descuadres(planeacion, totales)),
         )
         resultados.append(resultado)
         _imprimir_detalle(resultado)
+        # Un día a la vez: la planeación trae todas las facturas del día y el
+        # libro del ECOM ya se cerró, así que acá se suelta todo antes de abrir
+        # el archivo siguiente. Con 16 días encima, no hacerlo agota la memoria.
+        del planeacion, manual, totales
+        gc.collect()
 
     medibles = [resultado for resultado in resultados if resultado.cuadra]
     descuadrados = [resultado.archivo for resultado in resultados if not resultado.cuadra]
