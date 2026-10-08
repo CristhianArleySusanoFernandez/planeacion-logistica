@@ -6,25 +6,26 @@ import pytest
 
 from planeacion.domain.errores import SinCarrosParaMunicipio
 from planeacion.domain.modelo import (
+    CargaCarro,
     Carro,
     ReglaChiquinquira,
     ReglasBalanceo,
     ResultadoBalanceo,
     ZonaAgregada,
 )
-from planeacion.domain.servicios.balanceador import Balanceador
+from planeacion.domain.servicios.balanceador import Balanceador, calcular_costo
 from planeacion.domain.servicios.parseo_zonas import crear_zona
 
 SIN_MEJORA = ReglasBalanceo(max_iteraciones=0)  # deja ver el estado inicial tal cual
 
 
-def _zona(nombre: str, clientes: int, pesos: str) -> ZonaAgregada:
+def _zona(nombre: str, clientes: int, pesos: str, kilos: str = "1") -> ZonaAgregada:
     return ZonaAgregada(
         zona=crear_zona(nombre),
         facturas=clientes,  # irrelevante para el balanceo; se conserva y ya
         clientes=clientes,
         pesos=Decimal(pesos),
-        kilos=Decimal("1"),
+        kilos=Decimal(kilos),
     )
 
 
@@ -175,3 +176,42 @@ def test_municipios_se_balancean_por_separado() -> None:
 
     assert _zonas_de(resultado, "TUNJA", "t1") == {"(TUNJA): NIEVES"}
     assert _zonas_de(resultado, "BARBOSA", "b1") == {"(BARBOSA): CENTRO"}
+
+
+def test_los_kilos_separan_zonas_que_en_clientes_y_plata_son_iguales() -> None:
+    """La razón de ser de la tercera variable: con dos zonas pesadas y dos livianas
+    idénticas en clientes y plata, el balanceo por dos variables puede dejar las
+    dos pesadas juntas, y el de tres las separa."""
+    zonas = [
+        _zona("PESADA 1", 10, "100", kilos="500"),
+        _zona("PESADA 2", 10, "100", kilos="500"),
+        _zona("LIVIANA 1", 10, "100", kilos="5"),
+        _zona("LIVIANA 2", 10, "100", kilos="5"),
+    ]
+    carros = {"OTROS": _carros("1", "2")}
+
+    resultado = Balanceador().balancear(zonas, carros, None, ReglasBalanceo(w_frecuencia=0))
+
+    metricas = resultado.metricas_finales["OTROS"]
+    assert metricas.cv_kilos == pytest.approx(0.0)
+    # Cada carro se lleva una pesada y una liviana.
+    for carga in resultado.cargas_por_municipio["OTROS"]:
+        assert sum(1 for zona in carga.zonas if zona.zona.nombre.startswith("PESADA")) == 1
+
+
+def test_con_w_kilos_en_cero_los_kilos_no_influyen() -> None:
+    """La puerta de escape: apagar la variable reproduce el comportamiento anterior."""
+    zonas = [
+        _zona("A", 10, "100", kilos="500"),
+        _zona("B", 10, "100", kilos="5"),
+    ]
+    cargas = [
+        CargaCarro(carro=Carro(numero="1"), zonas=[zonas[0]]),
+        CargaCarro(carro=Carro(numero="2"), zonas=[zonas[1]]),
+    ]
+
+    sin_kilos = calcular_costo(cargas, ReglasBalanceo(w_kilos=0))
+    con_kilos = calcular_costo(cargas, ReglasBalanceo(w_kilos=0.5))
+
+    assert sin_kilos == pytest.approx(0.0)  # parejos en clientes y plata
+    assert con_kilos > sin_kilos  # el desbalance de kilos sí se cobra

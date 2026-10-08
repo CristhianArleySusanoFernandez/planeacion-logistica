@@ -9,6 +9,7 @@ from planeacion.domain.modelo import (
     UMBRAL_CV_ATENCION,
     CargaCarro,
     Carro,
+    MetricasDesbalance,
     NivelDesbalance,
     ReglasBalanceo,
     ZonaAgregada,
@@ -118,3 +119,35 @@ def test_el_costo_pondera_con_w_clientes_y_w_pesos() -> None:
     assert solo_clientes == pytest.approx(0.0)
     assert solo_pesos == pytest.approx(0.5)
     assert mitad == pytest.approx(0.25)
+
+
+class TestKilosComoTerceraVariable:
+    """Los kilos son la tercera variable del equilibrio, y el semáforo las mira."""
+
+    def test_el_nivel_lo_marca_la_peor_de_las_tres(self) -> None:
+        """Un municipio parejo en clientes y plata pero desparejo en kilos NO está
+        bien repartido: alguien está cargando el doble que el resto."""
+        metricas = MetricasDesbalance(
+            municipio="TUNJA",
+            rango_clientes=1,
+            rango_pesos=Decimal("10"),
+            cv_clientes=0.05,
+            cv_pesos=0.05,
+            cv_kilos=0.45,
+        )
+
+        assert metricas.cv_peor == 0.45
+        assert metricas.nivel is NivelDesbalance.CRITICO
+        assert not metricas.es_aceptable(0.10)
+
+    def test_sin_kilos_el_nivel_no_cambia_respecto_de_antes(self) -> None:
+        """`cv_kilos` nace en 0, así que una métrica vieja se sigue juzgando igual."""
+        metricas = MetricasDesbalance(
+            municipio="BARBOSA",
+            rango_clientes=1,
+            rango_pesos=Decimal("10"),
+            cv_clientes=0.08,
+            cv_pesos=0.09,
+        )
+
+        assert metricas.nivel is NivelDesbalance.ACEPTABLE

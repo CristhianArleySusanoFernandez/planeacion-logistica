@@ -362,15 +362,19 @@ def _imprimir_balance(resultados: list[ResultadoValidacion]) -> None:
     """
     clientes: dict[str, list[float]] = {}
     pesos: dict[str, list[float]] = {}
+    kilos: dict[str, list[float]] = {}
     clientes_manual: dict[str, list[float]] = {}
     pesos_manual: dict[str, list[float]] = {}
+    kilos_manual: dict[str, list[float]] = {}
     for resultado in resultados:
         for municipio, metricas in resultado.metricas.items():
             clientes.setdefault(municipio, []).append(metricas.cv_clientes)
             pesos.setdefault(municipio, []).append(metricas.cv_pesos)
+            kilos.setdefault(municipio, []).append(metricas.cv_kilos)
         for municipio, metricas in resultado.metricas_manual.items():
             clientes_manual.setdefault(municipio, []).append(metricas.cv_clientes)
             pesos_manual.setdefault(municipio, []).append(metricas.cv_pesos)
+            kilos_manual.setdefault(municipio, []).append(metricas.cv_kilos)
 
     def promedio(muestras: list[float]) -> float:
         return sum(muestras) / len(muestras) if muestras else 0.0
@@ -379,24 +383,28 @@ def _imprimir_balance(resultados: list[ResultadoValidacion]) -> None:
     print("La columna 'real' es el reparto de la operacion con las mismas zonas y la misma formula:")
     print("si los dos CV son parecidos, el desbalance es del dia y no de la app.")
     print(
-        f"{'Municipio':30s} {'Dias':>5s} {'CV cli app':>11s} {'CV cli real':>12s} "
-        f"{'CV $ app':>10s} {'CV $ real':>11s}"
+        f"{'Municipio':24s} {'Dias':>5s} {'CV cli app':>11s} {'CV cli real':>12s} "
+        f"{'CV $ app':>10s} {'CV $ real':>11s} {'CV kg app':>11s} {'CV kg real':>11s}"
     )
     for municipio in sorted(clientes):
         print(
-            f"{municipio[:30]:30s} {len(clientes[municipio]):5d} "
+            f"{municipio[:24]:24s} {len(clientes[municipio]):5d} "
             f"{promedio(clientes[municipio]):11.1%} {promedio(clientes_manual.get(municipio, [])):12.1%} "
-            f"{promedio(pesos[municipio]):10.1%} {promedio(pesos_manual.get(municipio, [])):11.1%}"
+            f"{promedio(pesos[municipio]):10.1%} {promedio(pesos_manual.get(municipio, [])):11.1%} "
+            f"{promedio(kilos[municipio]):11.1%} {promedio(kilos_manual.get(municipio, [])):11.1%}"
         )
     todos_clientes = [cv for muestras in clientes.values() for cv in muestras]
     todos_pesos = [cv for muestras in pesos.values() for cv in muestras]
+    todos_kilos = [cv for muestras in kilos.values() for cv in muestras]
     todos_cli_manual = [cv for muestras in clientes_manual.values() for cv in muestras]
     todos_pesos_manual = [cv for muestras in pesos_manual.values() for cv in muestras]
+    todos_kilos_manual = [cv for muestras in kilos_manual.values() for cv in muestras]
     if todos_clientes:
         print(
-            f"{'TODOS':30s} {len(todos_clientes):5d} "
+            f"{'TODOS':24s} {len(todos_clientes):5d} "
             f"{promedio(todos_clientes):11.1%} {promedio(todos_cli_manual):12.1%} "
-            f"{promedio(todos_pesos):10.1%} {promedio(todos_pesos_manual):11.1%}"
+            f"{promedio(todos_pesos):10.1%} {promedio(todos_pesos_manual):11.1%} "
+            f"{promedio(todos_kilos):11.1%} {promedio(todos_kilos_manual):11.1%}"
         )
 
 
@@ -478,6 +486,15 @@ def main() -> int:
         "producción; un día sin su .xls no se mide.",
     )
     parser.add_argument(
+        "--w-kilos",
+        type=float,
+        default=REGLAS_POR_DEFECTO.w_kilos,
+        help=(
+            "peso del balance por kilos en la funcion de costo (default "
+            f"{REGLAS_POR_DEFECTO.w_kilos}); con 0 se mide el balanceo sin esa variable"
+        ),
+    )
+    parser.add_argument(
         "--w-frecuencia",
         type=float,
         default=REGLAS_POR_DEFECTO.w_frecuencia,
@@ -525,8 +542,8 @@ def main() -> int:
         caso_uso = crear_generar_planeacion(contenedor)
     else:
         caso_uso = crear_generar_planeacion(contenedor, lector=LectorEcomEmbebido())
-    reglas = ReglasBalanceo(w_frecuencia=args.w_frecuencia)
-    print(f"Peso del desempate por frecuencia: {args.w_frecuencia}")
+    reglas = ReglasBalanceo(w_kilos=args.w_kilos, w_frecuencia=args.w_frecuencia)
+    print(f"Pesos: kilos {args.w_kilos} | desempate por frecuencia {args.w_frecuencia}")
     resultados: list[ResultadoValidacion] = []
     fallidos: list[str] = []
     for ruta in archivos:

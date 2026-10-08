@@ -108,14 +108,15 @@ def _tarjeta_municipio(
 ) -> str:
     """Card de un municipio: punto del semáforo, CV antes → después y mini-barras
     con los pesos de cada carro (para ver de un vistazo qué tan parejo quedó)."""
-    peor_cv = max(final.cv_clientes, final.cv_pesos)
+    peor_cv = final.cv_peor
     barras = estilos.barras_carros([(f"C{c.carro.numero}", float(c.pesos)) for c in cargas if c.zonas])
     return (
         '<div class="tarjeta-kpi">'
         f'<div class="valor" style="font-size:1rem">{estilos.punto_semaforo(peor_cv)}'
         f"{html.escape(municipio)}</div>"
         f'<div class="detalle">Clientes: {inicial.cv_clientes:.0%} → <b>{final.cv_clientes:.0%}</b>'
-        f" &nbsp;·&nbsp; Pesos: {inicial.cv_pesos:.0%} → <b>{final.cv_pesos:.0%}</b></div>"
+        f" &nbsp;·&nbsp; Pesos: {inicial.cv_pesos:.0%} → <b>{final.cv_pesos:.0%}</b>"
+        f" &nbsp;·&nbsp; Kilos: {inicial.cv_kilos:.0%} → <b>{final.cv_kilos:.0%}</b></div>"
         f"{barras}</div>"
     )
 
@@ -141,7 +142,9 @@ def _resumen_balance(
     )
     st.markdown(
         '<span class="texto-suave">CV = qué tan parejo quedó el reparto '
-        f"entre los carros (menor = mejor). El semáforo mira el CV final: {leyenda}.</span>",
+        "entre los carros (menor = mejor). El reparto se equilibra por <b>tres</b> variables "
+        "—clientes, pesos y kilos— y <b>el color lo pone la peor de las tres</b>, no el promedio: "
+        f"{leyenda}.</span>",
         unsafe_allow_html=True,
     )
 

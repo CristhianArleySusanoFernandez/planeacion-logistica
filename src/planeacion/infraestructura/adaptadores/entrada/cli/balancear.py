@@ -224,6 +224,15 @@ def main() -> int:
         help="peso del balance por plata en la función de costo (default 0.5)",
     )
     parser.add_argument(
+        "--w-kilos",
+        type=float,
+        default=REGLAS_POR_DEFECTO.w_kilos,
+        help=(
+            "peso del balance por kilos, lo que hay que cargar y descargar (default "
+            f"{REGLAS_POR_DEFECTO.w_kilos}; 0 lo apaga)"
+        ),
+    )
+    parser.add_argument(
         "--w-frecuencia",
         type=float,
         default=REGLAS_POR_DEFECTO.w_frecuencia,
@@ -253,7 +262,12 @@ def main() -> int:
         return 1
 
     caso_uso = crear_generar_planeacion(crear_contenedor(settings))
-    reglas = ReglasBalanceo(w_clientes=args.w_clientes, w_pesos=args.w_pesos, w_frecuencia=args.w_frecuencia)
+    reglas = ReglasBalanceo(
+        w_clientes=args.w_clientes,
+        w_pesos=args.w_pesos,
+        w_kilos=args.w_kilos,
+        w_frecuencia=args.w_frecuencia,
+    )
     print(f"Leyendo {args.ruta_ecom}, pivoteando y balanceando...")
     try:
         planeacion = caso_uso.ejecutar(args.ruta_ecom, fecha=args.fecha, reglas=reglas)

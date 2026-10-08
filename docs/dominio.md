@@ -61,9 +61,17 @@ pueda revisarlo y ajustarlo.
    carro externo** (la 16 es `CARLOS 1`, propia) y las tres apariciones de una ruta 23 en los archivos son
    refuerzos puntuales, no un externo recurrente. La flota conserva `es_externo` y `costo_diario` porque
    la figura puede volver, pero hoy están en `false` y `0` en las 22 rutas.
-4. **Ciclo semanal**: la planeación de un día se parece mucho a la del **mismo día de la semana anterior**.
+4. **Tres variables de equilibrio**: el reparto se juzga por **clientes**, **pesos** (plata) y
+   **kilos**, cada uno con su peso en la función de costo (`w_clientes`, `w_pesos`, `w_kilos`, todos
+   en 0,5 por defecto). Los kilos los pidió la operación: dos carros pueden quedar parejos en
+   clientes y en plata y uno llevar el triple de peso, que es el que termina cargando y descargando.
+   El semáforo del Paso 3 lo marca **la peor de las tres**, no el promedio, y los tres CV se
+   muestran por separado para ver cuál manda. Los kilos solo son un criterio con la guarda de
+   `guarda_kilos` delante; sin ella serían ruido (ver § 5).
+
+5. **Ciclo semanal**: la planeación de un día se parece mucho a la del **mismo día de la semana anterior**.
    Por eso el motor de balanceo arranca ("warm-start") desde la planeación del mismo día de semana previa.
-5. **Repertorio de zonas por carro y día** (tabla `carro_zonas`, migraciones 002 y 003): cada carro solo
+6. **Repertorio de zonas por carro y día** (tabla `carro_zonas`, migraciones 002 y 003): cada carro solo
    puede atender las zonas de su repertorio y el balanceador elige únicamente entre carros elegibles.
    El repertorio **depende del día de la semana**: `(TUNJA): ASIS` va en el carro 13 casi toda la semana
    pero en el 12 los jueves; `(BARBOSA): MUNICIPIO CITE` va en el 5 salvo los sábados, que va en el 3.
@@ -365,6 +373,25 @@ El proyecto se desarrolló en seis etapas, todas terminadas:
    > 15,5/16,3), algo peor en pesos de Chiquinquirá (25,5 contra 23,1) y empatada en OTROS y TUNJA.
    > Los CV altos de TUNJA (28,6/45,9) y OTROS (35,9/42,7) vienen de cómo caen los pedidos y de lo
    > estrecho que es el repertorio recién sembrado, no del balanceador.
+
+9. **Kilos como tercera variable del equilibrio** (octubre 2026): medido sobre los 12 días con
+   `.xls` de ECOM, con la guarda de kilos activa y comparando contra el mismo reparto de la
+   operación. `--w-kilos 0` reproduce exactamente la referencia de 91,1 %.
+
+   | | w_kilos 0 | **w_kilos 0,5** | w_kilos 0,5 + w_frecuencia 0,45 |
+   |---|---|---|---|
+   | Coincidencia | 91,1 % | **91,6 %** | 91,5 % |
+   | Mediana | 92,1 % | **92,7 %** | 92,7 % |
+   | Mínimo | 77,6 % | **78,9 %** | 77,6 % |
+   | CV clientes | 24,8 % | 25,5 % | 25,5 % |
+   | CV pesos | 32,0 % | **31,6 %** | 31,7 % |
+   | CV kilos | 36,8 % | **36,1 %** | 36,2 % |
+
+   Se queda el default (0,5 con `w_frecuencia` en 0,30): mejora kilos y pesos, sube la coincidencia
+   medio punto y el único costo es +0,7 puntos de CV de clientes, dentro del margen. Subir
+   `w_frecuencia` a 0,45 no aporta: empeora todo levemente. Contra el reparto real de la operación
+   la propuesta queda mejor o igual en las tres variables (25,5 contra 25,7 en clientes, 31,6 contra
+   32,1 en pesos, 36,1 contra 36,8 en kilos).
 
 ### Fuera del alcance entregado
 

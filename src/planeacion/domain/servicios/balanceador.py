@@ -7,9 +7,15 @@ mientras baje la función de costo:
 
     costo(municipio) = w_clientes * cv(clientes por carro)
                      + w_pesos * cv(pesos por carro)
+                     + w_kilos * cv(kilos por carro)
                      + w_frecuencia * penalizacion media por costumbre
 
-El tercer término es el desempate por costumbre: entre los carros que TIENEN
+Las tres primeras son las variables de equilibrio que pide la operación: a quién
+hay que visitar, cuánta plata lleva el carro y cuánto hay que cargar. Los kilos
+se pueden usar porque antes pasan por la guarda de ``guarda_kilos`` (hay fichas
+de producto con pesos imposibles); sin ella no serían un criterio, serían ruido.
+
+El último término es el desempate por costumbre: entre los carros que TIENEN
 permitida una zona, prefiere al que históricamente la atiende (ver
 ``penalizaciones_por_frecuencia``). Es deliberadamente liviano — mueve
 decisiones marginales, no debe sobrecargar un carro; con ``w_frecuencia`` en 0
@@ -75,12 +81,15 @@ def _cv(valores: Sequence[float]) -> float:
 def calcular_metricas(municipio: str, cargas: Sequence[CargaCarro]) -> MetricasDesbalance:
     clientes = [carga.clientes for carga in cargas]
     pesos = [carga.pesos for carga in cargas]
+    kilos = [carga.kilos for carga in cargas]
     return MetricasDesbalance(
         municipio=municipio,
         rango_clientes=max(clientes) - min(clientes) if clientes else 0,
         rango_pesos=max(pesos) - min(pesos) if pesos else Decimal("0"),
+        rango_kilos=max(kilos) - min(kilos) if kilos else Decimal("0"),
         cv_clientes=_cv([float(c) for c in clientes]),
         cv_pesos=_cv([float(p) for p in pesos]),
+        cv_kilos=_cv([float(k) for k in kilos]),
     )
 
 
@@ -102,9 +111,17 @@ def calcular_costo(
     reglas: ReglasBalanceo,
     penalizaciones: Penalizaciones | None = None,
 ) -> float:
-    """La función que la heurística minimiza dentro de cada municipio."""
-    costo = reglas.w_clientes * _cv([float(carga.clientes) for carga in cargas]) + reglas.w_pesos * _cv(
-        [float(carga.pesos) for carga in cargas]
+    """La función que la heurística minimiza dentro de cada municipio.
+
+    Tres variables de equilibrio con el mismo criterio: clientes (a quién hay que
+    visitar), pesos (la plata que lleva el carro) y kilos (lo que hay que cargar y
+    descargar). Los tres son coeficientes de variación, así que viven en la misma
+    escala y sus pesos son comparables entre sí.
+    """
+    costo = (
+        reglas.w_clientes * _cv([float(carga.clientes) for carga in cargas])
+        + reglas.w_pesos * _cv([float(carga.pesos) for carga in cargas])
+        + reglas.w_kilos * _cv([float(carga.kilos) for carga in cargas])
     )
     if penalizaciones and reglas.w_frecuencia:
         costo += reglas.w_frecuencia * _penalizacion_media(cargas, penalizaciones)

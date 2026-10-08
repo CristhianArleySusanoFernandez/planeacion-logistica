@@ -70,6 +70,13 @@ class ReglasBalanceo:
 
     w_clientes: float = 0.5
     w_pesos: float = 0.5
+    # Los kilos son la tercera variable del equilibrio, pedida por la operación:
+    # dos carros pueden quedar parejos en clientes y en plata y uno llevar el
+    # triple de peso, que es el que termina cargando y descargando. Va con el
+    # mismo peso que las otras dos porque las tres importan igual.
+    # OJO: los kilos solo son confiables con la guarda de guarda_kilos.py activa;
+    # sin ella, un producto con la ficha mal cargada decide el reparto del día.
+    w_kilos: float = 0.5
     # Peso de la costumbre: cuánto pesa, frente al balance, que una zona caiga en
     # el carro que históricamente la atiende. Deliberadamente bajo — rompe empates
     # y sesga decisiones marginales, no debe sobrecargar un carro por costumbre.
@@ -162,14 +169,26 @@ class MetricasDesbalance:
     rango_pesos: Decimal
     cv_clientes: float  # coeficiente de variación (desv. estándar poblacional / media)
     cv_pesos: float
+    cv_kilos: float = 0.0
+    rango_kilos: Decimal = Decimal("0")
+
+    @property
+    def cv_peor(self) -> float:
+        """El CV de la dimensión que quedó peor: es el que define el nivel."""
+        return max(self.cv_clientes, self.cv_pesos, self.cv_kilos)
 
     def es_aceptable(self, umbral_cv: float) -> bool:
-        return max(self.cv_clientes, self.cv_pesos) <= umbral_cv
+        return self.cv_peor <= umbral_cv
 
     @property
     def nivel(self) -> NivelDesbalance:
-        """El nivel del municipio lo marca su peor dimensión, clientes o pesos."""
-        return clasificar_cv(max(self.cv_clientes, self.cv_pesos))
+        """El nivel lo marca la peor de las TRES dimensiones que se equilibran.
+
+        Incluir kilos sube de nivel a varios municipios, y eso es correcto: si el
+        reparto se juzga por tres variables, el semáforo tiene que decir la verdad
+        sobre las tres. Cuál manda se ve en los tres CV, que van por separado.
+        """
+        return clasificar_cv(self.cv_peor)
 
 
 @dataclass
