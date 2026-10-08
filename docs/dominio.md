@@ -334,6 +334,22 @@ El proyecto se desarrolló en seis etapas, todas terminadas:
    El peso se ajusta con `planeacion-validar --w-frecuencia N` y `planeacion-balancear --w-frecuencia N`
    (0 lo apaga y reproduce el comportamiento anterior).
 
+8. **Operación de octubre de 2026 (otra persona a cargo, flota y repertorio nuevos)**: medido
+   sobre los 12 días que traen su `.xls` de ECOM —la entrada real del Paso 1, emparejada por fecha
+   de pedidos con `planeacion-validar --ecom`— la coincidencia promedio es **91,1 %** (mediana
+   92,1 %, entre 77,6 % y 98,8 %). Los 12 `.xls` cuadran **exactos** con la fila "Ventas Totales" de
+   su `PLANEACION`, hasta el centavo y el gramo, así que la entrada reconstruida es la que se planeó.
+   Es una medición **in-sample**: esos mismos archivos sembraron el repertorio, así que el número es
+   optimista y sirve de referencia, no de resultado.
+
+   > **El desbalance no es de la app, es del día.** El validador calcula también el CV del reparto
+   > que hizo la operación, con las mismas zonas, el mismo pool, los mismos carros (incluidos los
+   > vacíos) y la misma fórmula, y los dos quedan casi iguales: 24,8 % contra 25,7 % en clientes y
+   > 32,0 % contra 32,1 % en pesos. Por municipio la app queda mejor en Barbosa (13,9/14,0 contra
+   > 15,5/16,3), algo peor en pesos de Chiquinquirá (25,5 contra 23,1) y empatada en OTROS y TUNJA.
+   > Los CV altos de TUNJA (28,6/45,9) y OTROS (35,9/42,7) vienen de cómo caen los pedidos y de lo
+   > estrecho que es el repertorio recién sembrado, no del balanceador.
+
 ### Fuera del alcance entregado
 
 - **OR-Tools**: el balanceador es heurístico (búsqueda local por movimientos e intercambios). Se

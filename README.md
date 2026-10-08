@@ -273,9 +273,12 @@ día se reporta y **queda fuera del resumen**: en `DEL 14 PARA EL 16 JULIO` el E
 que cerrara la jornada (2.435 facturas en el bloque contra 2.097 planeadas), así que compararlo
 mediría la propuesta contra una entrada que Rudy nunca tuvo.
 
-> Medición de agosto 2026 sobre 5 archivos al azar (semilla 20260810): **81,2 % de coincidencia**
-> promedio, entre 79,2 % y 84,5 % — consistente con el 82,4 % que dio la comparación manual del
-> 9 de julio. Cada archivo pesa ~30 MB y se abre dos veces: contar ~1 min por día analizado.
+> Medición de **octubre 2026** sobre los 12 días con `.xls` de ECOM: **91,1 %** de coincidencia
+> promedio (mediana 92,1 %, entre 77,6 % y 98,8 %), con los 12 archivos cuadrando exactos contra su
+> `PLANEACION`. Es in-sample —esos días sembraron el repertorio—, así que es referencia y no
+> resultado. El CV del reparto real queda casi igual al propuesto (25,7 % contra 24,8 % en clientes,
+> 32,1 % contra 32,0 % en pesos): el desbalance es del día, no de la app. Cada archivo pesa ~30 MB:
+> contar ~1 min por día analizado.
 
 ## Interfaz web (Streamlit)
 
