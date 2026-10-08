@@ -301,20 +301,27 @@ class LectorEcomExcel:
     """Adaptador del puerto ``LectorDePedidos``.
 
     Acepta las tres extensiones que llegan del ECOM. ``.xlsx`` y ``.xlsm`` son
-    el mismo OOXML (el segundo solo agrega macros) y openpyxl los abre igual;
-    ``.xls`` es el binario viejo, que openpyxl no entiende y se delega al
-    traductor de ``lector_ecom_xls``.
+    el mismo OOXML (el segundo solo agrega macros) y openpyxl los abre igual.
+    Un ``.xls`` puede ser dos cosas distintas y se decide por el CONTENIDO, no
+    por el nombre: el binario viejo BIFF va al traductor de ``lector_ecom_xls``,
+    y la tabla HTML que el portal de ECOM entrega con ese nombre va al de
+    ``lector_ecom_html``. Los dos devuelven el mismo libro en memoria.
     """
 
     def leer(self, ruta: Path) -> list[LineaPedido]:
         if ruta.suffix.lower() == ".xls":
-            # Import local a propósito: lector_ecom_xls importa los errores de
-            # este módulo, así que a nivel de módulo el ciclo no cerraría.
+            # Imports locales a propósito: los dos traductores importan los
+            # errores de este módulo, así que a nivel de módulo el ciclo no
+            # cerraría.
+            from planeacion.infraestructura.adaptadores.salida.excel.lector_ecom_html import (
+                abrir_html_como_libro,
+                parece_html,
+            )
             from planeacion.infraestructura.adaptadores.salida.excel.lector_ecom_xls import (
                 abrir_xls_como_libro,
             )
 
-            libro = abrir_xls_como_libro(ruta)
+            libro = abrir_html_como_libro(ruta) if parece_html(ruta) else abrir_xls_como_libro(ruta)
         else:
             libro = openpyxl.load_workbook(ruta, read_only=True, data_only=True)
         try:

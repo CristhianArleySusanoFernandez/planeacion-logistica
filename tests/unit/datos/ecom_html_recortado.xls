@@ -1,0 +1,104 @@
+				<html xmlns:o="urn:schemas-microsoft-com:office:office"
+				xmlns:x="urn:schemas-microsoft-com:office:excel"
+				xmlns="http://www.w3.org/TR/REC-html40">
+
+				<head>
+				<meta http-equiv=Content-Type content="text/html; charset=us-ascii">
+				<meta name=ProgId content=Excel.Sheet>
+				<!--[if gte mso 9]><xml>
+				 <o:DocumentProperties>
+				  <o:LastAuthor>E-com</o:LastAuthor>
+				  <o:LastSaved>2005-01-02T07:46:23Z</o:LastSaved>
+				  <o:Version>10.2625</o:Version>
+				 </o:DocumentProperties>
+				 <o:OfficeDocumentSettings>
+				  <o:DownloadComponents/>
+				 </o:OfficeDocumentSettings>
+				</xml><![endif]-->
+				<style>
+				<!--table
+					{mso-displayed-decimal-separator:"\.";
+					mso-displayed-thousand-separator:"\,";}
+				@page
+					{margin:1.0in .75in 1.0in .75in;
+					mso-header-margin:.5in;
+					mso-footer-margin:.5in;}
+				tr
+					{mso-height-source:auto;}
+				col
+					{mso-width-source:auto;}
+				br
+					{mso-data-placement:same-cell;}
+				.style0
+					{mso-number-format:General;
+					text-align:general;
+					vertical-align:bottom;
+					white-space:nowrap;
+					mso-rotate:0;
+					mso-background-source:auto;
+					mso-pattern:auto;
+					color:windowtext;
+					font-size:10.0pt;
+					font-weight:400;
+					font-style:normal;
+					text-decoration:none;
+					font-family:Arial;
+					mso-generic-font-family:auto;
+					mso-font-charset:0;
+					border:none;
+					mso-protection:locked visible;
+					mso-style-name:Normal;
+					mso-style-id:0;}
+				td
+					{mso-style-parent:style0;
+					padding-top:1px;
+					padding-right:1px;
+					padding-left:1px;
+					mso-ignore:padding;
+					color:windowtext;
+					font-size:8.0pt;
+					font-weight:400;
+					font-style:normal;
+					text-decoration:none;
+					font-family:Arial;
+					mso-generic-font-family:auto;
+					mso-font-charset:0;
+					mso-number-format:General;
+					text-align:general;
+					vertical-align:bottom;
+					border:none;
+					mso-background-source:auto;
+					mso-pattern:auto;
+					mso-protection:locked visible;
+					white-space:nowrap;
+					mso-rotate:0;}
+				.xl24
+					{mso-style-parent:style0;
+					white-space:normal;}
+				-->
+				</style>
+				<!--[if gte mso 9]><xml>
+				 <x:ExcelWorkbook>
+				  <x:ExcelWorksheets>
+				   <x:ExcelWorksheet>
+					<x:Name>Informe</x:Name>
+					<x:WorksheetOptions>
+					 <x:Selected/>
+					 <x:ProtectContents>False</x:ProtectContents>
+					 <x:ProtectObjects>False</x:ProtectObjects>
+					 <x:ProtectScenarios>False</x:ProtectScenarios>
+					</x:WorksheetOptions>
+				   </x:ExcelWorksheet>
+				  </x:ExcelWorksheets>
+				  <x:WindowHeight>10005</x:WindowHeight>
+				  <x:WindowWidth>10005</x:WindowWidth>
+				  <x:WindowTopX>120</x:WindowTopX>
+				  <x:WindowTopY>135</x:WindowTopY>
+				  <x:ProtectStructure>False</x:ProtectStructure>
+				  <x:ProtectWindows>False</x:ProtectWindows>
+				 </x:ExcelWorkbook>
+				</xml><![endif]-->
+				</head>
+
+				<body link=blue vlink=purple>
+				<table x:str border=0 cellpadding=0 cellspacing=0 style='border-collapse: collapse;table-layout:fixed;'><tr><td class=xl24 width=64 ><b>Tipo</b></td><td class=xl24 width=64 ><b>Pedido</b></td><td class=xl24 width=64 ><b>Est</b></td><td class=xl24 width=64 ><b>Fecha</b></td><td class=xl24 width=64 ><b>Hora</b></td><td class=xl24 width=64 ><b>Sku</b></td><td class=xl24 width=64 ><b>nit/ced</b></td><td class=xl24 width=64 ><b>R. Social</b></td><td class=xl24 width=64 ><b>Cliente</b></td><td class=xl24 width=64 ><b>Ciudad</b></td><td class=xl24 width=64 ><b>Barrio</b></td><td class=xl24 width=64 ><b>Zona</b></td><td class=xl24 width=64 ><b>Direccion</b></td><td class=xl24 width=64 ><b>Telefono</b></td><td class=xl24 width=64 ><b>Total</b></td><td class=xl24 width=64 ><b>Asesor</b></td><td class=xl24 width=64 ><b>No Compra</b></td><td class=xl24 width=64 ><b>Bodega</b></td><td class=xl24 width=64 ><b>Bodega Transf</b></td><td class=xl24 width=64 ><b>Observaciones</b></td><td class=xl24 width=64 ><b>Cod.Prod</b></td><td class=xl24 width=64 ><b>Producto</b></td><td class=xl24 width=64 ><b>Cantidad</b></td><td class=xl24 width=64 ><b>Unidad</b></td><td class=xl24 width=64 ><b>Inventario</b></td><td class=xl24 width=64 ><b>Rotacion</b></td><td class=xl24 width=64 ><b>Precio U.</b></td><td class=xl24 width=64 ><b>Descuento</b></td><td class=xl24 width=64 ><b>Descuento_2</b></td><td class=xl24 width=64 ><b>Iva</b></td><td class=xl24 width=64 ><b>Total</b></td><td class=xl24 width=64 ><b></b></td><td class=xl24 width=64 ><b>Tip Pro</b></td><td class=xl24 width=64 ><b>Comentario</b></td><td class=xl24 width=64 ><b>Kilos</b></td><td class=xl24 width=64 ><b>Fecha Entrega</b></td><td class=xl24 width=64 ><b>Pedidos Pideky</b></td><td class=xl24 width=64 ><b>Sistema Origen</b></td></tr><tr><td class=xl24 width=64 >PEDIDO</td><td class=xl24 width=64 >6006023</td><td class=xl24 width=64 >Sin Descargar</td><td class=xl24 width=64 >2026-10-07</td><td class=xl24 width=64 >05:02:15.511915</td><td class=xl24 width=64 >4</td><td class=xl24 width=64 >10000001</td><td class=xl24 width=64 >200009999991-TIENDA DE PRUEBA</td><td class=xl24 width=64 >200009999991-CLIENTE DE PRUEBA PEÑA</td><td class=xl24 width=64 >15407 - VILLA DE LEYVA</td><td class=xl24 width=64 >SAN JUAN DE DIOS</td><td class=xl24 width=64 ></td><td class=xl24 width=64 >CL 1 2 3</td><td class=xl24 width=64 >3000000000</td><td class=xl24 width=64 >61547.01</td><td class=xl24 width=64 >10954-JHON WILMER</td><td class=xl24 width=64 >-</td><td class=xl24 width=64 >01-TUNJA PRINCIPAL</td><td class=xl24 width=64 >-</td><td class=xl24 width=64 ></td><td class=xl24 width=64 >1011172</td><td class=xl24 width=64 >Gta. FESTIVAL Surtida Bs. 12x6</td><td class=xl24 width=64 >1</td><td class=xl24 width=64 >UN</td><td class=xl24 width=64 ></td><td class=xl24 width=64 ></td><td class=xl24 width=64 >11294</td><td class=xl24 width=64 >0.00</td><td class=xl24 width=64 ></td><td class=xl24 width=64 >19.00-2145.86</td><td class=xl24 width=64 >13439.86</td><td class=xl24 width=64 ></td><td class=xl24 width=64 >N</td><td class=xl24 width=64 ></td><td class=xl24 width=64 >600</td><td class=xl24 width=64 >2026-10-07</td><td class=xl24 width=64 >200001651668CO1I06102026212329</td><td class=xl24 width=64 >Pideky</td></tr><tr><td class=xl24 width=64 >PEDIDO</td><td class=xl24 width=64 >6006023</td><td class=xl24 width=64 >Sin Descargar</td><td class=xl24 width=64 >2026-10-07</td><td class=xl24 width=64 >05:02:15.511915</td><td class=xl24 width=64 ></td><td class=xl24 width=64 >10000001</td><td class=xl24 width=64 ></td><td class=xl24 width=64 >200009999991-CLIENTE DE PRUEBA PEÑA</td><td class=xl24 width=64 ></td><td class=xl24 width=64 ></td><td class=xl24 width=64 ></td><td class=xl24 width=64 >CL 1 2 3</td><td class=xl24 width=64 >3000000000</td><td class=xl24 width=64 ></td><td class=xl24 width=64 >10954-JHON WILMER</td><td class=xl24 width=64 ></td><td class=xl24 width=64 >01-TUNJA PRINCIPAL</td><td class=xl24 width=64 >-</td><td class=xl24 width=64 ></td><td class=xl24 width=64 >1069703</td><td class=xl24 width=64 >CAFE LA BASTILLA FUERTE 390G 30UND</td><td class=xl24 width=64 >1</td><td class=xl24 width=64 >UN</td><td class=xl24 width=64 ></td><td class=xl24 width=64 ></td><td class=xl24 width=64 >14408</td><td class=xl24 width=64 >0.00</td><td class=xl24 width=64 ></td><td class=xl24 width=64 >5.00-720.40</td><td class=xl24 width=64 >15128.40</td><td class=xl24 width=64 ></td><td class=xl24 width=64 >N</td><td class=xl24 width=64 ></td><td class=xl24 width=64 >390</td><td class=xl24 width=64 >2026-10-07</td><td class=xl24 width=64 >200001651668CO1I06102026212329</td><td class=xl24 width=64 >Pideky</td></tr><tr><td class=xl24 width=64 >PEDIDO</td><td class=xl24 width=64 >6006023</td><td class=xl24 width=64 >Sin Descargar</td><td class=xl24 width=64 >2026-10-07</td><td class=xl24 width=64 >05:02:15.511915</td><td class=xl24 width=64 ></td><td class=xl24 width=64 >10000001</td><td class=xl24 width=64 ></td><td class=xl24 width=64 >200009999991-CLIENTE DE PRUEBA PEÑA</td><td class=xl24 width=64 ></td><td class=xl24 width=64 ></td><td class=xl24 width=64 ></td><td class=xl24 width=64 >CL 1 2 3</td><td class=xl24 width=64 >3000000000</td><td class=xl24 width=64 ></td><td class=xl24 width=64 >10954-JHON WILMER</td><td class=xl24 width=64 ></td><td class=xl24 width=64 >01-TUNJA PRINCIPAL</td><td class=xl24 width=64 >-</td><td class=xl24 width=64 ></td><td class=xl24 width=64 >1079670</td><td class=xl24 width=64 >Cafe BASTILLA fuerte 110g 48pqt.</td><td class=xl24 width=64 >1</td><td class=xl24 width=64 >UN</td><td class=xl24 width=64 ></td><td class=xl24 width=64 ></td><td class=xl24 width=64 >4758</td><td class=xl24 width=64 >0.00</td><td class=xl24 width=64 ></td><td class=xl24 width=64 >5.00-237.90</td><td class=xl24 width=64 >4995.90</td><td class=xl24 width=64 ></td><td class=xl24 width=64 >N</td><td class=xl24 width=64 ></td><td class=xl24 width=64 >110</td><td class=xl24 width=64 >2026-10-07</td><td class=xl24 width=64 >200001651668CO1I06102026212329</td><td class=xl24 width=64 >Pideky</td></tr><tr><td class=xl24 width=64 >PEDIDO</td><td class=xl24 width=64 >6006023</td><td class=xl24 width=64 >Sin Descargar</td><td class=xl24 width=64 >2026-10-07</td><td class=xl24 width=64 >05:02:15.511915</td><td class=xl24 width=64 ></td><td class=xl24 width=64 >10000001</td><td class=xl24 width=64 ></td><td class=xl24 width=64 >200009999991-CLIENTE DE PRUEBA PEÑA</td><td class=xl24 width=64 ></td><td class=xl24 width=64 ></td><td class=xl24 width=64 ></td><td class=xl24 width=64 >CL 1 2 3</td><td class=xl24 width=64 >3000000000</td><td class=xl24 width=64 ></td><td class=xl24 width=64 >10954-JHON WILMER</td><td class=xl24 width=64 ></td><td class=xl24 width=64 >01-TUNJA PRINCIPAL</td><td class=xl24 width=64 >-</td><td class=xl24 width=64 ></td><td class=xl24 width=64 >1091605</td><td class=xl24 width=64 >CMU VIENAZENU150G4UNVIENAPLL2UN</td><td class=xl24 width=64 >1</td><td class=xl24 width=64 >UN</td><td class=xl24 width=64 ></td><td class=xl24 width=64 ></td><td class=xl24 width=64 >23515</td><td class=xl24 width=64 >0.00</td><td class=xl24 width=64 ></td><td class=xl24 width=64 >19.00-4467.85</td><td class=xl24 width=64 >27982.85</td><td class=xl24 width=64 ></td><td class=xl24 width=64 >N</td><td class=xl24 width=64 ></td><td class=xl24 width=64 >900</td><td class=xl24 width=64 >2026-10-07</td><td class=xl24 width=64 >200001651668CO1I06102026212329</td><td class=xl24 width=64 >Pideky</td></tr></table></body></html>
