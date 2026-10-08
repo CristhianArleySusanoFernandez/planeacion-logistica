@@ -7,12 +7,15 @@ reporta en el DTO en vez de perderse en silencio.
 """
 
 from collections import Counter
+from collections.abc import Sequence
 from datetime import date
+from decimal import Decimal
 from pathlib import Path
 
 from planeacion.application.dto.pivote import (
     ClienteNoResueltoDTO,
     FacturaDTO,
+    LineaKilosExcluidosDTO,
     PivotePorZonaDTO,
     ZonaAgregadaDTO,
 )
@@ -25,6 +28,12 @@ from planeacion.application.puertos.salida.repositorios import (
 from planeacion.domain.errores import SinPedidosParaPivotear
 from planeacion.domain.modelo import LineaPedido, Zona
 from planeacion.domain.servicios.agregador_por_zona import AgregadorPorZona, ResultadoAgregacion
+from planeacion.domain.servicios.guarda_kilos import (
+    KILOS_MAX_POR_UNIDAD,
+    LineaSospechosa,
+    detectar_kilos_sospechosos,
+    sin_kilos_sospechosos,
+)
 from planeacion.domain.servicios.parseo_zonas import normalizar_nombre_zona
 from planeacion.domain.servicios.resolutor_zona import ResolutorDeZona
 
@@ -46,11 +55,23 @@ class CasoDeUsoGenerarPivote:
         self._agregador = AgregadorPorZona()
 
     def ejecutar(
-        self, ruta_ecom: Path, fecha: date | None = None, todas_las_fechas: bool = False
+        self,
+        ruta_ecom: Path,
+        fecha: date | None = None,
+        todas_las_fechas: bool = False,
+        kilos_max_por_unidad: Decimal = KILOS_MAX_POR_UNIDAD,
     ) -> PivotePorZonaDTO:
         lineas = self._lector.leer(ruta_ecom)
         if not lineas:
             raise SinPedidosParaPivotear(f"{ruta_ecom.name} no trae líneas de pedido")
+
+        # Guarda de kilos: ECOM trae productos con el peso mal cargado en la ficha
+        # (un caso real de 715,5 kg la unidad). Se les ponen los kilos en cero
+        # ANTES de agregar, así no contaminan el pivote ni el balanceo; la factura
+        # y el cliente siguen contando porque el pedido existe.
+        sospechosas = detectar_kilos_sospechosos(lineas, maximo_por_unidad=kilos_max_por_unidad)
+        kilos_excluidos = sum((s.linea.kilos for s in sospechosas), Decimal("0"))
+        lineas = sin_kilos_sospechosos(lineas, sospechosas)
 
         fecha_pivote = fecha or _fecha_mas_frecuente(lineas)
         if todas_las_fechas:
@@ -58,7 +79,14 @@ class CasoDeUsoGenerarPivote:
             # (jornadas que se planearon juntas): filtrar por uno solo partiría
             # en dos una planeación que se hizo entera. La fecha del DTO sigue
             # siendo la más frecuente, solo como etiqueta del día.
-            return _a_dto(fecha_pivote, self._agregador.agregar(lineas, self._crear_resolutor()), lineas, [])
+            return _a_dto(
+                fecha_pivote,
+                self._agregador.agregar(lineas, self._crear_resolutor()),
+                lineas,
+                [],
+                sospechosas,
+                kilos_excluidos,
+            )
 
         del_dia = [linea for linea in lineas if linea.fecha == fecha_pivote]
         if not del_dia:
@@ -68,7 +96,17 @@ class CasoDeUsoGenerarPivote:
         excluidas = [linea for linea in lineas if linea.fecha != fecha_pivote]
 
         resultado = self._agregador.agregar(del_dia, self._crear_resolutor())
-        return _a_dto(fecha_pivote, resultado, del_dia, excluidas)
+        # Las sospechosas que quedaron fuera del día tampoco se reportan: el aviso
+        # tiene que hablar de lo que se planea hoy.
+        del_dia_marcadas = [s for s in sospechosas if s.linea.fecha == fecha_pivote]
+        return _a_dto(
+            fecha_pivote,
+            resultado,
+            del_dia,
+            excluidas,
+            del_dia_marcadas,
+            sum((s.linea.kilos for s in del_dia_marcadas), Decimal("0")),
+        )
 
     def _crear_resolutor(self) -> ResolutorDeZona:
         zonas_por_nombre = {normalizar_nombre_zona(z.nombre): z for z in self._zonas.listar()}
@@ -93,6 +131,8 @@ def _a_dto(
     resultado: ResultadoAgregacion,
     del_dia: list[LineaPedido],
     excluidas: list[LineaPedido],
+    kilos_sospechosos: Sequence[LineaSospechosa] = (),
+    kilos_excluidos: Decimal = Decimal("0"),
 ) -> PivotePorZonaDTO:
     pedidos_del_dia = {linea.pedido for linea in del_dia}
     pedidos_excluidos = {linea.pedido for linea in excluidas} - pedidos_del_dia
@@ -129,6 +169,20 @@ def _a_dto(
         facturas_no_resueltas=resultado.facturas_no_resueltas,
         pesos_no_resueltos=resultado.pesos_no_resueltos,
         kilos_no_resueltos=resultado.kilos_no_resueltos,
+        kilos_excluidos=kilos_excluidos,
+        lineas_kilos_excluidos=tuple(
+            LineaKilosExcluidosDTO(
+                pedido=sospechosa.linea.pedido,
+                codigo_cliente=sospechosa.linea.codigo_cliente,
+                nombre_cliente=sospechosa.linea.nombre_cliente,
+                producto=sospechosa.linea.producto,
+                cod_producto=sospechosa.linea.cod_producto,
+                cantidad=sospechosa.linea.cantidad,
+                kilos=sospechosa.linea.kilos,
+                motivo=sospechosa.descripcion,
+            )
+            for sospechosa in kilos_sospechosos
+        ),
         pedidos_excluidos_por_fecha=len(pedidos_excluidos),
         fechas_excluidas=tuple(fechas_excluidas),
         facturas=tuple(

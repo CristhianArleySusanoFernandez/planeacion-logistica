@@ -7,7 +7,11 @@ from pathlib import Path
 
 from openpyxl import load_workbook
 
-from planeacion.application.dto.pivote import ClienteNoResueltoDTO, FacturaDTO
+from planeacion.application.dto.pivote import (
+    ClienteNoResueltoDTO,
+    FacturaDTO,
+    LineaKilosExcluidosDTO,
+)
 from planeacion.application.dto.planeacion import PlaneacionCompleta
 from planeacion.domain.modelo import (
     CargaCarro,
@@ -234,8 +238,9 @@ def test_la_hoja_base_lleva_el_destino_real_de_las_viajeras(tmp_path: Path) -> N
 
 
 def test_hoja_pedidos_una_fila_por_factura(tmp_path: Path) -> None:
+    columnas = len(ENCABEZADO_PEDIDOS)
     hoja = load_workbook(_exportar(tmp_path))["PEDIDOS"]
-    assert tuple(hoja.cell(row=1, column=c).value for c in range(1, 13)) == ENCABEZADO_PEDIDOS
+    assert tuple(hoja.cell(row=1, column=c).value for c in range(1, columnas + 1)) == ENCABEZADO_PEDIDOS
     filas = [tuple(hoja.cell(row=f, column=c).value for c in range(1, 13)) for f in range(2, 6)]
     assert len(filas) == 4
     primera = filas[0]
@@ -244,3 +249,32 @@ def test_hoja_pedidos_una_fila_por_factura(tmp_path: Path) -> None:
     # El cliente sin zona sale con #N/D y #N/A pero no se pierde.
     assert filas[3][10:] == ("#N/D", "#N/A")
     assert hoja.cell(row=6, column=1).value is None
+    # Sin kilos mal cargados, la columna de revisados queda vacía en todas.
+    assert [hoja.cell(row=f, column=columnas).value for f in range(2, 6)] == [None] * 4
+
+
+def test_la_hoja_pedidos_marca_los_kilos_que_quedaron_fuera(tmp_path: Path) -> None:
+    """Facturación tiene que poder ver que ese peso no es el de la factura."""
+    planeacion = replace(
+        _planeacion_de_ejemplo(),
+        kilos_excluidos=Decimal("715.5"),
+        lineas_kilos_excluidos=(
+            LineaKilosExcluidosDTO(
+                pedido="P1",
+                codigo_cliente="111",
+                nombre_cliente="TIENDA 111",
+                producto="CMU. 2 TOSH MIEL GTS FUS",
+                cod_producto="1094106",
+                cantidad=Decimal("1"),
+                kilos=Decimal("715.5"),
+                motivo="715,5 kg/unidad",
+            ),
+        ),
+    )
+
+    hoja = load_workbook(ExportadorExcelPlaneacion().exportar(planeacion, tmp_path / "s.xlsx"))["PEDIDOS"]
+
+    columna = len(ENCABEZADO_PEDIDOS)
+    assert hoja.cell(row=2, column=2).value == "P1"  # la factura con la línea marcada
+    assert hoja.cell(row=2, column=columna).value == 715.5
+    assert hoja.cell(row=3, column=columna).value is None

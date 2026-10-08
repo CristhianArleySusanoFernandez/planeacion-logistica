@@ -222,6 +222,22 @@ productos ocupa 5 filas). Columnas relevantes:
 **El código de cliente se obtiene** partiendo `H` (o `I`) por el primer `-` y tomando la parte izquierda.
 Convertir `O` y `AE` a `Decimal` (vienen como string).
 
+> **Guarda de kilos mal cargados.** ECOM trae productos con el peso equivocado en la ficha:
+> `CMU. 2 TOSH MIEL GTS FUS` viene a **715,5 kg la unidad** en 18 líneas de $17.279, y por eso los
+> totales del 5, 6 y 7 de octubre de 2026 dieron 8.863, 20.978 y 17.562 kg contra los 4.000–5.300 de
+> un día normal. Como los kilos entran a la función de costo del balanceo, una sola ficha mal
+> cargada decidiría el reparto del día. `domain/servicios/guarda_kilos.py` marca la línea por dos
+> reglas: más de `kilos_max_por_unidad` (25 kg) por unidad, o más de 10 veces la mediana de kilos por
+> unidad de **ese mismo `Cod.Prod`** dentro del archivo (con al menos 3 apariciones, y sin contar las
+> que ya pasaron el techo, que si no corren la mediana). A la línea marcada se le ponen los kilos en
+> **cero**: la factura, el cliente y la plata siguen contando porque el pedido existe y se factura;
+> lo único que no se puede creer es el peso. El pivote expone `kilos_excluidos` y el detalle, el
+> Paso 1 lo avisa, la hoja `PEDIDOS` lo marca en la columna *Kilos revisados* y el validador lo
+> cuenta por día. Al cotejar totales contra `PLANEACION` los kilos excluidos se vuelven a sumar: esa
+> fila los trae porque la operación no los descartó, y lo que esa prueba verifica es que la app leyó
+> la misma entrada. Medido sobre el 6 de octubre: 20.977,92 kg → **4.632,12 kg**, con facturas,
+> clientes y pesos idénticos.
+
 **La zona NO está en este archivo**: se asigna cruzando el código de cliente contra la maestra (tabla
 `clientes` en Supabase). Los clientes que no estén en la maestra quedan como **no resueltos (#N/D)** y hay
 que sugerirles zona (fase de clientes nuevos).

@@ -58,6 +58,9 @@ ENCABEZADO_PEDIDOS = (
     "Asesor",
     "CUADRANTE",
     "CARRO",
+    # Los kilos que ECOM traia mal cargados y quedaron fuera del peso de la fila.
+    # Vacia en las facturas sanas, que son casi todas.
+    "Kilos revisados",
 )
 
 
@@ -209,8 +212,16 @@ class ExportadorExcelPlaneacion:
         self, hoja: Worksheet, planeacion: PlaneacionCompleta, carro_por_zona: dict[str, str]
     ) -> None:
         _escribir_encabezado(hoja, 1, ENCABEZADO_PEDIDOS)
+        # Los kilos excluidos se reparten por pedido: la hoja va por factura y una
+        # factura puede traer varias lineas mal cargadas.
+        excluidos_por_pedido: dict[str, Decimal] = {}
+        for linea in planeacion.lineas_kilos_excluidos:
+            excluidos_por_pedido[linea.pedido] = (
+                excluidos_por_pedido.get(linea.pedido, Decimal("0")) + linea.kilos
+            )
         for fila, factura in enumerate(planeacion.facturas, start=2):
             carro = carro_por_zona.get(factura.zona) if factura.zona else None
+            excluidos = excluidos_por_pedido.get(factura.pedido)
             hoja.cell(row=fila, column=1, value=factura.fecha)
             hoja.cell(row=fila, column=2, value=factura.pedido)
             hoja.cell(row=fila, column=3, value=factura.codigo_cliente)
@@ -223,6 +234,8 @@ class ExportadorExcelPlaneacion:
             hoja.cell(row=fila, column=10, value=factura.asesor)
             hoja.cell(row=fila, column=11, value=factura.zona if factura.zona else _SIN_ZONA)
             hoja.cell(row=fila, column=12, value=carro if carro is not None else _SIN_CARRO)
+            if excluidos is not None:
+                hoja.cell(row=fila, column=13, value=excluidos)
         _ajustar_anchos(
             hoja,
             {
@@ -238,6 +251,7 @@ class ExportadorExcelPlaneacion:
                 "J": 16,
                 "K": 45,
                 "L": 10,
+                "M": 16,
             },
         )
         hoja.freeze_panes = "A2"

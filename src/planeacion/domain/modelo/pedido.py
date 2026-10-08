@@ -18,5 +18,6 @@ class LineaPedido:
     ciudad: str | None = None
     barrio: str | None = None
     producto: str | None = None
+    cod_producto: str | None = None  # columna Cod.Prod: la identidad del producto
     cantidad: Decimal | None = None
     asesor: str | None = None  # columna P, ej. "10947-MATILDA"

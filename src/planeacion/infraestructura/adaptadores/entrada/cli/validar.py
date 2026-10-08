@@ -104,6 +104,8 @@ class ResultadoValidacion:
     metricas: dict[str, MetricasDesbalance]  # el reparto que propuso la app
     metricas_manual: dict[str, MetricasDesbalance]  # el que hizo la operación
     zonas_sin_carro: int
+    lineas_kilos_excluidos: int  # líneas que ECOM traía con el peso mal cargado
+    kilos_excluidos: Decimal
     descuadres: tuple[str, ...]  # vacío = la entrada reconstruida es la que se planeó
 
     @property
@@ -167,8 +169,14 @@ def _descuadres(planeacion: PlaneacionCompleta, manuales: TotalesPlaneacion) -> 
         problemas.append(f"clientes {planeacion.total_clientes} vs {manuales.clientes}")
     if abs(planeacion.total_pesos - manuales.pesos) > _TOLERANCIA_PESOS:
         problemas.append(f"pesos {planeacion.total_pesos:,.2f} vs {manuales.pesos:,.2f}")
-    if abs(planeacion.total_kilos - manuales.kilos) > _TOLERANCIA_KILOS:
-        problemas.append(f"kilos {planeacion.total_kilos:,.2f} vs {manuales.kilos:,.2f}")
+    # Los kilos se comparan SUMANDO los excluidos por la guarda: la fila de
+    # PLANEACION los trae porque la operación no los descartó, y lo que esta
+    # prueba verifica es que la app leyó la misma entrada, no que haya calculado
+    # el mismo peso. Sin esto, todos los días con una ficha mal cargada quedarían
+    # descartados de la medición justo por haberla detectado.
+    kilos_leidos = planeacion.total_kilos + planeacion.kilos_excluidos
+    if abs(kilos_leidos - manuales.kilos) > _TOLERANCIA_KILOS:
+        problemas.append(f"kilos {kilos_leidos:,.2f} vs {manuales.kilos:,.2f}")
     return problemas
 
 
@@ -184,6 +192,12 @@ def _imprimir_detalle(resultado: ResultadoValidacion) -> None:
         f"  Totales app        : {resultado.totales_app.facturas} facturas | "
         f"{resultado.totales_app.clientes} clientes | ${resultado.totales_app.pesos:,.2f} | "
         f"{resultado.totales_app.kilos:,.2f} kg"
+        + (
+            f" (+ {resultado.kilos_excluidos:,.2f} kg excluidos por mal cargados "
+            f"en {resultado.lineas_kilos_excluidos} línea(s))"
+            if resultado.lineas_kilos_excluidos
+            else ""
+        )
     )
     print(
         f"  Totales PLANEACION : {resultado.totales_manuales.facturas} facturas | "
@@ -226,13 +240,17 @@ def _imprimir_resumen(resultados: list[ResultadoValidacion]) -> None:
     print("\n" + "=" * 100)
     print("RESUMEN")
     print("=" * 100)
-    print(f"{'Archivo':45s} {'Zonas':>6s} {'Coinciden':>10s} {'%':>7s} {'Sin carro':>10s}")
+    print(
+        f"{'Archivo':45s} {'Zonas':>6s} {'Coinciden':>10s} {'%':>7s} {'Sin carro':>10s} "
+        f"{'Kg fuera':>9s} {'Lineas':>7s}"
+    )
     for resultado in resultados:
         comparacion = resultado.comparacion
         print(
             f"{resultado.archivo[:45]:45s} {comparacion.comparables:6d} "
             f"{comparacion.coincidencias:10d} {comparacion.porcentaje:7.1%} "
-            f"{resultado.zonas_sin_carro:10d}"
+            f"{resultado.zonas_sin_carro:10d} {resultado.kilos_excluidos:9,.0f} "
+            f"{resultado.lineas_kilos_excluidos:7d}"
         )
     porcentajes = [resultado.comparacion.porcentaje for resultado in resultados]
     print("-" * 100)
@@ -539,6 +557,8 @@ def main() -> int:
             metricas=dict(planeacion.resultado.metricas_finales),
             metricas_manual=metricas_del_manual(planeacion, manual),
             zonas_sin_carro=len(planeacion.resultado.zonas_sin_carro),
+            lineas_kilos_excluidos=len(planeacion.lineas_kilos_excluidos),
+            kilos_excluidos=planeacion.kilos_excluidos,
             descuadres=tuple(_descuadres(planeacion, totales)),
         )
         resultados.append(resultado)

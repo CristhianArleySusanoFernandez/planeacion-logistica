@@ -55,6 +55,7 @@ _SINONIMOS: dict[str, tuple[str, ...]] = {
     "direccion": ("direccion",),
     "asesor": ("asesor",),
     "producto": ("producto",),
+    "cod_producto": ("cod.prod", "cod prod", "codigo producto"),
     "cantidad": ("cantidad",),
     "kilos": ("kilos",),
 }
@@ -71,6 +72,7 @@ _NOMBRE_VISIBLE: dict[str, str] = {
     "direccion": "Direccion",
     "asesor": "Asesor",
     "producto": "Producto",
+    "cod_producto": "Cod.Prod",
     "cantidad": "Cantidad",
     "kilos": "Kilos",
     "total_linea": "Total (de la línea)",
@@ -101,6 +103,7 @@ class _MapaColumnas:
     direccion: int | None
     asesor: int | None
     producto: int | None
+    cod_producto: int | None
     cantidad: int | None
     total_factura: int | None
 
@@ -111,7 +114,7 @@ class _MapaColumnas:
             self.pedido, self.fecha, self.total_linea, self.kilos,
             self.cliente, self.razon_social, self.documento, self.ciudad,
             self.barrio, self.direccion, self.asesor, self.producto,
-            self.cantidad, self.total_factura,
+            self.cod_producto, self.cantidad, self.total_factura,
         ]  # fmt: skip
         return max(indice for indice in indices if indice is not None) + 1
 
@@ -174,7 +177,16 @@ def _mapear_columnas(encabezados: Sequence[Any]) -> _MapaColumnas:
 
     opcionales_ausentes = [
         _NOMBRE_VISIBLE[nombre]
-        for nombre in ("documento", "ciudad", "barrio", "direccion", "asesor", "producto", "cantidad")
+        for nombre in (
+            "documento",
+            "ciudad",
+            "barrio",
+            "direccion",
+            "asesor",
+            "producto",
+            "cod_producto",
+            "cantidad",
+        )
         if indices[nombre] is None
     ]
     if opcionales_ausentes:
@@ -199,6 +211,7 @@ def _mapear_columnas(encabezados: Sequence[Any]) -> _MapaColumnas:
         direccion=indices["direccion"],
         asesor=indices["asesor"],
         producto=indices["producto"],
+        cod_producto=indices["cod_producto"],
         cantidad=indices["cantidad"],
         total_factura=total_factura,
     )
@@ -379,6 +392,7 @@ def _leer_lineas(hoja: Worksheet, mapa: _MapaColumnas, columna_inicial: int = 0)
             ciudad=_texto(_celda(fila, mapa.ciudad)),
             barrio=_texto(_celda(fila, mapa.barrio)),
             producto=_texto(_celda(fila, mapa.producto)),
+            cod_producto=_texto(_celda(fila, mapa.cod_producto)),
             cantidad=(
                 convertir_decimal(
                     cantidad_cruda,

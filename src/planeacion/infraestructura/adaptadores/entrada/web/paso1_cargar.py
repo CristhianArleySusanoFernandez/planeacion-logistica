@@ -48,6 +48,32 @@ def mostrar(contenedor: Contenedor) -> None:
             f"(fecha {', '.join(pivote.fechas_excluidas)}) y se dejaron por fuera. No se "
             f"pierden: simplemente no entran a la planeación del {pivote.fecha.isoformat()}."
         )
+    if pivote.lineas_kilos_excluidos:
+        st.warning(
+            f"⚖️ Se dejaron fuera **{pivote.kilos_excluidos:,.0f} kg** de "
+            f"{len(pivote.lineas_kilos_excluidos)} línea(s) con el peso mal cargado en ECOM. "
+            "Las facturas, los clientes y la plata de esos pedidos **sí cuentan**: lo único que "
+            "no entra al reparto es ese peso, porque un producto con la ficha mal cargada "
+            "decidiría solo el equilibrio del día. Conviene avisar para que corrijan la ficha."
+        )
+        with st.expander(f"Ver las {len(pivote.lineas_kilos_excluidos)} línea(s)"):
+            estilos.tabla_marca(
+                ["Pedido", "Cliente", "Cód. producto", "Producto", "Cantidad", "Kilos", "Motivo"],
+                [
+                    [
+                        linea.pedido,
+                        linea.nombre_cliente or linea.codigo_cliente,
+                        linea.cod_producto or "—",
+                        linea.producto or "—",
+                        f"{linea.cantidad:,.0f}" if linea.cantidad is not None else "—",
+                        f"{linea.kilos:,.1f}",
+                        linea.motivo,
+                    ]
+                    for linea in pivote.lineas_kilos_excluidos
+                ],
+                numericas=("Cantidad", "Kilos"),
+            )
+
     if pivote.no_resueltos:
         st.info(
             f"{len(pivote.no_resueltos)} clientes todavía no tienen zona asignada: "

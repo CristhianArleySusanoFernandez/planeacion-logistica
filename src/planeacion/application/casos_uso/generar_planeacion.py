@@ -113,6 +113,8 @@ class CasoDeUsoGenerarPlaneacion:
             facturas_no_resueltas=pivote.facturas_no_resueltas,
             pesos_no_resueltos=pivote.pesos_no_resueltos,
             kilos_no_resueltos=pivote.kilos_no_resueltos,
+            kilos_excluidos=pivote.kilos_excluidos,
+            lineas_kilos_excluidos=pivote.lineas_kilos_excluidos,
         )
 
     def guardar(self, planeacion: PlaneacionCompleta) -> int:

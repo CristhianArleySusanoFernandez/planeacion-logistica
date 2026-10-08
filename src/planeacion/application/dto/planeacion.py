@@ -9,7 +9,11 @@ from dataclasses import dataclass
 from datetime import date
 from decimal import Decimal
 
-from planeacion.application.dto.pivote import ClienteNoResueltoDTO, FacturaDTO
+from planeacion.application.dto.pivote import (
+    ClienteNoResueltoDTO,
+    FacturaDTO,
+    LineaKilosExcluidosDTO,
+)
 from planeacion.domain.modelo import AsignacionZona, ResultadoBalanceo
 
 
@@ -40,6 +44,9 @@ class PlaneacionCompleta:
     facturas_no_resueltas: int = 0
     pesos_no_resueltos: Decimal = Decimal("0")
     kilos_no_resueltos: Decimal = Decimal("0")
+    # Kilos que ECOM traia mal cargados y no entraron al reparto (ver guarda_kilos).
+    kilos_excluidos: Decimal = Decimal("0")
+    lineas_kilos_excluidos: tuple[LineaKilosExcluidosDTO, ...] = ()
 
     def asignaciones(self) -> list[AsignacionZona]:
         """El reparto aplanado a filas zona→carro, como lo esperan la persistencia
