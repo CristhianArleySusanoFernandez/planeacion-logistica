@@ -61,6 +61,37 @@ tabla y filas no mapeables.
 > `activo = false` si no facturó. El bloque 1 (vehículos con código y placa) no se siembra;
 > el cruce ruta ↔ vehículo está en [`docs/mapeo-vehiculos-rutas.md`](docs/mapeo-vehiculos-rutas.md).
 
+## Resincronizar la configuración desde el archivo más reciente
+
+La siembra de arriba es para arrancar de cero. Cuando la operación cambia —otra persona a cargo,
+otra flota, la maestra corregida— la configuración se **resincroniza** desde el `.xlsm` más
+reciente, que es el archivo de corte:
+
+```bash
+# Modo reporte (lo que hace por defecto): no escribe nada
+uv run planeacion-resincronizar "datos/DEL 06-10 PARA EL 08-10.xlsm"
+
+# Aplicar, y después verificar recalculando el reporte contra la base ya escrita
+uv run planeacion-resincronizar "datos/DEL 06-10 PARA EL 08-10.xlsm" --aplicar
+```
+
+Sincroniza cinco cosas: la **flota** (bloque 2 de `BASE`: conductor con sufijo, `conductor_clave`,
+auxiliar, municipio del pool y `municipio_real`, lado de Chiquinquirá), las **zonas** (columna RUTA
+de `MAESTRA`), los **clientes** (`MAESTRA` para zona/ciudad/barrio/dirección y `MAESTRA COMPLETA`
+para documento y razón social), las **correcciones** (`CAMBIOS`) y los **overrides**
+(`martha ojo`). Todo queda en consola y en `salidas/resincronizacion_<fecha>.md` como
+`antes → después`.
+
+Dos reglas que no se negocian:
+
+- **Nada se borra.** Lo que está en la base y no en el archivo se lista en el reporte (las zonas con
+  su número de clientes, los clientes con su código) para decidirlo a mano. La única excepción son
+  las rutas fuera de 1–22, que quedan `activo = false` —los refuerzos puntuales no son flota— y
+  tampoco se borran.
+- **Documento y razón social solo se rellenan si están vacíos.** Si alguien los corrigió en la app,
+  la hoja no los pisa. Zona, ciudad, barrio y dirección sí se actualizan: ahí la maestra es la
+  fuente y se corrige a diario.
+
 ## Pivote por zona (proceso diario)
 
 Con la base ya sembrada, el pivote del día se genera desde el archivo crudo de ECOM. Sirven las tres
@@ -201,12 +232,29 @@ y en la hoja `PLANEACION` el reparto manual (el resultado a superar).
 
 ```bash
 uv run planeacion-validar "datos/DEL 07 PARA EL 09 JULIO.xlsm"
-uv run planeacion-validar --muestra 5 datos/*.xlsm --exportar-csv diferencias.csv
+uv run planeacion-validar --muestra 5 "datos/*.xlsm" --exportar-csv diferencias.csv
+
+# Con los .xls sueltos de ECOM como entrada del Paso 1 (el archivo real de producción)
+uv run planeacion-validar "datos/*.xlsm" --ecom "datos/infpedidos*.xls"
 ```
 
+> Los `.xls` que descarga la empresa **no son `.xls`**: son una tabla HTML con la extensión
+> cambiada. Se leen igual (ver `lector_ecom_html`), pero si alguna vez falla la lectura, ese es el
+> primer lugar donde mirar.
+
+`--ecom` cambia el **origen de la entrada**: en vez del bloque pegado en el `.xlsm` usa los `.xls`
+sueltos que la empresa descarga de ECOM, que es lo que la app recibe en producción por el Paso 1 (el
+bloque pegado es una copia, y en al menos un archivo histórico se pegó a mitad de jornada). El
+emparejamiento es **por fecha de pedidos**: la del `.xls` sale de su nombre
+(`infpedidos20261007….xls`) y la del `.xlsm` de la columna `Fecha` de su bloque, nunca del nombre del
+`.xlsm` —esos traen erratas y nombran el día de *entrega*—. Un día sin su `.xls` no se mide y se
+reporta.
+
 Por cada archivo imprime los totales de ambos lados (control de que la lectura fue correcta),
-cuántas zonas coincidieron y la lista de diferencias; al final, la tabla resumen con promedio,
-mínimo y máximo. `--muestra N` elige N archivos al azar con una **semilla fija** que se reporta,
+cuántas zonas coincidieron y la lista de diferencias. Al final: la tabla resumen con promedio,
+mediana, mínimo y máximo; una fila **por día** con fecha, día de la semana, coincidencia y CV por
+municipio (el promedio esconde la forma de los datos); el CV promedio por municipio; y las
+diferencias zona por zona del **peor día**, con el carro manual contra el propuesto. `--muestra N` elige N archivos al azar con una **semilla fija** que se reporta,
 para poder repetir la corrida. El CSV (`archivo, fecha, zona, municipio, carro_manual,
 carro_propuesto, clientes, pesos`) sirve para ver si una zona difiere **sistemáticamente** —eso
 delata una regla de negocio faltante— o solo un día, que es apenas otra forma válida de equilibrar.

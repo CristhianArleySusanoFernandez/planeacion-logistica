@@ -21,6 +21,7 @@ planeacion-sembrar-repertorio = "planeacion.infraestructura.adaptadores.entrada.
 planeacion-auditar-zonas = "planeacion.infraestructura.adaptadores.entrada.cli.auditar_zonas:main"
 planeacion-fusionar-zonas = "planeacion.infraestructura.adaptadores.entrada.cli.fusionar_zonas:main"
 planeacion-validar = "planeacion.infraestructura.adaptadores.entrada.cli.validar:main"
+planeacion-resincronizar = "planeacion.infraestructura.adaptadores.entrada.cli.resincronizar:main"
 
 [dependency-groups]
 dev = [
