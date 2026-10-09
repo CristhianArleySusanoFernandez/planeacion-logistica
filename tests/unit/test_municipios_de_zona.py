@@ -73,8 +73,9 @@ class TestPorLaEvidencia:
         """Una sola aparición de otra ruta no manda, pero tiene que verse."""
         zonas = [_zona("VIAJERA 1 (RAMIRIQUI)")]
         observaciones = {"VIAJERA 1 (RAMIRIQUI)": Counter({"14": 5, "15": 2, "11": 1})}
+        clientes = Counter({"VIAJERA 1 (RAMIRIQUI)": 49})
 
-        propuesta = proponer_por_evidencia(zonas, _POOL, observaciones, Counter())[0]
+        propuesta = proponer_por_evidencia(zonas, _POOL, observaciones, clientes)[0]
 
         assert propuesta.municipio_propuesto == "TUNJA"
         assert not propuesta.unanime
@@ -102,10 +103,55 @@ class TestPorLaEvidencia:
     def test_el_orden_pone_primero_lo_mejor_sostenido(self) -> None:
         zonas = [_zona("POCA EVIDENCIA"), _zona("MUCHA EVIDENCIA")]
         observaciones = {
-            "POCA EVIDENCIA": Counter({"14": 1}),
+            "POCA EVIDENCIA": Counter({"14": 3}),
             "MUCHA EVIDENCIA": Counter({"14": 9}),
         }
+        clientes = Counter({"POCA EVIDENCIA": 10, "MUCHA EVIDENCIA": 10})
 
-        propuestas = proponer_por_evidencia(zonas, _POOL, observaciones, Counter())
+        propuestas = proponer_por_evidencia(zonas, _POOL, observaciones, clientes)
 
         assert [p.nombre for p in propuestas] == ["MUCHA EVIDENCIA", "POCA EVIDENCIA"]
+
+
+class TestPisoDeEvidencia:
+    """Un solo cliente visto una o dos veces no alcanza para mover de pool."""
+
+    def test_un_cliente_con_dos_observaciones_se_queda_en_otros(self) -> None:
+        zonas = [_zona("COMFABOY")]
+        observaciones = {"COMFABOY": Counter({"14": 1, "15": 1})}
+
+        propuestas = proponer_por_evidencia(zonas, _POOL, observaciones, Counter({"COMFABOY": 1}))
+
+        assert propuestas == []
+
+    def test_pocos_clientes_pero_evidencia_sostenida_si_cambia(self) -> None:
+        """VDA FORAQUIRA JENESANO: 5 clientes y 5 asignaciones alcanzan."""
+        zonas = [_zona("VDA FORAQUIRA JENESANO")]
+        observaciones = {"VDA FORAQUIRA JENESANO": Counter({"14": 3, "15": 1, "12": 1})}
+        clientes = Counter({"VDA FORAQUIRA JENESANO": 5})
+
+        propuestas = proponer_por_evidencia(zonas, _POOL, observaciones, clientes)
+
+        assert [p.municipio_propuesto for p in propuestas] == ["TUNJA"]
+
+    def test_muchos_clientes_con_dos_observaciones_tampoco_alcanza(self) -> None:
+        """Los dos pisos se exigen juntos: la zona puede ser grande y el dato de
+        quién la reparte seguir siendo anecdótico."""
+        zonas = [_zona("ZONA GRANDE POCO VISTA")]
+        observaciones = {"ZONA GRANDE POCO VISTA": Counter({"14": 2})}
+        clientes = Counter({"ZONA GRANDE POCO VISTA": 80})
+
+        assert proponer_por_evidencia(zonas, _POOL, observaciones, clientes) == []
+
+
+class TestIdempotencia:
+    def test_un_nombre_que_no_dice_municipio_no_devuelve_la_zona_a_otros(self) -> None:
+        """Una zona clasificada por evidencia (VENTAQUEMADA, sin prefijo, en TUNJA)
+        no se puede revertir por el nombre: correr el comando dos veces dejaría la
+        base como estaba."""
+        zonas = [_zona("VENTAQUEMADA - VUELTA AL MUNDO", _TUNJA)]
+
+        assert proponer_por_el_nombre(zonas) == []
+
+    def test_un_nombre_que_si_dice_municipio_sigue_corrigiendo(self) -> None:
+        assert len(proponer_por_el_nombre([_zona("PARAISO (TUNJA)", _OTROS)])) == 1

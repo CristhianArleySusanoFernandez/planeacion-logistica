@@ -442,6 +442,34 @@ El proyecto se desarrolló en seis etapas, todas terminadas:
    la propuesta queda mejor o igual en las tres variables (25,5 contra 25,7 en clientes, 31,6 contra
    32,1 en pesos, 36,1 contra 36,8 en kilos).
 
+### Limitación conocida: zonas que cruzan de pool
+
+El municipio de la zona define el pool con el que se balancea, y hay asignaciones reales que lo
+cruzan: una zona de un municipio repartida por una ruta de otro. El balanceador **ya las soporta**
+—si el único carro elegible de la zona es de otro pool, la zona "viaja" a ese pool, ver
+`_municipio_de_balanceo`—, así que no son errores; son el límite de modelar el pool con un solo
+campo.
+
+Medido sobre los 16 archivos de septiembre y octubre de 2026, el cruce pasó de **130 de 1.304
+asignaciones (9,97 %)** a **21 (1,61 %)** después de corregir el parseo del nombre y el municipio de
+12 zonas (ver `planeacion-municipios-zona`). Lo que queda, y por qué se queda:
+
+- **`RAQUIRA`** (6): la zona viajera de manual. La reparten las rutas 3 y 4 de Chiquinquirá y se
+  deja en `OTROS` a propósito, como ejemplo vivo del mecanismo.
+- **Cuatro zonas en la ruta 11** (Gilberto, Miraflores, pool `OTROS`), una vez cada una:
+  `(TUNJA): RUNTA` y `(TUNJA): RUTA CHIVATA TOCA SIACHOQUE` el sábado 26-09 —el caso que destapó
+  todo esto—, más `PARAISO (TUNJA)` y `VIAJERA 1 (RAMIRIQUI)`. Son reemplazos puntuales: el par se
+  vio una sola vez contra 5 a 12 del carro habitual, justo el patrón que marca la columna
+  `frecuencia`.
+- **Siete zonas de un solo cliente** vistas una o dos veces (`COMFABOY`, `IMPACTA`, `SANTO TOMAS`,
+  `MM BRILLITH`, `BODEGA POR HORARIO`, `DISTRIBUCIONES LEON - CONCEPCION`,
+  `MM LA CABANA VIAJERA 1 (RAMIRIQUI)`): la evidencia no alcanza para moverlas de pool
+  (`MINIMO_CLIENTES`, `MINIMO_ASIGNACIONES`) y moverlas no cambiaría ningún reparto, porque igual se
+  balancean en el pool de su única ruta elegible. Se vuelven a mirar cuando haya más histórico.
+- **`VDA FORAQUIRA JENESANO`** (1): quedó en TUNJA por mayoría y la ruta 12 la repartió una vez.
+
+Por día el cruce va de 0 % (martes) a 5,4 % (jueves). No se tocó el balanceador para esto.
+
 ### Fuera del alcance entregado
 
 - **OR-Tools**: el balanceador es heurístico (búsqueda local por movimientos e intercambios). Se

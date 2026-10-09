@@ -50,6 +50,14 @@ from planeacion.infraestructura.adaptadores.salida.excel.lector_referencia impor
 # como limitación conocida en docs/dominio.md. Cambiarla escondería el ejemplo.
 ZONAS_QUE_SE_QUEDAN_VIAJERAS = ("RAQUIRA",)
 
+# Piso de evidencia para mover una zona de pool. Un solo cliente visto una o dos
+# veces no alcanza: siete zonas quedaban así (COMFABOY, IMPACTA, SANTO TOMAS,
+# MM BRILLITH...) y moverlas seria decidir con casi nada. Se quedan en OTROS y se
+# vuelven a mirar cuando haya mas histórico; mientras tanto no cambia nada,
+# porque igual se balancean en el pool de su única ruta elegible.
+MINIMO_CLIENTES = 2
+MINIMO_ASIGNACIONES = 3
+
 
 @dataclass(frozen=True)
 class PropuestaZona:
@@ -83,10 +91,18 @@ class PropuestaZona:
 
 
 def proponer_por_el_nombre(zonas: list[Zona]) -> list[PropuestaZona]:
-    """Zonas cuyo municipio guardado no coincide con lo que dice su propio nombre."""
+    """Zonas cuyo municipio guardado contradice lo que dice su propio nombre.
+
+    Un nombre que no menciona ningún municipio no contradice nada: no se puede
+    usar para devolver a ``OTROS`` una zona que se clasificó por evidencia. Sin
+    esta guarda, correr el comando dos veces revertía los cambios de la primera
+    corrida (``VENTAQUEMADA - VUELTA AL MUNDO`` volvía de TUNJA a OTROS).
+    """
     propuestas = []
     for zona in zonas:
         segun_nombre = parsear_municipio(zona.nombre)
+        if segun_nombre == MUNICIPIO_OTROS:
+            continue
         if segun_nombre != zona.municipio.nombre:
             propuestas.append(
                 PropuestaZona(
@@ -130,6 +146,9 @@ def proponer_por_evidencia(
         propuesto, _ = pools.most_common(1)[0]
         if propuesto == MUNICIPIO_OTROS:
             continue  # es una viajera de verdad: se queda como está
+        asignaciones = sum(vistas.values())
+        if clientes_por_zona[zona.nombre] < MINIMO_CLIENTES or asignaciones < MINIMO_ASIGNACIONES:
+            continue  # evidencia demasiado flaca para mover el pool
         propuestas.append(
             PropuestaZona(
                 nombre=zona.nombre,
@@ -185,7 +204,11 @@ def _lineas_del_reporte(por_nombre: list[PropuestaZona], por_evidencia: list[Pro
     lineas.append("")
     lineas.append(f"## Por la evidencia de los archivos ({len(por_evidencia)})")
     lineas.append("")
-    lineas.append("Sin prefijo en el nombre, pero siempre las reparte el mismo municipio.")
+    lineas.append(
+        "Sin prefijo en el nombre, pero siempre las reparte el mismo municipio. Se exigen al menos "
+        f"{MINIMO_CLIENTES} cliente(s) y {MINIMO_ASIGNACIONES} asignación(es): con menos, la zona se "
+        "queda en OTROS."
+    )
     for propuesta in por_evidencia:
         marca = "" if propuesta.unanime else "  ⚠"
         lineas.append(
