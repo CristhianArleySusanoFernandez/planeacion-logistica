@@ -7,6 +7,7 @@ la siembra pueda resolver las llaves foráneas en el borde.
 
 from collections.abc import Mapping, Sequence
 from datetime import date
+from decimal import Decimal
 from typing import NamedTuple, Protocol
 
 from planeacion.application.dto.planeacion import AsignacionPrevia
@@ -192,6 +193,30 @@ class RepositorioCarroZonas(Protocol):
         histórico nunca vio y diluyen la dimensión del día, pero borrarlos es
         destructivo, así que solo lo pide explícitamente la siembra con
         ``--borrar-frecuencia-cero``.
+        """
+        ...
+
+
+class RepositorioParametros(Protocol):
+    """La tabla `parametros`: solo los valores que la usuaria cambió.
+
+    Lo que no esté acá lo resuelve el catálogo del dominio, así que este
+    repositorio puede devolver {} sin que nada se rompa (base sin migrar).
+    """
+
+    def obtener(self) -> dict[str, Decimal]:
+        """clave → valor. {} si la tabla no existe o está vacía."""
+        ...
+
+    def guardar(self, clave: str, valor: Decimal) -> None:
+        """Upsert de un parámetro. Solo claves del catálogo."""
+        ...
+
+    def restaurar_por_defecto(self) -> int:
+        """Borra los valores guardados y devuelve cuántos borró.
+
+        Borra en vez de reescribir los defaults para que no haya dos fuentes de
+        verdad: sin filas, manda el catálogo del dominio.
         """
         ...
 

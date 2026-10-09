@@ -27,7 +27,12 @@ from openpyxl.styles import Font, PatternFill
 from openpyxl.worksheet.worksheet import Worksheet
 
 from planeacion.application.dto.planeacion import PlaneacionCompleta
-from planeacion.domain.modelo import CargaCarro, clave_orden_carro
+from planeacion.domain.modelo import CargaCarro, Parametros, clave_orden_carro
+from planeacion.domain.modelo.parametros import (
+    CLAVE_MAX_FACTURAS_CONDUCTOR,
+    CLAVE_MIN_CLIENTES_CONDUCTOR,
+    CLAVE_VEHICULOS_REFERENCIA,
+)
 from planeacion.domain.servicios.alertas_operativas import (
     alerta_de_promedio_por_vehiculo,
     alertas_de_conductores,
@@ -97,7 +102,12 @@ def _ajustar_anchos(hoja: Worksheet, anchos: dict[str, int]) -> None:
 class ExportadorExcelPlaneacion:
     """Adaptador del puerto ``ExportadorPlaneacion``."""
 
-    def exportar(self, planeacion: PlaneacionCompleta, ruta_salida: Path) -> Path:
+    def exportar(
+        self,
+        planeacion: PlaneacionCompleta,
+        ruta_salida: Path,
+        parametros: Parametros | None = None,
+    ) -> Path:
         carro_por_zona = {
             zona.zona.nombre: carga.carro.numero
             for cargas in planeacion.resultado.cargas_por_municipio.values()
@@ -110,7 +120,7 @@ class ExportadorExcelPlaneacion:
         hoja_ecom.title = "ECOM"
         self._hoja_ecom(hoja_ecom, planeacion, carro_por_zona)
         self._hoja_planeacion(libro.create_sheet("PLANEACION"), planeacion, carro_por_zona)
-        self._hoja_base(libro.create_sheet("BASE"), planeacion)
+        self._hoja_base(libro.create_sheet("BASE"), planeacion, parametros or Parametros())
         self._hoja_pedidos(libro.create_sheet("PEDIDOS"), planeacion, carro_por_zona)
         libro.save(ruta_salida)
         return ruta_salida
@@ -195,12 +205,22 @@ class ExportadorExcelPlaneacion:
         hoja.cell(row=fila, column=5, value=planeacion.kilos_no_resueltos * _GRAMOS_POR_KILO)
         hoja.cell(row=fila, column=6, value=len(planeacion.no_resueltos))
 
-    def _hoja_base(self, hoja: Worksheet, planeacion: PlaneacionCompleta) -> None:
+    def _hoja_base(self, hoja: Worksheet, planeacion: PlaneacionCompleta, parametros: Parametros) -> None:
         _escribir_encabezado(hoja, 1, ENCABEZADO_BASE)
         cargas_por_municipio = planeacion.resultado.cargas_por_municipio
         todas = [carga for lista in cargas_por_municipio.values() for carga in lista]
-        alertas = list(alertas_de_conductores(cargas_por_municipio))
-        del_dia = alerta_de_promedio_por_vehiculo(planeacion.total_facturas)
+        alertas = list(
+            alertas_de_conductores(
+                cargas_por_municipio,
+                min_clientes=parametros.entero(CLAVE_MIN_CLIENTES_CONDUCTOR),
+                max_facturas=parametros.entero(CLAVE_MAX_FACTURAS_CONDUCTOR),
+            )
+        )
+        del_dia = alerta_de_promedio_por_vehiculo(
+            planeacion.total_facturas,
+            vehiculos_referencia=parametros.entero(CLAVE_VEHICULOS_REFERENCIA),
+            max_facturas=parametros.entero(CLAVE_MAX_FACTURAS_CONDUCTOR),
+        )
         alerta_por_ruta = alertas_por_ruta(alertas, todas)
         cargas: list[CargaCarro] = sorted(
             (

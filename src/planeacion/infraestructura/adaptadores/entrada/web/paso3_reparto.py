@@ -18,7 +18,13 @@ from planeacion.domain.modelo import (
     UMBRAL_CV_ATENCION,
     CargaCarro,
     MetricasDesbalance,
+    Parametros,
     clave_orden_carro,
+)
+from planeacion.domain.modelo.parametros import (
+    CLAVE_MAX_FACTURAS_CONDUCTOR,
+    CLAVE_MIN_CLIENTES_CONDUCTOR,
+    CLAVE_VEHICULOS_REFERENCIA,
 )
 from planeacion.domain.servicios.agrupacion_por_conductor import agrupar_por_conductor
 from planeacion.domain.servicios.alertas_operativas import (
@@ -60,7 +66,7 @@ def mostrar(contenedor: Contenedor) -> None:
 
     _resumen_balance(resultado.metricas_iniciales, resultado.metricas_finales, resultado.cargas_por_municipio)
 
-    _alertas_operativas(resultado.cargas_por_municipio, planeacion.total_facturas)
+    _alertas_operativas(contenedor, resultado.cargas_por_municipio, planeacion.total_facturas)
     _resumen_por_conductor(resultado.cargas_por_municipio)
 
     municipios = sorted(resultado.cargas_por_municipio)
@@ -155,15 +161,28 @@ def _resumen_balance(
     )
 
 
-def _alertas_operativas(cargas_por_municipio: dict[str, list[CargaCarro]], total_facturas: int) -> None:
+def _alertas_operativas(
+    contenedor: Contenedor, cargas_por_municipio: dict[str, list[CargaCarro]], total_facturas: int
+) -> None:
     """Los indicadores que mira la jefatura, debajo del balance.
 
     Ninguno cambia el reparto: son metas, no reglas. La operación incumple el
     mínimo de clientes 19 veces en los 16 archivos de septiembre y octubre de
     2026, así que imponerlo rechazaría repartos que ellos hacen todas las semanas.
     """
-    alertas: list[Alerta] = list(alertas_de_conductores(cargas_por_municipio))
-    del_dia = alerta_de_promedio_por_vehiculo(total_facturas)
+    parametros = Parametros(valores=contenedor.parametros.obtener())
+    alertas: list[Alerta] = list(
+        alertas_de_conductores(
+            cargas_por_municipio,
+            min_clientes=parametros.entero(CLAVE_MIN_CLIENTES_CONDUCTOR),
+            max_facturas=parametros.entero(CLAVE_MAX_FACTURAS_CONDUCTOR),
+        )
+    )
+    del_dia = alerta_de_promedio_por_vehiculo(
+        total_facturas,
+        vehiculos_referencia=parametros.entero(CLAVE_VEHICULOS_REFERENCIA),
+        max_facturas=parametros.entero(CLAVE_MAX_FACTURAS_CONDUCTOR),
+    )
     if del_dia is not None:
         alertas.append(del_dia)
 

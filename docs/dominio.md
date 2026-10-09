@@ -325,6 +325,31 @@ quedan **fuera del alcance**.
 
 ---
 
+## 6.bis Parámetros editables
+
+Los números que el negocio puede querer mover viven en la tabla `parametros` (migración 005) y se
+editan en **Configuración → Parámetros**, sin despliegue. El **catálogo** —qué parámetros existen,
+cuánto valen por defecto y qué hace cada uno— vive en `domain/modelo/parametros.py`, que es la
+fuente de verdad; la tabla guarda **solo los valores cambiados** y repite las descripciones para que
+se entienda abriéndola en Supabase.
+
+La asimetría importa: si la tabla está vacía, le falta una clave o alguien borró una fila, **manda
+el default del dominio**. Así la app funciona en una base sin migrar y una fila borrada por error no
+se convierte en un cero silencioso que apague una variable del equilibrio. Un cero *explícito* sí se
+respeta: apagar una variable es una decisión válida. El botón "Restaurar valores por defecto" borra
+las filas en vez de reescribirlas, para no tener dos fuentes de verdad.
+
+| Clave | Default | Qué hace y por qué ese valor |
+|---|---|---|
+| `w_clientes` | 0,5 | Cuánto pesa igualar clientes entre carros. Las tres variables del equilibrio van con el mismo peso porque las tres importan igual. |
+| `w_pesos` | 0,5 | Cuánto pesa igualar la plata. |
+| `w_kilos` | 0,5 | Cuánto pesa igualar los kilos. Medido: con 0,5 el CV de kilos baja de 36,8 % a 36,1 % y la coincidencia sube a 91,6 % (ver § 10.9). |
+| `w_frecuencia` | 0,30 | El desempate por costumbre. Bajo a propósito: rompe empates, no sobrecarga. Salió de medir julio 2026 (§ 10.7); subirlo a 0,45 empeora todo levemente. |
+| `min_clientes_conductor` | 50 | Meta de la jefatura para Tunja, Barbosa y Chiquinquirá. **Solo avisa**: el reparto real la incumple 20 veces en 16 días. |
+| `max_facturas_conductor` | 110 | Facturas desde las que conviene revisar el carro externo. **Solo avisa**: Angélica Arias y Fabián lo pasan casi todos los días sin externo. |
+| `vehiculos_referencia` | 12 | Divisor del "Promedio Vh". **Fijo a propósito**: es el de la hoja que la operación mira, y usar "los carros con carga" daría otro número. |
+| `kilos_max_por_unidad` | 25 | Techo de la guarda de kilos. Una unidad de venta es una caja o un display; ningún producto sano de 2026 se acerca, y hay fichas con 715,5 kg (ver § 5). |
+
 ## 7. Salida (para facturación)
 
 La salida principal que consume facturación es la hoja **`ECOM`**: cada cliente (código) con la **ruta/carro**

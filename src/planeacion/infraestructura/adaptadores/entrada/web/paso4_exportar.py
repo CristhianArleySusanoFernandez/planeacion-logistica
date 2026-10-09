@@ -11,6 +11,7 @@ from planeacion.config.contenedor import (
     crear_exportador_planeacion,
     crear_generar_planeacion,
 )
+from planeacion.domain.modelo import Parametros
 from planeacion.infraestructura.adaptadores.entrada.web import estado, estilos
 
 _MIME_XLSX = "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
@@ -26,7 +27,7 @@ def mostrar(contenedor: Contenedor) -> None:
     _resumen_final(planeacion)
     col_excel, col_guardar = st.columns(2)
     with col_excel, st.container(border=True):
-        _exportar_excel(planeacion)
+        _exportar_excel(contenedor, planeacion)
     with col_guardar, st.container(border=True):
         _guardar(contenedor, planeacion)
 
@@ -50,14 +51,17 @@ def _resumen_final(planeacion: PlaneacionCompleta) -> None:
         )
 
 
-def _exportar_excel(planeacion: PlaneacionCompleta) -> None:
+def _exportar_excel(contenedor: Contenedor, planeacion: PlaneacionCompleta) -> None:
     estilos.titulo_seccion("Excel para facturación")
     st.caption("Genera el archivo con las hojas ECOM, PLANEACION, BASE y PEDIDOS.")
     nombre = f"planeacion_{planeacion.fecha.isoformat()}.xlsx"
     if st.button("📄 Generar el Excel", key="exportar_excel"):
         ruta = Path(tempfile.gettempdir()) / nombre
         with st.spinner("Generando las hojas ECOM, PLANEACION, BASE y PEDIDOS..."):
-            crear_exportador_planeacion().exportar(planeacion, ruta)
+            # Los umbrales de las alertas de la hoja BASE salen de la tabla de
+            # parámetros, igual que en el Paso 3.
+            parametros = Parametros(valores=contenedor.parametros.obtener())
+            crear_exportador_planeacion().exportar(planeacion, ruta, parametros)
         st.session_state[estado.CLAVE_EXCEL_EXPORTADO] = ruta.read_bytes()
 
     contenido: bytes | None = st.session_state.get(estado.CLAVE_EXCEL_EXPORTADO)

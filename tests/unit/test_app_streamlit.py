@@ -155,6 +155,7 @@ def _contenedor_caido(excepcion: Exception) -> Contenedor:
         correcciones=caido,
         overrides=caido,
         planeaciones=caido,
+        parametros=caido,
     )
 
 

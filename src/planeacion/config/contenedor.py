@@ -25,6 +25,7 @@ from planeacion.application.puertos.salida.repositorios import (
     RepositorioCorrecciones,
     RepositorioMunicipios,
     RepositorioOverrides,
+    RepositorioParametros,
     RepositorioPlaneaciones,
     RepositorioZonas,
 )
@@ -51,6 +52,9 @@ from planeacion.infraestructura.adaptadores.salida.supabase.repositorio_municipi
 from planeacion.infraestructura.adaptadores.salida.supabase.repositorio_overrides import (
     RepositorioOverridesSupabase,
 )
+from planeacion.infraestructura.adaptadores.salida.supabase.repositorio_parametros import (
+    RepositorioParametrosSupabase,
+)
 from planeacion.infraestructura.adaptadores.salida.supabase.repositorio_planeaciones import (
     RepositorioPlaneacionesSupabase,
 )
@@ -75,6 +79,7 @@ class Contenedor:
     correcciones: RepositorioCorrecciones
     overrides: RepositorioOverrides
     planeaciones: RepositorioPlaneaciones
+    parametros: RepositorioParametros
 
 
 def crear_contenedor(settings: Settings | None = None) -> Contenedor:
@@ -89,6 +94,7 @@ def crear_contenedor(settings: Settings | None = None) -> Contenedor:
         correcciones=RepositorioCorreccionesSupabase(cliente),
         overrides=RepositorioOverridesSupabase(cliente),
         planeaciones=RepositorioPlaneacionesSupabase(cliente),
+        parametros=RepositorioParametrosSupabase(cliente),
     )
 
 

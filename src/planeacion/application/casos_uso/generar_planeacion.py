@@ -13,11 +13,19 @@ from planeacion.application.puertos.entrada.generar_pivote import GenerarPivoteP
 from planeacion.application.puertos.salida.repositorios import (
     RepositorioCarros,
     RepositorioCarroZonas,
+    RepositorioParametros,
     RepositorioPlaneaciones,
     RepositorioZonas,
 )
-from planeacion.domain.modelo import Carro, ReglasBalanceo, ZonaAgregada, clave_orden_carro, dia_de
-from planeacion.domain.modelo.balanceo import REGLAS_POR_DEFECTO
+from planeacion.domain.modelo import (
+    Carro,
+    Parametros,
+    ReglasBalanceo,
+    ZonaAgregada,
+    clave_orden_carro,
+    dia_de,
+)
+from planeacion.domain.modelo.parametros import CLAVE_KILOS_MAX_POR_UNIDAD
 from planeacion.domain.servicios.balanceador import Balanceador
 
 logger = logging.getLogger(__name__)
@@ -33,23 +41,37 @@ class CasoDeUsoGenerarPlaneacion:
         zonas: RepositorioZonas,
         planeaciones: RepositorioPlaneaciones,
         carro_zonas: RepositorioCarroZonas,
+        parametros: RepositorioParametros | None = None,
     ) -> None:
         self._pivote = pivote
         self._carros = carros
         self._zonas = zonas
         self._planeaciones = planeaciones
         self._carro_zonas = carro_zonas
+        # Opcional: sin repositorio de parámetros se usan los defaults del
+        # dominio, que es lo que necesitan las pruebas y una base sin migrar.
+        self._parametros = parametros
         self._balanceador = Balanceador()
 
     def ejecutar(
         self,
         ruta_ecom: Path,
         fecha: date | None = None,
-        reglas: ReglasBalanceo = REGLAS_POR_DEFECTO,
+        reglas: ReglasBalanceo | None = None,
         usar_historico: bool = True,
         todas_las_fechas: bool = False,
     ) -> PlaneacionCompleta:
-        pivote = self._pivote.ejecutar(ruta_ecom, fecha=fecha, todas_las_fechas=todas_las_fechas)
+        # Los pesos del equilibrio y el techo de kilos salen de la tabla de
+        # parámetros, salvo que quien llama imponga las reglas (los CLI de
+        # medición lo hacen para poder comparar pesos distintos).
+        configurados = self._configurados()
+        reglas = reglas if reglas is not None else configurados.reglas_balanceo()
+        pivote = self._pivote.ejecutar(
+            ruta_ecom,
+            fecha=fecha,
+            todas_las_fechas=todas_las_fechas,
+            kilos_max_por_unidad=configurados.numero(CLAVE_KILOS_MAX_POR_UNIDAD),
+        )
 
         # El pivote entrega DTOs planos; se reconstruye la Zona de dominio (con su
         # regla de Chiquinquirá) casando el nombre contra la tabla de zonas.
@@ -116,6 +138,12 @@ class CasoDeUsoGenerarPlaneacion:
             kilos_excluidos=pivote.kilos_excluidos,
             lineas_kilos_excluidos=pivote.lineas_kilos_excluidos,
         )
+
+    def _configurados(self) -> Parametros:
+        """Lo que haya en la base, con el catálogo del dominio como red."""
+        if self._parametros is None:
+            return Parametros()
+        return Parametros(valores=self._parametros.obtener())
 
     def guardar(self, planeacion: PlaneacionCompleta) -> int:
         return self._planeaciones.guardar_planeacion(

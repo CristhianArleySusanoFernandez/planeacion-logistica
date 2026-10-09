@@ -18,6 +18,7 @@ from planeacion.application.casos_uso.generar_planeacion import CasoDeUsoGenerar
 from planeacion.application.dto.pivote import PivotePorZonaDTO, ZonaAgregadaDTO
 from planeacion.application.puertos.salida.repositorios import ParRepertorio
 from planeacion.domain.modelo import Carro, ReglasBalanceo, ResultadoBalanceo
+from planeacion.domain.servicios.guarda_kilos import KILOS_MAX_POR_UNIDAD
 from planeacion.domain.servicios.parseo_zonas import crear_zona
 
 _ASIS = "(TUNJA): ASIS"
@@ -40,8 +41,14 @@ class _PivoteFalso:
         self._fecha = fecha
 
     def ejecutar(
-        self, ruta_ecom: Path, fecha: date | None = None, todas_las_fechas: bool = False
+        self,
+        ruta_ecom: Path,
+        fecha: date | None = None,
+        todas_las_fechas: bool = False,
+        kilos_max_por_unidad: Decimal = KILOS_MAX_POR_UNIDAD,
     ) -> PivotePorZonaDTO:
+        """El techo de la guarda de kilos no le importa a estas pruebas: el doble
+        no lee archivos, pero la firma tiene que casar con el puerto."""
         zonas = tuple(
             ZonaAgregadaDTO(
                 zona=nombre,

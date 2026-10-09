@@ -15,12 +15,14 @@ import streamlit as st
 from planeacion.config.contenedor import Contenedor
 from planeacion.domain.errores import ZonaInvalida
 from planeacion.domain.modelo import (
+    CATALOGO,
     DIAS_LABORALES,
     Carro,
     Cliente,
     CorreccionUbicacion,
     Municipio,
     OverrideZona,
+    Parametros,
     ReglaChiquinquira,
     Zona,
     clave_conductor,
@@ -58,8 +60,24 @@ _SIN_CARRO = "⚠ sin carro"
 def mostrar(contenedor: Contenedor) -> None:
     estilos.titulo_seccion("Configuración")
     st.caption("Los catálogos que usa la planeación. Los cambios quedan guardados de inmediato.")
-    tab_carros, tab_zonas, tab_repertorio, tab_clientes, tab_correcciones, tab_overrides = st.tabs(
-        ["Carros", "Zonas", "Zonas por carro", "Clientes", "Correcciones", "Overrides"]
+    (
+        tab_carros,
+        tab_zonas,
+        tab_repertorio,
+        tab_clientes,
+        tab_correcciones,
+        tab_overrides,
+        tab_parametros,
+    ) = st.tabs(
+        [
+            "Carros",
+            "Zonas",
+            "Zonas por carro",
+            "Clientes",
+            "Correcciones",
+            "Overrides",
+            "Parámetros",
+        ]
     )
     with tab_carros, st.container(border=True):
         _tab_carros(contenedor)
@@ -73,6 +91,8 @@ def mostrar(contenedor: Contenedor) -> None:
         _tab_correcciones(contenedor)
     with tab_overrides, st.container(border=True):
         _tab_overrides(contenedor)
+    with tab_parametros, st.container(border=True):
+        _tab_parametros(contenedor)
 
 
 def _municipios(contenedor: Contenedor) -> list[str]:
@@ -211,6 +231,73 @@ def _tab_carros(contenedor: Contenedor) -> None:
         except (LookupError, ValueError) as error:
             errores.append(str(error))
     _reportar_guardado(guardadas, eliminadas, errores)
+
+
+# ------------------------------------------------------------ tab Parámetros
+
+
+def _tab_parametros(contenedor: Contenedor) -> None:
+    estilos.titulo_seccion("Parámetros")
+    st.caption(
+        "Los números del negocio, editables sin tocar código: los pesos con que el balanceador "
+        "equilibra el reparto y los umbrales de las alertas del Paso 3. Entre paréntesis queda el "
+        "valor por defecto, que es el que manda si se borra la fila."
+    )
+    guardados = contenedor.parametros.obtener()
+    vigentes = Parametros(valores=guardados)
+    originales: list[Fila] = [
+        {
+            "clave": definicion.clave,
+            "valor": float(vigentes.numero(definicion.clave)),
+            "por defecto": float(definicion.valor_por_defecto),
+            "descripcion": definicion.descripcion,
+        }
+        for definicion in CATALOGO
+    ]
+    editadas = st.data_editor(
+        originales,
+        key="parametros",
+        hide_index=True,
+        width="stretch",
+        column_config={
+            "clave": st.column_config.TextColumn("Parámetro", disabled=True, pinned=True),
+            "valor": st.column_config.NumberColumn("Valor", min_value=0.0, step=0.05, required=True),
+            "por defecto": st.column_config.NumberColumn("Por defecto", disabled=True),
+            "descripcion": st.column_config.TextColumn("Qué hace", disabled=True, width="large"),
+        },
+        # Ni filas nuevas ni borradas: el catálogo lo define el dominio, acá solo
+        # se cambian valores. Una clave inventada no tendría quién la lea.
+        num_rows="fixed",
+    )
+
+    col_guardar, col_restaurar = st.columns(2)
+    if col_guardar.button("Guardar cambios", key="guardar_parametros", type="primary"):
+        _guardar_parametros(contenedor, originales, editadas)
+    if col_restaurar.button("↺ Restaurar valores por defecto", key="restaurar_parametros"):
+        borrados = contenedor.parametros.restaurar_por_defecto()
+        st.session_state.pop("parametros", None)
+        st.success(f"Listo: {borrados} valor(es) borrado(s). Vuelven a regir los de la tabla.")
+        st.rerun()
+
+
+def _guardar_parametros(contenedor: Contenedor, originales: list[Fila], editadas: list[Fila]) -> None:
+    """Guarda solo lo que cambió: un upsert por fila tocada, no por fila visible."""
+    por_clave = {str(fila["clave"]): fila for fila in originales}
+    cambiados = 0
+    errores: list[str] = []
+    for fila in editadas:
+        clave = str(fila["clave"])
+        anterior = por_clave.get(clave)
+        if anterior is None or fila.get("valor") is None:
+            continue
+        if Decimal(str(fila["valor"])) == Decimal(str(anterior["valor"])):
+            continue
+        try:
+            contenedor.parametros.guardar(clave, Decimal(str(fila["valor"])))
+            cambiados += 1
+        except LookupError as error:
+            errores.append(str(error))
+    _reportar_guardado(cambiados, 0, errores)
 
 
 # ----------------------------------------------------------------- tab Zonas

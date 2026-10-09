@@ -15,6 +15,12 @@ from planeacion.domain.modelo.carro import Carro, clave_conductor, clave_orden_c
 from planeacion.domain.modelo.cliente import Cliente, CorreccionUbicacion, OverrideZona
 from planeacion.domain.modelo.dia_semana import DIAS_LABORALES, DIAS_SEMANA, dia_de
 from planeacion.domain.modelo.municipio import MUNICIPIO_OTROS, Municipio
+from planeacion.domain.modelo.parametros import (
+    CATALOGO,
+    DEFECTOS,
+    DefinicionParametro,
+    Parametros,
+)
 from planeacion.domain.modelo.pedido import LineaPedido
 from planeacion.domain.modelo.pivote import (
     ClienteNoResuelto,
@@ -31,6 +37,8 @@ __all__ = [
     "MUNICIPIO_OTROS",
     "UMBRAL_CV_ACEPTABLE",
     "UMBRAL_CV_ATENCION",
+    "CATALOGO",
+    "DEFECTOS",
     "AsignacionZona",
     "CargaCarro",
     "Carro",
@@ -38,6 +46,7 @@ __all__ = [
     "ClienteNoResuelto",
     "ConfianzaSugerencia",
     "CorreccionUbicacion",
+    "DefinicionParametro",
     "FacturaAgrupada",
     "LineaPedido",
     "MetricasDesbalance",
@@ -45,6 +54,7 @@ __all__ = [
     "Municipio",
     "NivelDesbalance",
     "OverrideZona",
+    "Parametros",
     "ReglaChiquinquira",
     "ReglasBalanceo",
     "ResultadoBalanceo",
