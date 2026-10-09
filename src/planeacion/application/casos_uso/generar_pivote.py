@@ -26,7 +26,7 @@ from planeacion.application.puertos.salida.repositorios import (
     RepositorioOverrides,
     RepositorioZonas,
 )
-from planeacion.domain.errores import SinPedidosParaPivotear
+from planeacion.domain.errores import SinPedidosEnLaFecha, SinPedidosParaPivotear
 from planeacion.domain.modelo import LineaPedido, Zona
 from planeacion.domain.servicios.agregador_por_zona import AgregadorPorZona, ResultadoAgregacion
 from planeacion.domain.servicios.guarda_kilos import (
@@ -96,8 +96,9 @@ class CasoDeUsoGenerarPivote:
 
         del_dia = [linea for linea in lineas if linea.fecha == fecha_pivote]
         if not del_dia:
-            raise SinPedidosParaPivotear(
-                f"{ruta_ecom.name} no trae pedidos con fecha {fecha_pivote.isoformat()}"
+            raise SinPedidosEnLaFecha(
+                f"{ruta_ecom.name} no trae pedidos con fecha {fecha_pivote.isoformat()}",
+                fecha=fecha_pivote,
             )
         excluidas = [linea for linea in lineas if linea.fecha != fecha_pivote]
 

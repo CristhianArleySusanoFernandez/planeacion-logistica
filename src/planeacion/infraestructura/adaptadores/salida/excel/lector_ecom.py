@@ -84,7 +84,22 @@ class FormatoEcomInvalido(Exception):
 
 
 class ColumnasEcomFaltantes(FormatoEcomInvalido):
-    """Al archivo le faltan columnas esenciales; el mensaje dice cuáles."""
+    """Al archivo le faltan columnas esenciales.
+
+    Las dos listas van como datos y no solo dentro del mensaje: la pantalla
+    arma su propio texto con ellas (ver ``web/errores.py``) y parsear el mensaje
+    para recuperarlas sería frágil.
+    """
+
+    def __init__(
+        self,
+        mensaje: str,
+        faltantes: Sequence[str] = (),
+        encontradas: Sequence[str] = (),
+    ) -> None:
+        super().__init__(mensaje)
+        self.faltantes = tuple(faltantes)
+        self.encontradas = tuple(encontradas)
 
 
 @dataclass(frozen=True)
@@ -168,11 +183,14 @@ def _mapear_columnas(encabezados: Sequence[Any]) -> _MapaColumnas:
     if total_linea is None:
         faltantes.append(_NOMBRE_VISIBLE["total_linea"])
     if faltantes:
-        encontrados = ", ".join(str(celda).strip() for celda in encabezados if normalizar_encabezado(celda))
+        presentes = [str(celda).strip() for celda in encabezados if normalizar_encabezado(celda)]
+        encontrados = ", ".join(presentes)
         raise ColumnasEcomFaltantes(
             f"No pude leer el archivo de ECOM: faltan las columnas [{', '.join(faltantes)}].\n"
             f"Encabezados encontrados: {encontrados or '(ninguno)'}.\n"
-            "¿El archivo es un export de pedidos de ECOM?"
+            "¿El archivo es un export de pedidos de ECOM?",
+            faltantes=faltantes,
+            encontradas=presentes,
         )
 
     opcionales_ausentes = [
@@ -245,7 +263,9 @@ def _elegir_hoja(libro: Workbook, nombre_archivo: str) -> tuple[Worksheet, _Mapa
     assert primer_error is not None
     raise ColumnasEcomFaltantes(
         f"Ninguna hoja de {nombre_archivo} ({', '.join(libro.sheetnames)}) trae las "
-        f"columnas de un export de pedidos de ECOM. Del primer intento: {primer_error}"
+        f"columnas de un export de pedidos de ECOM. Del primer intento: {primer_error}",
+        faltantes=primer_error.faltantes,
+        encontradas=primer_error.encontradas,
     )
 
 
