@@ -15,6 +15,7 @@ from planeacion.config.settings import Settings
 from planeacion.infraestructura.adaptadores.entrada.web import (
     conexion,
     configuracion,
+    diagnostico,
     estado,
     estilos,
     paso1_cargar,
@@ -123,6 +124,12 @@ def main() -> None:
     pivote: PivotePorZonaDTO | None = st.session_state.get(estado.CLAVE_PIVOTE)
     detalle = f"día cargado: {pivote.fecha.isoformat()}" if pivote else "sin archivo cargado"
     estilos.encabezado_pagina("Planeación Logística", detalle)
+
+    # Aviso no bloqueante: dos repositorios toleran que su tabla no exista y
+    # devuelven vacío, así que sin esto una migración pendiente pasaría
+    # inadvertida (ver web/diagnostico.py).
+    with conexion.errores_de_conexion(detener=False, clave="diagnostico"):
+        diagnostico.mostrar_aviso()
 
     # Un solo envoltorio para las cinco páginas (Configuración incluye sus cuatro
     # pestañas): si la base no responde, ninguna sigue dibujando con datos que no

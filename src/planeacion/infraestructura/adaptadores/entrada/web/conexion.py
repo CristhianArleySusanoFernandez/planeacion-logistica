@@ -1,55 +1,59 @@
-"""Un solo lugar para traducir «no llegué a la base de datos» a algo que Rudy pueda leer.
+"""Un solo lugar para traducir los fallos previsibles a algo que se pueda resolver.
 
-El proyecto de Supabase está en el plan gratuito y se pausa solo tras varios días sin
-uso. Cuando eso pasa, cualquier repositorio revienta con un error de red que Streamlit
-muestra como un traceback ilegible. Acá lo atrapamos una vez, arriba de todo, y lo
-cambiamos por instrucciones concretas.
+Envuelve el render y, si adentro salta algo que ``errores.clasificar`` reconoce,
+muestra el panel con instrucciones en vez del traceback de Streamlit. Nació para
+el caso de la base pausada —el proyecto de Supabase en el plan gratuito se pausa
+tras varios días sin uso— y hoy cubre además las credenciales rechazadas, las
+migraciones sin aplicar y los archivos que no son el informe de ECOM.
 
-Ojo con el alcance: solo errores de transporte (no llegué al servidor). Un error de
-datos —una regla de negocio violada, un archivo mal formado, una respuesta 4xx de
-PostgREST— NO pasa por acá y sigue mostrando su mensaje propio como siempre.
+El alcance es deliberado y angosto: **lo que no se reconoce se propaga**. No hay
+un ``except Exception`` que muestre "ocurrió un error" para todo, porque eso
+esconderia los bugs de verdad en lugar de arreglarlos.
 """
 
 import logging
 from collections.abc import Iterator
 from contextlib import contextmanager
 
-import httpx
 import streamlit as st
+from pydantic import ValidationError
+
+from planeacion.config.settings import Settings
+from planeacion.infraestructura.adaptadores.entrada.web import panel_error
+from planeacion.infraestructura.adaptadores.entrada.web.errores import clasificar
 
 _logger = logging.getLogger(__name__)
 
-MENSAJE = """### No se pudo conectar con la base de datos.
 
-Esto suele pasar cuando el proyecto de Supabase estuvo varios días sin uso y se
-puso en pausa automáticamente. Para solucionarlo:
+def _url_de_supabase() -> str | None:
+    """La URL configurada, si se puede leer.
 
-1. Entrá a supabase.com con la cuenta de la empresa.
-2. Abrí el proyecto de Planeación Logística.
-3. Si aparece pausado, hacé clic en "Restore" o "Resume".
-4. Esperá 1-2 minutos y volvé a cargar esta página.
-
-Si el proyecto ya está activo y este mensaje sigue apareciendo, contactá al
-encargado del sistema."""
+    Si faltan las credenciales no hay nada que derivar: el panel va sin enlace, y
+    ese caso lo trata ``app.py`` con su propio mensaje antes de llegar acá.
+    """
+    try:
+        return Settings().supabase_url
+    except ValidationError:
+        return None
 
 
 @contextmanager
-def errores_de_conexion(*, detener: bool = True) -> Iterator[None]:
-    """Muestra el mensaje amigable si adentro se cae la conexión.
+def errores_de_conexion(*, detener: bool = True, clave: str = "") -> Iterator[None]:
+    """Muestra el panel si adentro falla algo previsible; si no, deja pasar.
 
-    Capturamos ``httpx.TransportError`` y no ``ConnectError`` a secas porque es la base
-    común de todas las formas en que se manifiesta un servidor inalcanzable
-    (``ConnectError``, ``ConnectTimeout``, ``ReadTimeout``, ``RemoteProtocolError``), y
-    aun así sigue significando estrictamente «no hubo respuesta».
-
-    ``detener=False`` es para los callbacks de Streamlit (``on_click`` / ``on_change``),
-    donde ``st.stop()`` no corresponde: ahí basta con avisar y dejar que el render siga.
+    ``detener=False`` es para los callbacks de Streamlit (``on_click`` /
+    ``on_change``), donde ``st.stop()`` no corresponde: ahí basta con avisar y
+    dejar que el render siga.
     """
     try:
         yield
-    except httpx.TransportError:
-        # El traceback queda en los logs del servidor para quien tenga que depurar.
-        _logger.exception("Sin conexión con Supabase")
-        st.error(MENSAJE)
+    except Exception as excepcion:
+        error = clasificar(excepcion, _url_de_supabase())
+        if error is None:
+            raise
+        # El traceback completo queda en los logs del servidor, con el código
+        # adelante para poder filtrar por él en el panel de Render.
+        _logger.exception("[%s] %s", error.codigo, error.titulo)
+        panel_error.mostrar(error, clave=clave)
         if detener:
             st.stop()

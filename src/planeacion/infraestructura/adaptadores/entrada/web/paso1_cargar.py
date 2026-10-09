@@ -9,9 +9,9 @@ from streamlit.runtime.uploaded_file_manager import UploadedFile
 from planeacion.application.dto.pivote import PivotePorZonaDTO
 from planeacion.config.contenedor import Contenedor, crear_generar_pivote
 from planeacion.domain.errores import ErrorDeDominio
-from planeacion.infraestructura.adaptadores.entrada.web import estado, estilos
+from planeacion.infraestructura.adaptadores.entrada.web import estado, estilos, panel_error
+from planeacion.infraestructura.adaptadores.entrada.web.errores import clasificar
 from planeacion.infraestructura.adaptadores.salida.excel.lector_ecom import (
-    ColumnasEcomFaltantes,
     FormatoEcomInvalido,
 )
 
@@ -98,11 +98,15 @@ def _procesar(contenedor: Contenedor, archivo: UploadedFile) -> None:
     with st.spinner("Leyendo el archivo y agrupando los pedidos por zona..."):
         try:
             pivote = crear_generar_pivote(contenedor).ejecutar(ruta)
-        except ColumnasEcomFaltantes as error:
-            st.error(str(error))  # el mensaje ya dice qué columnas faltan y qué trae el archivo
-            return
         except (ErrorDeDominio, FormatoEcomInvalido) as error:
-            st.error(f"No se pudo procesar el archivo: {error}. Revisa que sea el export de ECOM.")
+            # El mismo panel que el resto de los fallos: qué pasó y qué hacer.
+            # Lo que `clasificar` no reconoce cae al mensaje de siempre, que al
+            # menos trae el detalle técnico, en vez de perderse.
+            reconocido = clasificar(error)
+            if reconocido is not None:
+                panel_error.mostrar(reconocido, clave="paso1")
+            else:
+                st.error(f"No se pudo procesar el archivo: {error}")
             return
 
     st.session_state[estado.CLAVE_PIVOTE] = pivote

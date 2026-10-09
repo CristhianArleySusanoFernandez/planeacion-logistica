@@ -14,6 +14,7 @@ from typing import Any, cast
 import httpx
 import pytest
 import streamlit as st
+from postgrest.exceptions import APIError
 from streamlit.testing.v1 import AppTest
 
 from planeacion.application.dto.pivote import PivotePorZonaDTO
@@ -29,7 +30,11 @@ from planeacion.domain.modelo import (
     Zona,
     ZonaAgregada,
 )
-from planeacion.infraestructura.adaptadores.entrada.web import estado
+from planeacion.infraestructura.adaptadores.entrada.web import datos, errores, estado
+from planeacion.infraestructura.adaptadores.salida.excel.lector_ecom import (
+    ColumnasEcomFaltantes,
+    LectorEcomExcel,
+)
 
 _RUTA_APP = (
     Path(__file__).parents[2]
@@ -165,20 +170,61 @@ def _app_con_contenedor(monkeypatch: pytest.MonkeyPatch, contenedor: Contenedor)
     return AppTest.from_file(str(_RUTA_APP), default_timeout=60)
 
 
-def test_sin_conexion_la_pagina_muestra_el_mensaje_amigable(monkeypatch: pytest.MonkeyPatch) -> None:
-    """Supabase pausado: en vez del traceback, las instrucciones para reactivarlo."""
+def _codigos_en_pantalla(aplicacion: AppTest) -> list[str]:
+    """Los códigos de error que el panel dejó en sus captions."""
+    marca = "Código del error: "
+    return [c.value.removeprefix(marca) for c in aplicacion.caption if c.value.startswith(marca)]
+
+
+def _textos(aplicacion: AppTest) -> str:
+    """Todo el texto visible, para buscar un dato puntual sin atarse al elemento."""
+    partes = [elemento.value for elemento in aplicacion.markdown]
+    partes += [elemento.value for elemento in aplicacion.caption]
+    partes += [elemento.value for elemento in aplicacion.error]
+    partes += [elemento.value for elemento in aplicacion.warning]
+    return "\n".join(str(parte) for parte in partes)
+
+
+def test_la_base_pausada_muestra_el_panel_con_enlace_y_reintentar(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """El caso real: Supabase se pausó. En vez del traceback, qué hacer y a dónde ir."""
+    datos.invalidar_todo()
     aplicacion = _app_con_contenedor(monkeypatch, _contenedor_caido(httpx.ConnectError("sin red")))
     aplicacion.session_state[estado.CLAVE_PASO] = estado.PAGINA_CONFIGURACION
     aplicacion.run()
 
     assert not aplicacion.exception, aplicacion.exception
-    assert any("No se pudo conectar con la base de datos" in e.value for e in aplicacion.error)
-    assert any("Restore" in e.value for e in aplicacion.error)
+    assert errores.BD_SIN_CONEXION in _codigos_en_pantalla(aplicacion)
+    texto = _textos(aplicacion)
+    assert "Restore" in texto  # el paso concreto, no una frase genérica
+    enlaces = [e for e in aplicacion.get("link_button")]
+    assert any(e.proto.url.startswith("https://supabase.com/dashboard/project/") for e in enlaces)
+    assert any(boton.label == "🔄 Reintentar" for boton in aplicacion.button)
+
+
+def test_reintentar_vuelve_a_intentar_sin_recargar_la_pagina(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Es el punto del botón: que la usuaria no tenga que recargar el navegador."""
+    datos.invalidar_todo()
+    aplicacion = _app_con_contenedor(monkeypatch, _contenedor_caido(httpx.ConnectError("sin red")))
+    aplicacion.session_state[estado.CLAVE_PASO] = estado.PAGINA_CONFIGURACION
+    aplicacion.run()
+
+    reintentar = next(b for b in aplicacion.button if b.label == "🔄 Reintentar")
+    reintentar.click().run()
+
+    # Sigue caída, así que el panel vuelve a salir; lo que importa es que el clic
+    # no deja la app en un estado roto.
+    assert not aplicacion.exception, aplicacion.exception
+    assert errores.BD_SIN_CONEXION in _codigos_en_pantalla(aplicacion)
 
 
 def test_sin_conexion_al_cablear_tampoco_revienta(monkeypatch: pytest.MonkeyPatch) -> None:
     """La caída puede ser antes de la página, al crear el cliente de Supabase."""
     st.cache_resource.clear()
+    datos.invalidar_todo()
 
     def _reventar(*_args: Any, **_kwargs: Any) -> Contenedor:
         raise httpx.ConnectTimeout("timeout")
@@ -188,14 +234,59 @@ def test_sin_conexion_al_cablear_tampoco_revienta(monkeypatch: pytest.MonkeyPatc
     aplicacion.run()
 
     assert not aplicacion.exception, aplicacion.exception
-    assert any("No se pudo conectar con la base de datos" in e.value for e in aplicacion.error)
+    assert errores.BD_SIN_CONEXION in _codigos_en_pantalla(aplicacion)
 
 
-def test_un_error_que_no_es_de_conexion_sigue_propagandose(monkeypatch: pytest.MonkeyPatch) -> None:
-    """Solo los errores de red muestran «puede estar pausado»; los de datos, no."""
+def test_la_tabla_que_falta_nombra_su_migracion(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Una migración sin aplicar: el panel dice cuál, para que el aviso sea útil."""
+    datos.invalidar_todo()
+    sin_tabla = APIError(
+        {"code": "42P01", "message": 'relation "public.zonas" does not exist', "hint": "", "details": ""}
+    )
+    aplicacion = _app_con_contenedor(monkeypatch, _contenedor_caido(sin_tabla))
+    aplicacion.session_state[estado.CLAVE_PASO] = estado.PAGINA_CONFIGURACION
+    aplicacion.run()
+
+    assert not aplicacion.exception, aplicacion.exception
+    assert errores.BD_MIGRACION_FALTANTE in _codigos_en_pantalla(aplicacion)
+    texto = _textos(aplicacion)
+    assert "001" in texto  # la migración que crea `zonas`
+    assert "zonas" in texto
+
+
+def test_un_archivo_que_no_es_de_ecom_lista_las_columnas_que_trae(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    """Paso 1 con el reporte equivocado: se dice qué se esperaba y qué llegó."""
+    datos.invalidar_todo()
+    ruta = tmp_path / "reporte_equivocado.xls"
+    ruta.write_bytes(
+        b"<html><body><table>"
+        b"<tr><td>Cliente</td><td>Ciudad</td><td>Vendedor</td></tr>"
+        b"<tr><td>200001</td><td>TUNJA</td><td>ANA</td></tr>"
+        b"</table></body></html>"
+    )
+    aplicacion = _app_con_contenedor(monkeypatch, _contenedor_caido(AssertionError("no se usa")))
+    aplicacion.run()
+
+    # El Paso 1 no pega a la base para leer el archivo, así que el contenedor
+    # caído no estorba: lo que se prueba es el camino del archivo.
+    with pytest.raises(ColumnasEcomFaltantes) as capturada:
+        LectorEcomExcel().leer(ruta)
+    error = errores.clasificar(capturada.value)
+
+    assert error is not None
+    assert error.codigo == errores.ARCHIVO_NO_RECONOCIDO
+    assert "Vendedor" in error.que_paso
+    assert not error.reintentable
+
+
+def test_un_error_que_no_se_reconoce_sigue_propagandose(monkeypatch: pytest.MonkeyPatch) -> None:
+    """El control: un panel para todo esconderia los bugs, así que no lo hay."""
+    datos.invalidar_todo()
     aplicacion = _app_con_contenedor(monkeypatch, _contenedor_caido(ValueError("dato inválido")))
     aplicacion.session_state[estado.CLAVE_PASO] = estado.PAGINA_CONFIGURACION
     aplicacion.run()
 
-    assert aplicacion.exception, "el error de datos tenía que propagarse como antes"
-    assert not any("No se pudo conectar" in e.value for e in aplicacion.error)
+    assert aplicacion.exception, "el error desconocido tenía que propagarse"
+    assert _codigos_en_pantalla(aplicacion) == []
