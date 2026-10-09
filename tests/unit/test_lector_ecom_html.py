@@ -17,10 +17,10 @@ import pytest
 from planeacion.infraestructura.adaptadores.salida.excel.lector_ecom import (
     FormatoEcomInvalido,
     LectorEcomExcel,
-    leer_libro_ecom,
+    leer_filas_ecom,
 )
 from planeacion.infraestructura.adaptadores.salida.excel.lector_ecom_html import (
-    abrir_html_como_libro,
+    filas_del_html,
     parece_html,
 )
 
@@ -152,15 +152,18 @@ class TestParseo:
         ruta = _escribir(tmp_path / "infpedidos.xls", "<html><body><p>Sin resultados</p></body></html>")
 
         with pytest.raises(FormatoEcomInvalido, match="no encontré ninguna fila"):
-            abrir_html_como_libro(ruta)
+            filas_del_html(ruta)
 
-    def test_la_hoja_del_libro_en_memoria_mapea_con_el_lector_de_siempre(self, tmp_path: Path) -> None:
-        """Lo que este módulo devuelve es un libro normal: no hay mapeo propio."""
+    def test_las_filas_crudas_mapean_con_el_lector_de_siempre(self, tmp_path: Path) -> None:
+        """Lo que este módulo devuelve son filas: el mapeo de columnas es el único
+        que hay, no una copia. Y no pasa por openpyxl, que costaba 1,5 s por
+        archivo solo para volver a recorrer lo mismo."""
         ruta = _escribir(tmp_path / "infpedidos.xls", _html([_fila("1", "200001651668-UNO", "100", "10")]))
 
-        libro = abrir_html_como_libro(ruta)
+        filas = filas_del_html(ruta)
 
-        assert leer_libro_ecom(libro, ruta.name)[0].pedido == "1"
+        assert filas[0][1] == "Pedido"  # la primera fila es el encabezado
+        assert leer_filas_ecom(filas, ruta.name)[0].pedido == "1"
 
 
 class TestRecorteDelArchivoReal:

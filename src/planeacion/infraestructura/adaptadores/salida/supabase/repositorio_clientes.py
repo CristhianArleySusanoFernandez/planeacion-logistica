@@ -12,7 +12,10 @@ from planeacion.infraestructura.adaptadores.salida.supabase._filas import como_f
 
 TABLA = "clientes"
 _TAMANO_LOTE = 500
-_TAMANO_PAGINA = 1000  # límite por defecto de PostgREST
+# El techo real lo pone el servidor (`max-rows` de Supabase) y no se puede subir
+# desde el cliente: pedir 5.000 devuelve 1.000. Se deja en 1.000, que es lo que
+# contesta de todas formas, y la maestra de 9.200 clientes sale en 10 viajes.
+_TAMANO_PAGINA = 1000
 _COLUMNAS = (
     "codigo, documento, razon_social, direccion, barrio, ciudad, dia_visita, activo, "
     "zonas(id, nombre, regla_chiquinquira, activa, municipios(nombre))"
@@ -80,6 +83,15 @@ class RepositorioClientesSupabase:
         return int(filas[0]["id"])
 
     def listar(self) -> list[Cliente]:
+        """La maestra entera, paginada.
+
+        El corte y el avance van por lo que DEVUELVE el servidor, no por el
+        tamaño pedido: Supabase tiene un techo propio (`max-rows`, 1.000) y
+        responde 1.000 filas aunque se le pidan 5.000. Medido: `range(0, 4999)`
+        devuelve 1.000. Con la condición escrita contra el tamaño pedido, subir
+        la página a 5.000 cortaba el bucle en la primera vuelta y **perdía 8.200
+        clientes en silencio**. Así, cualquier tamaño de página es correcto.
+        """
         clientes: list[Cliente] = []
         inicio = 0
         while True:
@@ -92,9 +104,9 @@ class RepositorioClientesSupabase:
             )
             pagina = como_filas(respuesta.data)
             clientes.extend(desde_fila(fila) for fila in pagina)
-            if len(pagina) < _TAMANO_PAGINA:
+            if not pagina:
                 return clientes
-            inicio += _TAMANO_PAGINA
+            inicio += len(pagina)
 
     def contar(self) -> int:
         respuesta = self._cliente.table(TABLA).select("codigo", count=CountMethod.exact, head=True).execute()

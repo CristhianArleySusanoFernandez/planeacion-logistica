@@ -19,6 +19,7 @@ vehículo de la fila 2 (total ÷ carros con carga) y la fila '#N/D' de cierre de
 pivote, que se recalcula desde el detalle de facturas sin zona.
 """
 
+import logging
 from decimal import Decimal
 from pathlib import Path
 
@@ -38,6 +39,9 @@ from planeacion.domain.servicios.alertas_operativas import (
     alertas_de_conductores,
     alertas_por_ruta,
 )
+from planeacion.instrumentacion import medir
+
+_logger = logging.getLogger(__name__)
 
 _GRAMOS_POR_KILO = Decimal("1000")
 _SIN_CARRO = "#N/A"
@@ -122,7 +126,8 @@ class ExportadorExcelPlaneacion:
         self._hoja_planeacion(libro.create_sheet("PLANEACION"), planeacion, carro_por_zona)
         self._hoja_base(libro.create_sheet("BASE"), planeacion, parametros or Parametros())
         self._hoja_pedidos(libro.create_sheet("PEDIDOS"), planeacion, carro_por_zona)
-        libro.save(ruta_salida)
+        with medir("guardado del .xlsx", _logger):
+            libro.save(ruta_salida)
         return ruta_salida
 
     def _hoja_ecom(

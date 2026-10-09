@@ -22,7 +22,7 @@ Peculiaridades del formato real:
 
 import logging
 import unicodedata
-from collections.abc import Iterator, Sequence
+from collections.abc import Iterable, Iterator, Sequence
 from dataclasses import dataclass
 from datetime import date, datetime
 from decimal import Decimal, InvalidOperation
@@ -307,7 +307,21 @@ def leer_libro_ecom(libro: Workbook, nombre_archivo: str) -> list[LineaPedido]:
     """
     hoja, mapa = _elegir_hoja(libro, nombre_archivo)
     _logger.info("Leyendo pedidos de la hoja %r de %s", hoja.title, nombre_archivo)
-    return list(_leer_lineas(hoja, mapa))
+    return list(_lineas_de_hoja(hoja, mapa))
+
+
+def leer_filas_ecom(filas: Sequence[Sequence[Any]], nombre_archivo: str) -> list[LineaPedido]:
+    """Filas crudas (la primera es el encabezado) → líneas de pedido.
+
+    Mismo mapeo por encabezado y mismo parseo de celdas que cualquier otro
+    origen; lo único que cambia es de dónde salen las filas. Lo usa el lector de
+    HTML, que las tiene ya en memoria y no necesita un libro de openpyxl.
+    """
+    if not filas:
+        raise FormatoEcomInvalido(f"{nombre_archivo} no trae ninguna fila")
+    mapa = _mapear_columnas(filas[0])
+    _logger.info("Leyendo pedidos de %s (%d filas)", nombre_archivo, len(filas))
+    return list(_leer_lineas(filas[1:], mapa))
 
 
 class LectorEcomExcel:
@@ -327,14 +341,17 @@ class LectorEcomExcel:
             # errores de este módulo, así que a nivel de módulo el ciclo no
             # cerraría.
             from planeacion.infraestructura.adaptadores.salida.excel.lector_ecom_html import (
-                abrir_html_como_libro,
+                filas_del_html,
                 parece_html,
             )
             from planeacion.infraestructura.adaptadores.salida.excel.lector_ecom_xls import (
                 abrir_xls_como_libro,
             )
 
-            libro = abrir_html_como_libro(ruta) if parece_html(ruta) else abrir_xls_como_libro(ruta)
+            if parece_html(ruta):
+                # El HTML no pasa por openpyxl: sus filas van derecho al mapeo.
+                return leer_filas_ecom(filas_del_html(ruta), ruta.name)
+            libro = abrir_xls_como_libro(ruta)
         else:
             libro = openpyxl.load_workbook(ruta, read_only=True, data_only=True)
         try:
@@ -343,7 +360,7 @@ class LectorEcomExcel:
             libro.close()
 
 
-def _celda(fila: tuple[Any, ...], indice: int | None) -> Any:
+def _celda(fila: Sequence[Any], indice: int | None) -> Any:
     if indice is None or indice >= len(fila):
         return None
     return fila[indice]
@@ -353,13 +370,32 @@ def _letra(indice: int) -> str:
     return get_column_letter(indice + 1)
 
 
-def _leer_lineas(hoja: Worksheet, mapa: _MapaColumnas, columna_inicial: int = 0) -> Iterator[LineaPedido]:
-    """Filas de datos → LineaPedido. Los índices de ``mapa`` son relativos a
-    ``columna_inicial``, así que las filas se piden ya rebanadas desde ahí."""
-    vacias_seguidas = 0
-    filas = hoja.iter_rows(
-        min_row=2, min_col=columna_inicial + 1, max_col=columna_inicial + mapa.max_col, values_only=True
+def _lineas_de_hoja(hoja: Worksheet, mapa: _MapaColumnas, columna_inicial: int = 0) -> Iterator[LineaPedido]:
+    """Las filas de datos de una hoja de openpyxl, ya rebanadas desde ``columna_inicial``."""
+    yield from _leer_lineas(
+        hoja.iter_rows(
+            min_row=2,
+            min_col=columna_inicial + 1,
+            max_col=columna_inicial + mapa.max_col,
+            values_only=True,
+        ),
+        mapa,
+        columna_inicial,
     )
+
+
+def _leer_lineas(
+    filas: Iterable[Sequence[Any]], mapa: _MapaColumnas, columna_inicial: int = 0
+) -> Iterator[LineaPedido]:
+    """Filas de datos → LineaPedido. Los índices de ``mapa`` son relativos a
+    ``columna_inicial``, así que las filas llegan ya rebanadas desde ahí.
+
+    Toma un iterable de filas y no una hoja para que el origen pueda ser
+    cualquiera: una hoja de openpyxl o la tabla HTML parseada, que así no tiene
+    que construir un libro intermedio solo para que lo recorramos de vuelta
+    (eran 1,5 de los 3,7 s que costaba leer el ECOM del 7 de octubre).
+    """
+    vacias_seguidas = 0
     for numero, fila in enumerate(filas, start=2):
         pedido = _texto(_celda(fila, mapa.pedido))
         if pedido is None:
@@ -414,4 +450,4 @@ def leer_bloque_ecom(hoja: Worksheet, columna_inicial: int = 0) -> list[LineaPed
     PEDIDOS de los .xlsm de planeación (bloque en la S).
     """
     mapa = _mapear_columnas(_encabezados_de(hoja, columna_inicial))
-    return list(_leer_lineas(hoja, mapa, columna_inicial))
+    return list(_lineas_de_hoja(hoja, mapa, columna_inicial))

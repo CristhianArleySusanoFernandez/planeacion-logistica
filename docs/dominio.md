@@ -356,6 +356,39 @@ las filas en vez de reescribirlas, para no tener dos fuentes de verdad.
 | `vehiculos_referencia` | 12 | Divisor del "Promedio Vh". **Fijo a propósito**: es el de la hoja que la operación mira, y usar "los carros con carga" daría otro número. |
 | `kilos_max_por_unidad` | 25 | Techo de la guarda de kilos. Una unidad de venta es una caja o un display; ningún producto sano de 2026 se acerca, y hay fichas con 715,5 kg (ver § 5). |
 
+## 6.ter Rendimiento: qué se cachea y cuándo se invalida
+
+Medido con `planeacion-medir` sobre el `.xls` del 7 de octubre de 2026 (1.269 facturas, 4.960 filas),
+el flujo completo tarda **~11 s** y se reparte así: **maestra de clientes 4,4 s (42 %)**, **lectura
+del ECOM 3,7 s (35 %)**, el resto son consultas de ~0,25 s cada una (latencia a Supabase) y el
+**balanceo 0,007 s**. El balanceador no es el cuello de botella: es la red y el parseo.
+
+Tres cosas salieron de ahí:
+
+- **La maestra son 10 viajes y seguirán siendo 10.** Supabase corta en 1.000 filas por respuesta
+  (`max-rows`) y no se puede subir desde el cliente: pedir `range(0, 4999)` devuelve 1.000. Lo que sí
+  se arregló es la trampa: el bucle avanzaba por el tamaño **pedido**, así que subir la página a
+  5.000 habría cortado en la primera vuelta y perdido 8.200 clientes en silencio. Ahora avanza por lo
+  **devuelto** y corta con la página vacía, así que cualquier tamaño es correcto.
+- **El ECOM en HTML ya no pasa por openpyxl.** Se construía un `Workbook` en memoria solo para
+  recorrerlo de vuelta; ese desvío costaba **0,92 s** (mediana de 5 corridas: 0,99 s contra 0,07 s)
+  por archivo. Las filas van derecho al mapeo de columnas de siempre. Verificado línea por línea
+  sobre los 12 `.xls`: los dos caminos dan `LineaPedido` idénticas.
+- **Las lecturas de la interfaz se cachean** en `web/datos.py` (`st.cache_data`, TTL 5 minutos), no en
+  los repositorios: el dominio no tiene por qué saber que hay una pantalla que se repinta. Streamlit
+  reejecuta el script en cada interacción y `st.tabs` dibuja las siete pestañas en cada pasada, así
+  que un clic en Configuración disparaba **13 lecturas** —incluida la maestra entera— y ahora
+  dispara **0**.
+
+La invalidación es **explícita y por entidad**, no "borrar todo", porque la pantalla más pesada —la
+matriz del repertorio— escribe en cada clic: si cada casilla tirara el cache de la maestra, el
+arreglo no serviría de nada. El mapa: clientes → maestra; zonas → zonas + matriz + maestra (la zona
+del cliente se guarda por nombre); carros → flota + matriz (sus columnas son los carros);
+repertorio → matriz + frecuencias; y correcciones, overrides y parámetros cada uno el suyo.
+
+Lo que **no** se arregla con código: el plan gratuito duerme la app tras ~15 minutos sin uso y tarda
+cerca de un minuto en despertar. La barra lateral lo avisa y el README lo documenta.
+
 ## 7. Salida (para facturación)
 
 La salida principal que consume facturación es la hoja **`ECOM`**: cada cliente (código) con la **ruta/carro**

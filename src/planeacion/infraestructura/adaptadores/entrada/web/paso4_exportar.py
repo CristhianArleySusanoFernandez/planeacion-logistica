@@ -12,7 +12,7 @@ from planeacion.config.contenedor import (
     crear_generar_planeacion,
 )
 from planeacion.domain.modelo import Parametros
-from planeacion.infraestructura.adaptadores.entrada.web import estado, estilos
+from planeacion.infraestructura.adaptadores.entrada.web import datos, estado, estilos
 
 _MIME_XLSX = "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
 
@@ -60,7 +60,7 @@ def _exportar_excel(contenedor: Contenedor, planeacion: PlaneacionCompleta) -> N
         with st.spinner("Generando las hojas ECOM, PLANEACION, BASE y PEDIDOS..."):
             # Los umbrales de las alertas de la hoja BASE salen de la tabla de
             # parámetros, igual que en el Paso 3.
-            parametros = Parametros(valores=contenedor.parametros.obtener())
+            parametros = Parametros(valores=datos.parametros(contenedor))
             crear_exportador_planeacion().exportar(planeacion, ruta, parametros)
         st.session_state[estado.CLAVE_EXCEL_EXPORTADO] = ruta.read_bytes()
 

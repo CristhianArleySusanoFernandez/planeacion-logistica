@@ -374,6 +374,16 @@ Notas del entorno:
 - El logo es opcional: se muestra si existe
   `src/planeacion/infraestructura/adaptadores/entrada/web/assets/logo.png`.
 
+### Limitación conocida del plan gratuito: la app se duerme
+
+El plan gratuito donde corre la app la **suspende tras ~15 minutos sin uso** y tarda cerca de un
+minuto en volver a levantar (arranque en frío: contenedor nuevo, dependencias, primera conexión a
+Supabase). **No se arregla con código**: es el plan. La barra lateral lo avisa —"la primera carga del
+día puede tardar un minuto"— para que nadie piense que se colgó.
+
+Si molesta, las salidas son las mismas que para Supabase: un ping programado que la mantenga
+despierta, o un plan pago. Ninguna está implementada.
+
 ### Limitación conocida del plan gratuito: Supabase se pausa
 
 Un proyecto de Supabase en el plan gratuito **se pausa solo tras varios días sin actividad**. Con el

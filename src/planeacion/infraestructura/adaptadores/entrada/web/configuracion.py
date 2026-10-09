@@ -29,7 +29,7 @@ from planeacion.domain.modelo import (
     clave_orden_carro,
 )
 from planeacion.domain.servicios.parseo_zonas import crear_zona
-from planeacion.infraestructura.adaptadores.entrada.web import clientes_maestra, conexion, estilos
+from planeacion.infraestructura.adaptadores.entrada.web import clientes_maestra, conexion, datos, estilos
 from planeacion.infraestructura.adaptadores.entrada.web.repertorio_matriz import (
     TODOS,
     FiltroMatriz,
@@ -98,7 +98,7 @@ def mostrar(contenedor: Contenedor) -> None:
 def _municipios(contenedor: Contenedor) -> list[str]:
     nombres: list[str] | None = st.session_state.get("municipios_nombres")
     if nombres is None:
-        nombres = sorted(m.nombre for m in contenedor.municipios.listar())
+        nombres = sorted(m.nombre for m in datos.municipios(contenedor))
         st.session_state["municipios_nombres"] = nombres
     return nombres
 
@@ -106,7 +106,7 @@ def _municipios(contenedor: Contenedor) -> list[str]:
 def _zonas_nombres(contenedor: Contenedor) -> list[str]:
     nombres: list[str] | None = st.session_state.get("zonas_nombres")
     if nombres is None:
-        nombres = [zona.nombre for zona in contenedor.zonas.listar()]
+        nombres = [zona.nombre for zona in datos.zonas(contenedor)]
         st.session_state["zonas_nombres"] = nombres
     return nombres
 
@@ -188,7 +188,7 @@ def _tab_carros(contenedor: Contenedor) -> None:
             "costo_diario": float(c.costo_diario),
             "activo": c.activo,
         }
-        for c in contenedor.carros.listar()
+        for c in datos.flota(contenedor)
     ]
     visibles, editadas = _editor_con_filtro(
         "carros",
@@ -230,6 +230,7 @@ def _tab_carros(contenedor: Contenedor) -> None:
             eliminadas += 1
         except (LookupError, ValueError) as error:
             errores.append(str(error))
+    datos.invalidar_flota()
     _reportar_guardado(guardadas, eliminadas, errores)
 
 
@@ -243,7 +244,7 @@ def _tab_parametros(contenedor: Contenedor) -> None:
         "equilibra el reparto y los umbrales de las alertas del Paso 3. Entre paréntesis queda el "
         "valor por defecto, que es el que manda si se borra la fila."
     )
-    guardados = contenedor.parametros.obtener()
+    guardados = datos.parametros(contenedor)
     vigentes = Parametros(valores=guardados)
     originales: list[Fila] = [
         {
@@ -275,6 +276,7 @@ def _tab_parametros(contenedor: Contenedor) -> None:
         _guardar_parametros(contenedor, originales, editadas)
     if col_restaurar.button("↺ Restaurar valores por defecto", key="restaurar_parametros"):
         borrados = contenedor.parametros.restaurar_por_defecto()
+        datos.invalidar_parametros()
         st.session_state.pop("parametros", None)
         st.success(f"Listo: {borrados} valor(es) borrado(s). Vuelven a regir los de la tabla.")
         st.rerun()
@@ -297,6 +299,7 @@ def _guardar_parametros(contenedor: Contenedor, originales: list[Fila], editadas
             cambiados += 1
         except LookupError as error:
             errores.append(str(error))
+    datos.invalidar_parametros()
     _reportar_guardado(cambiados, 0, errores)
 
 
@@ -311,7 +314,7 @@ def _carros_que_atienden(contenedor: Contenedor) -> dict[str, str]:
     queda huérfana. El detalle por día se edita en la matriz de "Zonas por carro".
     """
     atienden: dict[str, list[str]] = {}
-    por_carro_por_dia = contenedor.carro_zonas.obtener_matriz()
+    por_carro_por_dia = datos.matriz_repertorio(contenedor)
     numeros_por_zona: dict[str, set[str]] = {}
     for por_carro in por_carro_por_dia.values():
         for numero, zonas in por_carro.items():
@@ -356,7 +359,7 @@ def _tab_zonas(contenedor: Contenedor) -> None:
             "activa": z.activa,
             "carros": atienden.get(z.nombre, _SIN_CARRO),
         }
-        for z in contenedor.zonas.listar()
+        for z in datos.zonas(contenedor)
     ]
     visibles, editadas = _editor_con_filtro(
         "zonas",
@@ -395,6 +398,7 @@ def _tab_zonas(contenedor: Contenedor) -> None:
         except (LookupError, ValueError) as error:
             errores.append(str(error))
     st.session_state.pop("zonas_nombres", None)  # el catálogo cambió
+    datos.invalidar_zonas()
     _reportar_guardado(guardadas, eliminadas, errores)
 
 
@@ -427,6 +431,7 @@ def _guardar_matriz(
         if errores:
             st.session_state["matriz_errores"] = errores
         if len(cambios) > len(errores):
+            datos.invalidar_repertorio()
             st.toast("Guardado ✓")
 
 
@@ -499,11 +504,11 @@ def _tab_repertorio(contenedor: Contenedor) -> None:
         "asigna una zona a un carro que la tenga permitida. Cada casilla se guarda "
         "sola al marcarla, sin botón de guardar."
     )
-    carros = [c for c in contenedor.carros.listar() if c.activo]
+    carros = [c for c in datos.flota(contenedor) if c.activo]
     if not carros:
         st.info("No hay carros activos en la base: siembra primero con planeacion-sembrar.")
         return
-    zonas = [z for z in contenedor.zonas.listar() if z.activa]
+    zonas = [z for z in datos.zonas(contenedor) if z.activa]
 
     for error in st.session_state.pop("matriz_errores", []):
         st.error(error)
@@ -518,12 +523,12 @@ def _tab_repertorio(contenedor: Contenedor) -> None:
     )
     # Una sola lectura de la matriz completa por render: la usan el día en
     # pantalla y el popover de copiar, que Streamlit ejecuta aunque esté cerrado.
-    matriz = contenedor.carro_zonas.obtener_matriz()
+    matriz = datos.matriz_repertorio(contenedor)
     repertorio = matriz.get(dia, {})
     with col_copiar:
         _copiar_de_otro_dia(contenedor, dia, matriz)
 
-    frecuencias = frecuencias_del_dia(contenedor.carro_zonas.frecuencias(), dia)
+    frecuencias = frecuencias_del_dia(datos.frecuencias(contenedor), dia)
 
     col_municipio, col_sin_carro, col_buscar = st.columns([2, 2, 3], vertical_alignment="bottom")
     municipio = col_municipio.selectbox(
@@ -559,7 +564,7 @@ def _tab_repertorio(contenedor: Contenedor) -> None:
     columnas = carros_visibles(carros, filas, repertorio, municipio)
     orden_zonas = [z.nombre for z in filas]
     numeros = [c.numero for c in columnas]
-    datos: list[Fila] = [
+    filas_matriz: list[Fila] = [
         {
             "zona": zona.nombre,
             **{numero: zona.nombre in repertorio.get(numero, set()) for numero in numeros},
@@ -572,7 +577,7 @@ def _tab_repertorio(contenedor: Contenedor) -> None:
     nonce = st.session_state.setdefault("matriz_nonce", 0)
     clave_editor = f"matriz_{dia}_{municipio}_{int(solo_sin_carro)}_{normalizar(texto)}_{nonce}"
     st.data_editor(
-        datos,
+        filas_matriz,
         key=clave_editor,
         hide_index=True,
         column_config={
@@ -640,7 +645,7 @@ def _maestra(contenedor: Contenedor) -> list[Cliente]:
     """
     cache: list[Cliente] | None = st.session_state.get(_CLAVE_MAESTRA)
     if cache is None:
-        cache = contenedor.clientes.listar()
+        cache = datos.maestra(contenedor)
         st.session_state[_CLAVE_MAESTRA] = cache
     return cache
 
@@ -729,14 +734,15 @@ def _editor_clientes(
     if not st.button("Guardar cambios", key="guardar_clientes"):
         return
 
-    zonas = {zona.nombre: zona for zona in contenedor.zonas.listar()}
+    zonas = {zona.nombre: zona for zona in datos.zonas(contenedor)}
     try:
         resultado = clientes_maestra.aplicar_cambios(contenedor.clientes, visibles, list(editadas), zonas)
     except ZonaInvalida as zona_invalida:
         st.error(str(zona_invalida))
         return
     if resultado.guardados:
-        st.session_state.pop(_CLAVE_MAESTRA, None)  # la caché quedó vieja
+        st.session_state.pop(_CLAVE_MAESTRA, None)  # la caché de la página quedó vieja
+        datos.invalidar_clientes()  # y la de la lectura, para que el cambio se vea ya
     for error in resultado.errores:
         st.error(error)
     # Nunca se borran clientes desde acá (se desactivan), así que no hay eliminadas.
@@ -762,7 +768,7 @@ def _tab_correcciones(contenedor: Contenedor) -> None:
             "ciudad_real": c.ciudad_real,
             "barrio_real": c.barrio_real,
         }
-        for c in contenedor.correcciones.listar()
+        for c in datos.correcciones(contenedor)
     ]
     visibles, editadas = _editor_con_filtro("correcciones", originales)
     if not st.button("Guardar cambios", key="guardar_correcciones"):
@@ -783,6 +789,7 @@ def _tab_correcciones(contenedor: Contenedor) -> None:
         guardadas += 1
     for codigo in diff.eliminadas:
         contenedor.correcciones.eliminar(codigo)
+    datos.invalidar_correcciones()
     _reportar_guardado(guardadas, len(diff.eliminadas), errores)
 
 
@@ -797,7 +804,7 @@ def _tab_overrides(contenedor: Contenedor) -> None:
     )
     originales: list[Fila] = [
         {"cliente_codigo": o.cliente_codigo, "zona_nombre": o.zona_nombre}
-        for o in contenedor.overrides.listar()
+        for o in datos.overrides(contenedor)
     ]
     visibles, editadas = _editor_con_filtro(
         "overrides",
@@ -831,4 +838,5 @@ def _tab_overrides(contenedor: Contenedor) -> None:
             errores.append(str(error))
     for codigo in diff.eliminadas:
         contenedor.overrides.eliminar(codigo)
+    datos.invalidar_overrides()
     _reportar_guardado(guardadas, len(diff.eliminadas), errores)

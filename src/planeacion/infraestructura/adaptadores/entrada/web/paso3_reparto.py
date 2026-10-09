@@ -32,7 +32,7 @@ from planeacion.domain.servicios.alertas_operativas import (
     alerta_de_promedio_por_vehiculo,
     alertas_de_conductores,
 )
-from planeacion.infraestructura.adaptadores.entrada.web import estado, estilos
+from planeacion.infraestructura.adaptadores.entrada.web import datos, estado, estilos
 
 
 def mostrar(contenedor: Contenedor) -> None:
@@ -170,7 +170,7 @@ def _alertas_operativas(
     mínimo de clientes 19 veces en los 16 archivos de septiembre y octubre de
     2026, así que imponerlo rechazaría repartos que ellos hacen todas las semanas.
     """
-    parametros = Parametros(valores=contenedor.parametros.obtener())
+    parametros = Parametros(valores=datos.parametros(contenedor))
     alertas: list[Alerta] = list(
         alertas_de_conductores(
             cargas_por_municipio,

@@ -81,9 +81,11 @@ class RepositorioCarroZonasSupabase:
                 raise
             pagina = como_filas(respuesta.data)
             filas.extend(pagina)
-            if len(pagina) < _TAMANO_PAGINA:
+            # Se avanza por lo devuelto y no por lo pedido: el servidor tiene su
+            # propio techo y con otro tamaño de página esto truncaría en silencio.
+            if not pagina:
                 return filas
-            inicio += _TAMANO_PAGINA
+            inicio += len(pagina)
 
     def asignar(self, numero_carro: str, nombre_zona: str, dia_semana: str) -> None:
         self.asignar_lote([ParRepertorio(numero_carro, nombre_zona, dia_semana)])

@@ -6,6 +6,7 @@ filtra por la fecha pedida (o la más frecuente del archivo) y lo excluido se
 reporta en el DTO en vez de perderse en silencio.
 """
 
+import logging
 from collections import Counter
 from collections.abc import Sequence
 from datetime import date
@@ -36,6 +37,9 @@ from planeacion.domain.servicios.guarda_kilos import (
 )
 from planeacion.domain.servicios.parseo_zonas import normalizar_nombre_zona
 from planeacion.domain.servicios.resolutor_zona import ResolutorDeZona
+from planeacion.instrumentacion import medir
+
+logger = logging.getLogger(__name__)
 
 
 class CasoDeUsoGenerarPivote:
@@ -61,7 +65,8 @@ class CasoDeUsoGenerarPivote:
         todas_las_fechas: bool = False,
         kilos_max_por_unidad: Decimal = KILOS_MAX_POR_UNIDAD,
     ) -> PivotePorZonaDTO:
-        lineas = self._lector.leer(ruta_ecom)
+        with medir("lectura del ECOM", logger):
+            lineas = self._lector.leer(ruta_ecom)
         if not lineas:
             raise SinPedidosParaPivotear(f"{ruta_ecom.name} no trae líneas de pedido")
 
@@ -69,9 +74,10 @@ class CasoDeUsoGenerarPivote:
         # (un caso real de 715,5 kg la unidad). Se les ponen los kilos en cero
         # ANTES de agregar, así no contaminan el pivote ni el balanceo; la factura
         # y el cliente siguen contando porque el pedido existe.
-        sospechosas = detectar_kilos_sospechosos(lineas, maximo_por_unidad=kilos_max_por_unidad)
-        kilos_excluidos = sum((s.linea.kilos for s in sospechosas), Decimal("0"))
-        lineas = sin_kilos_sospechosos(lineas, sospechosas)
+        with medir("guarda de kilos", logger):
+            sospechosas = detectar_kilos_sospechosos(lineas, maximo_por_unidad=kilos_max_por_unidad)
+            kilos_excluidos = sum((s.linea.kilos for s in sospechosas), Decimal("0"))
+            lineas = sin_kilos_sospechosos(lineas, sospechosas)
 
         fecha_pivote = fecha or _fecha_mas_frecuente(lineas)
         if todas_las_fechas:
@@ -81,7 +87,7 @@ class CasoDeUsoGenerarPivote:
             # siendo la más frecuente, solo como etiqueta del día.
             return _a_dto(
                 fecha_pivote,
-                self._agregador.agregar(lineas, self._crear_resolutor()),
+                self._agregar(lineas),
                 lineas,
                 [],
                 sospechosas,
@@ -95,7 +101,7 @@ class CasoDeUsoGenerarPivote:
             )
         excluidas = [linea for linea in lineas if linea.fecha != fecha_pivote]
 
-        resultado = self._agregador.agregar(del_dia, self._crear_resolutor())
+        resultado = self._agregar(del_dia)
         # Las sospechosas que quedaron fuera del día tampoco se reportan: el aviso
         # tiene que hablar de lo que se planea hoy.
         del_dia_marcadas = [s for s in sospechosas if s.linea.fecha == fecha_pivote]
@@ -108,9 +114,17 @@ class CasoDeUsoGenerarPivote:
             sum((s.linea.kilos for s in del_dia_marcadas), Decimal("0")),
         )
 
+    def _agregar(self, lineas: list[LineaPedido]) -> ResultadoAgregacion:
+        """Resuelve la zona de cada línea y agrega por zona, midiendo las dos."""
+        resolutor = self._crear_resolutor()
+        with medir("resolucion de zonas + pivote", logger):
+            return self._agregador.agregar(lineas, resolutor)
+
     def _crear_resolutor(self) -> ResolutorDeZona:
-        zonas_por_nombre = {normalizar_nombre_zona(z.nombre): z for z in self._zonas.listar()}
-        zonas_maestra = {cliente.codigo: cliente.zona for cliente in self._clientes.listar()}
+        with medir("zonas (catalogo)", logger):
+            zonas_por_nombre = {normalizar_nombre_zona(z.nombre): z for z in self._zonas.listar()}
+        with medir("maestra de clientes", logger):
+            zonas_maestra = {cliente.codigo: cliente.zona for cliente in self._clientes.listar()}
         zonas_override: dict[str, Zona] = {}
         for override in self._overrides.listar():
             zona = zonas_por_nombre.get(normalizar_nombre_zona(override.zona_nombre))

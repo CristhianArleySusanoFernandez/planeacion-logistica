@@ -6,11 +6,14 @@ arranca con ``<html xmlns:o="urn:schemas-microsoft-com:office:office">``). Excel
 lo abre sin chistar, así que nadie se enteró, pero ni openpyxl ni xlrd lo pueden
 leer: xlrd falla con "Expected BOF record; found b'\\t\\t\\t\\t<htm'".
 
-Igual que el traductor de .xls binario, esto NO duplica el mapeo de columnas: lee
-la tabla y copia los valores a un ``Workbook`` de openpyxl para entregárselo a
-``leer_libro_ecom``. El lector de siempre no se entera de por dónde entró el
-archivo, y las celdas llegan como texto, que es lo que ya recibía del bloque
-pegado en los .xlsm (fechas en ISO, totales y kilos como string).
+Igual que el traductor de .xls binario, esto NO duplica el mapeo de columnas:
+devuelve las filas y el mapeo de siempre hace el resto. Las celdas llegan como
+texto, que es lo que el lector ya recibía del bloque pegado en los .xlsm (fechas
+en ISO, totales y kilos como string).
+
+**No construye un libro de openpyxl.** Lo hacía, y armar ese libro intermedio
+para que después lo recorriéramos de vuelta costaba 1,5 de los 3,7 s que tardaba
+leer el ECOM del 7 de octubre: más que el parseo del HTML mismo.
 
 Sin dependencias nuevas: ``html.parser`` es de la biblioteca estándar. Meter
 pandas o lxml para esto serían decenas de megas en cada build de Streamlit
@@ -19,8 +22,6 @@ Community Cloud a cambio de nada.
 
 from html.parser import HTMLParser
 from pathlib import Path
-
-from openpyxl.workbook import Workbook
 
 from planeacion.infraestructura.adaptadores.salida.excel.lector_ecom import FormatoEcomInvalido
 
@@ -35,7 +36,6 @@ _MARCAS_DE_HTML = (b"<html", b"<table", b"<!doctype html")
 # casa contra la maestra.
 _CODIFICACIONES = ("cp1252", "latin-1")
 
-_HOJA = "ECOM"
 _CELDAS = ("td", "th")
 _MENSAJE_SIN_TABLA = (
     "Este archivo parece una página HTML, no una tabla de pedidos: no encontré "
@@ -105,8 +105,8 @@ class _LectorDeTablas(HTMLParser):
             self._celda.append(data)
 
 
-def abrir_html_como_libro(ruta: Path) -> Workbook:
-    """HTML (con nombre .xls) → libro de openpyxl con una hoja y sus filas.
+def filas_del_html(ruta: Path) -> list[list[str | None]]:
+    """HTML (con nombre .xls) → sus filas, la primera el encabezado.
 
     De haber varias tablas se queda con la que más filas tiene: los exports
     suelen traer tablas de maqueta alrededor de los datos, y la de datos es, por
@@ -119,12 +119,4 @@ def abrir_html_como_libro(ruta: Path) -> Workbook:
     filas = max(lector.tablas, key=len, default=[])
     if not filas:
         raise FormatoEcomInvalido(f"{ruta.name}: {_MENSAJE_SIN_TABLA}")
-
-    libro = Workbook()
-    vacia = libro.active  # openpyxl crea una hoja por defecto que acá estorba
-    if vacia is not None:
-        libro.remove(vacia)
-    hoja = libro.create_sheet(title=_HOJA)
-    for fila in filas:
-        hoja.append(fila)
-    return libro
+    return filas

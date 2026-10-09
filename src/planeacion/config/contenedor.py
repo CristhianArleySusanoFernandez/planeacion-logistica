@@ -1,6 +1,7 @@
 """Composición de dependencias: fábrica del cliente Supabase y de los repositorios."""
 
 from dataclasses import dataclass
+from typing import Any
 
 from supabase import Client, create_client
 
@@ -82,9 +83,14 @@ class Contenedor:
     parametros: RepositorioParametros
 
 
-def crear_contenedor(settings: Settings | None = None) -> Contenedor:
+def crear_contenedor(settings: Settings | None = None, cliente: Any | None = None) -> Contenedor:
+    """Los repositorios ya cableados.
+
+    ``cliente`` existe para medir: ``planeacion-medir`` pasa un envoltorio que
+    cuenta los viajes a la base (ver ``cliente_contado``). La app no lo usa.
+    """
     settings = settings or Settings()
-    cliente = crear_cliente_supabase(settings)
+    cliente = cliente or crear_cliente_supabase(settings)
     return Contenedor(
         municipios=RepositorioMunicipiosSupabase(cliente),
         zonas=RepositorioZonasSupabase(cliente),

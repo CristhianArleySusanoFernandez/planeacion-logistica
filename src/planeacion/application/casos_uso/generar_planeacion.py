@@ -27,6 +27,7 @@ from planeacion.domain.modelo import (
 )
 from planeacion.domain.modelo.parametros import CLAVE_KILOS_MAX_POR_UNIDAD
 from planeacion.domain.servicios.balanceador import Balanceador
+from planeacion.instrumentacion import medir
 
 logger = logging.getLogger(__name__)
 
@@ -64,7 +65,8 @@ class CasoDeUsoGenerarPlaneacion:
         # Los pesos del equilibrio y el techo de kilos salen de la tabla de
         # parámetros, salvo que quien llama imponga las reglas (los CLI de
         # medición lo hacen para poder comparar pesos distintos).
-        configurados = self._configurados()
+        with medir("parametros", logger):
+            configurados = self._configurados()
         reglas = reglas if reglas is not None else configurados.reglas_balanceo()
         pivote = self._pivote.ejecutar(
             ruta_ecom,
@@ -75,7 +77,8 @@ class CasoDeUsoGenerarPlaneacion:
 
         # El pivote entrega DTOs planos; se reconstruye la Zona de dominio (con su
         # regla de Chiquinquirá) casando el nombre contra la tabla de zonas.
-        zonas_por_nombre = {zona.nombre: zona for zona in self._zonas.listar()}
+        with medir("zonas (para el balanceo)", logger):
+            zonas_por_nombre = {zona.nombre: zona for zona in self._zonas.listar()}
         zonas_agregadas = [
             ZonaAgregada(
                 zona=zonas_por_nombre[dto.zona],
@@ -92,15 +95,17 @@ class CasoDeUsoGenerarPlaneacion:
         # según sea lunes o sábado. Se resuelve el día ACÁ y al Balanceador se le
         # pasa solo el repertorio de ese día, así él sigue viendo un mapa plano
         # carro → zonas y no necesita saber que los días existen.
-        repertorio = self._carro_zonas.obtener_por_dia(dia_semana)
+        with medir("repertorio del dia", logger):
+            repertorio = self._carro_zonas.obtener_por_dia(dia_semana)
         # La frecuencia de cada par (carro, zona) EN ESE DÍA: le sirve al balanceador
         # para desempatar entre carros elegibles a favor del que la operación real
         # viene usando. Se resuelve el día acá, igual que el repertorio.
-        frecuencias = {
-            (par.numero_carro, par.nombre_zona): veces
-            for par, veces in self._carro_zonas.frecuencias().items()
-            if par.dia_semana == dia_semana
-        }
+        with medir("frecuencias del repertorio", logger):
+            frecuencias = {
+                (par.numero_carro, par.nombre_zona): veces
+                for par, veces in self._carro_zonas.frecuencias().items()
+                if par.dia_semana == dia_semana
+            }
         if not any(repertorio.values()):
             logger.warning(
                 "No hay repertorio configurado para %s: se balancea sin él "
@@ -111,15 +116,19 @@ class CasoDeUsoGenerarPlaneacion:
         # Sin histórico el balanceo arranca de cero (round-robin). Lo usa la
         # validación contra planeaciones manuales: si partiera de una planeación
         # guardada de ese mismo día, estaría midiéndose contra sí misma.
-        previa = self._planeaciones.obtener_asignacion_previa(dia_semana) if usar_historico else None
-        resultado = self._balanceador.balancear(
-            zonas_agregadas=zonas_agregadas,
-            carros_por_municipio=self._carros_por_municipio(),
-            asignacion_previa=previa.zona_a_carro if previa else None,
-            reglas=reglas,
-            repertorio=repertorio,
-            frecuencias=frecuencias,
-        )
+        with medir("planeacion previa (warm-start)", logger):
+            previa = self._planeaciones.obtener_asignacion_previa(dia_semana) if usar_historico else None
+        with medir("flota", logger):
+            carros_por_municipio = self._carros_por_municipio()
+        with medir("balanceo", logger):
+            resultado = self._balanceador.balancear(
+                zonas_agregadas=zonas_agregadas,
+                carros_por_municipio=carros_por_municipio,
+                asignacion_previa=previa.zona_a_carro if previa else None,
+                reglas=reglas,
+                repertorio=repertorio,
+                frecuencias=frecuencias,
+            )
         return PlaneacionCompleta(
             fecha=pivote.fecha,
             dia_semana=dia_semana,

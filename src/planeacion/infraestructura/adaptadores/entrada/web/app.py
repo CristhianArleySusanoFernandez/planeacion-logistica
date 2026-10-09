@@ -111,6 +111,11 @@ def main() -> None:
     with st.sidebar:
         estilos.marca_lateral("Distribuciones Santiago")
         st.caption("Planeación logística diaria")
+        # El plan gratuito de Render duerme la app tras 15 minutos sin uso y
+        # tarda cerca de un minuto en despertar. No se arregla con código: lo
+        # único honesto es avisarlo donde se ve antes de que alguien piense que
+        # se colgó (ver README, "Limitaciones del plan gratuito").
+        st.caption(":grey[La primera carga del día puede tardar un minuto.]")
         _navegacion_lateral(paso)
         estilos.separador_dorado()
         _resumen_lateral()

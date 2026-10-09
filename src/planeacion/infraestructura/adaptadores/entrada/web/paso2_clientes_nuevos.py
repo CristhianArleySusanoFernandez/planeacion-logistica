@@ -15,7 +15,7 @@ from planeacion.config.contenedor import (
 )
 from planeacion.domain.errores import ErrorDeDominio
 from planeacion.domain.modelo import MotivoNoResuelto
-from planeacion.infraestructura.adaptadores.entrada.web import estado, estilos
+from planeacion.infraestructura.adaptadores.entrada.web import datos, estado, estilos
 
 _OPCION_MANUAL = "🔎 Asignar manualmente..."
 _OPCION_OMITIR = "⏭ Omitir este cliente"
@@ -88,7 +88,7 @@ def _obtener_pendientes(contenedor: Contenedor, pivote: PivotePorZonaDTO) -> lis
 def _zonas_nombres(contenedor: Contenedor) -> list[str]:
     nombres: list[str] | None = st.session_state.get("zonas_nombres")
     if nombres is None:
-        nombres = [zona.nombre for zona in contenedor.zonas.listar()]
+        nombres = [zona.nombre for zona in datos.zonas(contenedor)]
         st.session_state["zonas_nombres"] = nombres
     return nombres
 
@@ -171,7 +171,9 @@ def _confirmar(
             st.error(f"No se pudo confirmar el cliente {pendiente.codigo}: {error}")
 
     if confirmados:
-        # La maestra cambió: se re-pivotea para que los confirmados entren con su zona.
+        # La maestra cambió: se invalida su lectura y se re-pivotea, para que los
+        # confirmados entren con su zona (el pivote lee la maestra de nuevo).
+        datos.invalidar_clientes()
         ruta = Path(st.session_state[estado.CLAVE_RUTA_ECOM])
         pivote: PivotePorZonaDTO = st.session_state[estado.CLAVE_PIVOTE]
         fecha: date = pivote.fecha
