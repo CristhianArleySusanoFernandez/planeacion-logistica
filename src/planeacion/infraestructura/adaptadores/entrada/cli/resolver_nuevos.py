@@ -46,14 +46,15 @@ def _mostrar_ficha(indice: int, total: int, pendiente: ClientePendiente) -> None
         print("  Sugerencia: (ninguna: no hay vecinos con esa ciudad/barrio)")
         return
     sugerencia = pendiente.sugerencia
-    print(
-        f"  Sugerencia: {sugerencia.zona}  "
-        f"({sugerencia.vecinos_en_zona} de {sugerencia.total_vecinos} vecinos)  "
-        f"[confianza: {sugerencia.confianza}]"
-    )
-    if sugerencia.alternativas:
-        alternativas = "  ·  ".join(f"{zona} ({votos})" for zona, votos in sugerencia.alternativas)
-        print(f"  Alternativas: {alternativas}")
+    print(f"  Vecinos encontrados por: {sugerencia.nivel}")
+    for puesto, opcion in enumerate(sugerencia.opciones, start=1):
+        marca = "->" if puesto == 1 else "  "
+        print(
+            f"  {marca} {puesto}. {opcion.zona}  "
+            f"({opcion.vecinos} de {sugerencia.total_vecinos} vecinos, {opcion.porcentaje:.0%})"
+        )
+        for vecino in opcion.ejemplos:
+            print(f"        · {vecino.etiqueta}")
 
 
 def _elegir_de_lista(opciones: list[str]) -> str | None:
@@ -84,7 +85,7 @@ def _buscar_zona_manual(nombres_zonas: list[str]) -> str | None:
 def _preguntar_zona(pendiente: ClientePendiente, nombres_zonas: list[str]) -> str | None:
     """Devuelve la zona elegida para el cliente, o None si Rudy lo omite."""
     hay_sugerencia = pendiente.sugerencia is not None
-    hay_alternativas = pendiente.sugerencia is not None and bool(pendiente.sugerencia.alternativas)
+    hay_alternativas = pendiente.sugerencia is not None and len(pendiente.sugerencia.opciones) > 1
     opciones: list[str] = []
     if hay_sugerencia:
         opciones.append("[S] Aceptar sugerencia")
@@ -97,7 +98,7 @@ def _preguntar_zona(pendiente: ClientePendiente, nombres_zonas: list[str]) -> st
         if respuesta == "S" and pendiente.sugerencia is not None:
             return pendiente.sugerencia.zona
         if respuesta == "A" and hay_alternativas and pendiente.sugerencia is not None:
-            elegida = _elegir_de_lista([zona for zona, _ in pendiente.sugerencia.alternativas])
+            elegida = _elegir_de_lista([o.zona for o in pendiente.sugerencia.opciones[1:]])
             if elegida is not None:
                 return elegida
         elif respuesta == "M":

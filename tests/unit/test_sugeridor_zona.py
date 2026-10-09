@@ -24,7 +24,7 @@ VECINDARIO = [
 ]
 
 
-def test_gana_la_zona_mayoritaria_del_barrio_con_alternativas() -> None:
+def test_gana_la_zona_mayoritaria_del_barrio_y_las_demas_quedan_a_la_vista() -> None:
     sugerencia = SugeridorDeZona(VECINDARIO).sugerir("TUNJA", "CENTRO")
 
     assert sugerencia is not None
@@ -32,7 +32,9 @@ def test_gana_la_zona_mayoritaria_del_barrio_con_alternativas() -> None:
     assert sugerencia.vecinos_en_zona == 3
     assert sugerencia.total_vecinos == 4
     assert sugerencia.confianza == ConfianzaSugerencia.BARRIO
-    assert sugerencia.alternativas == ((ZONA_NIEVES, 1),)
+    # Las dos opciones con su respaldo: el margen es parte de la decisión.
+    assert [(o.zona, o.vecinos) for o in sugerencia.opciones] == [(ZONA_CENTRO, 3), (ZONA_NIEVES, 1)]
+    assert [round(o.porcentaje, 2) for o in sugerencia.opciones] == [0.75, 0.25]
 
 
 def test_la_normalizacion_casa_el_formato_del_ecom_con_la_maestra() -> None:
@@ -82,11 +84,126 @@ def test_ignora_clientes_sin_zona_en_el_vecindario() -> None:
     assert sugerencia.total_vecinos == 1
 
 
-def test_respeta_max_alternativas() -> None:
+def test_respeta_el_maximo_de_opciones() -> None:
     vecinos = VECINDARIO + [
         _cliente("7", "TUNJA", "CENTRO", ZONA_OCCIDENTE),
     ]
-    sugerencia = SugeridorDeZona(vecinos).sugerir("TUNJA", "CENTRO", max_alternativas=1)
+    sugerencia = SugeridorDeZona(vecinos).sugerir("TUNJA", "CENTRO", max_opciones=2)
 
     assert sugerencia is not None
-    assert len(sugerencia.alternativas) == 1
+    assert len(sugerencia.opciones) == 2
+
+
+class TestEscaleraDeRespaldo:
+    """Los tres escalones: (ciudad, barrio) → solo ciudad → sin sugerencia."""
+
+    def test_primer_escalon_ciudad_y_barrio(self) -> None:
+        sugerencia = SugeridorDeZona(VECINDARIO).sugerir("TUNJA", "MALDONADO")
+
+        assert sugerencia is not None
+        assert sugerencia.confianza is ConfianzaSugerencia.BARRIO
+        assert sugerencia.total_vecinos == 1  # solo el vecino de MALDONADO
+
+    def test_segundo_escalon_cuando_el_barrio_no_casa_con_ninguno(self) -> None:
+        """Barrio nuevo en una ciudad conocida: se vota con toda la ciudad y se
+        dice que el barrio no coincidió, porque la confianza es otra."""
+        sugerencia = SugeridorDeZona(VECINDARIO).sugerir("TUNJA", "BARRIO QUE NO EXISTE")
+
+        assert sugerencia is not None
+        assert sugerencia.confianza is ConfianzaSugerencia.CIUDAD
+        assert sugerencia.total_vecinos == len(VECINDARIO)
+        assert "el barrio no coincidió" in sugerencia.confianza.descripcion
+
+    def test_segundo_escalon_tambien_cuando_el_cliente_viene_sin_barrio(self) -> None:
+        sugerencia = SugeridorDeZona(VECINDARIO).sugerir("TUNJA", None)
+
+        assert sugerencia is not None
+        assert sugerencia.confianza is ConfianzaSugerencia.CIUDAD
+
+    def test_tercer_escalon_sin_sugerencia(self) -> None:
+        """Ciudad desconocida: no se adivina. La pantalla lo dice y se asigna a mano."""
+        assert SugeridorDeZona(VECINDARIO).sugerir("MEDELLIN", "LAURELES") is None
+
+    def test_la_normalizacion_resuelve_tildes_y_espacios_en_el_primer_escalon(self) -> None:
+        """No hace falta un escalón aparte para el barrio "normalizado": el
+        primero ya compara sobre el texto normalizado."""
+        con_tildes = SugeridorDeZona(VECINDARIO).sugerir("15001 - Tunjá", "  Céntro ")
+        directo = SugeridorDeZona(VECINDARIO).sugerir("TUNJA", "CENTRO")
+
+        assert con_tildes is not None and directo is not None
+        assert con_tildes.confianza is ConfianzaSugerencia.BARRIO
+        assert con_tildes.total_vecinos == directo.total_vecinos
+
+
+class TestPorcentajes:
+    def test_el_porcentaje_es_sobre_los_vecinos_del_escalon(self) -> None:
+        sugerencia = SugeridorDeZona(VECINDARIO).sugerir("TUNJA", "CENTRO")
+
+        assert sugerencia is not None
+        assert sugerencia.opciones[0].porcentaje == 0.75  # 3 de 4
+        assert sum(opcion.porcentaje for opcion in sugerencia.opciones) == 1.0
+
+    def test_una_sola_zona_se_lleva_el_cien_por_ciento(self) -> None:
+        sugerencia = SugeridorDeZona(VECINDARIO).sugerir("TUNJA", "LAS NIEVES")
+
+        assert sugerencia is not None
+        assert sugerencia.opciones[0].porcentaje == 1.0
+
+
+class TestVecinosDeEjemplo:
+    def test_muestra_hasta_tres_vecinos_con_su_direccion(self) -> None:
+        vecinos = [
+            Cliente(
+                codigo=str(numero),
+                ciudad="TUNJA",
+                barrio="CENTRO",
+                zona=ZONA_CENTRO,
+                razon_social=f"TIENDA {numero}",
+                direccion=f"CL {numero} 2 3",
+            )
+            for numero in range(1, 6)
+        ]
+
+        sugerencia = SugeridorDeZona(vecinos).sugerir("TUNJA", "CENTRO")
+
+        assert sugerencia is not None
+        ejemplos = sugerencia.opciones[0].ejemplos
+        assert len(ejemplos) == 3  # son 5 vecinos, se muestran 3
+        assert ejemplos[0].etiqueta == "TIENDA 1 — CL 1 2 3"
+
+    def test_los_vecinos_con_direccion_van_primero(self) -> None:
+        """Un vecino sin dirección no sirve para reconocer la calle."""
+        vecinos = [
+            Cliente(codigo="1", ciudad="TUNJA", barrio="CENTRO", zona=ZONA_CENTRO, razon_social="SIN CALLE"),
+            Cliente(
+                codigo="2",
+                ciudad="TUNJA",
+                barrio="CENTRO",
+                zona=ZONA_CENTRO,
+                razon_social="CON CALLE",
+                direccion="CL 1 2 3",
+            ),
+        ]
+
+        sugerencia = SugeridorDeZona(vecinos).sugerir("TUNJA", "CENTRO")
+
+        assert sugerencia is not None
+        assert [e.nombre for e in sugerencia.opciones[0].ejemplos] == ["CON CALLE", "SIN CALLE"]
+
+    def test_un_vecino_sin_nombre_se_muestra_por_su_codigo(self) -> None:
+        vecinos = [Cliente(codigo="200001", ciudad="TUNJA", barrio="CENTRO", zona=ZONA_CENTRO)]
+
+        sugerencia = SugeridorDeZona(vecinos).sugerir("TUNJA", "CENTRO")
+
+        assert sugerencia is not None
+        assert sugerencia.opciones[0].ejemplos[0].etiqueta == "200001 — sin dirección"
+
+    def test_cada_zona_trae_sus_propios_vecinos(self) -> None:
+        """Los ejemplos tienen que ser de la zona que acompañan, no del montón."""
+        sugerencia = SugeridorDeZona(VECINDARIO).sugerir("TUNJA", "CENTRO")
+
+        assert sugerencia is not None
+        de_centro = {e.codigo for e in sugerencia.opciones[0].ejemplos}
+        de_nieves = {e.codigo for e in sugerencia.opciones[1].ejemplos}
+        assert de_centro == {"1", "2", "3"}
+        assert de_nieves == {"4"}

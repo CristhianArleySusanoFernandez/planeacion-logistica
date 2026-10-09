@@ -110,7 +110,11 @@ def test_pendientes_trae_la_sugerencia_del_voto_de_vecinos() -> None:
     assert sugerencia.vecinos_en_zona == 2
     assert sugerencia.total_vecinos == 3
     assert sugerencia.confianza == "barrio"
-    assert sugerencia.alternativas == ((ZONA_NIEVES.nombre, 1),)
+    assert sugerencia.nivel == "vecinos del mismo barrio"
+    assert [(o.zona, o.vecinos) for o in sugerencia.opciones] == [
+        (ZONA_CENTRO.nombre, 2),
+        (ZONA_NIEVES.nombre, 1),
+    ]
 
 
 def test_pendientes_sin_vecinos_no_trae_sugerencia() -> None:

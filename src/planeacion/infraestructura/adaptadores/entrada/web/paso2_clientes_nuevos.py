@@ -6,7 +6,7 @@ from pathlib import Path
 
 import streamlit as st
 
-from planeacion.application.dto.clientes_nuevos import ClientePendiente
+from planeacion.application.dto.clientes_nuevos import ClientePendiente, SugerenciaDTO
 from planeacion.application.dto.pivote import PivotePorZonaDTO
 from planeacion.config.contenedor import (
     Contenedor,
@@ -94,27 +94,41 @@ def _zonas_nombres(contenedor: Contenedor) -> list[str]:
 
 
 def _badges_pendiente(pendiente: ClientePendiente) -> str:
-    """El motivo (informativo) y la confianza de la sugerencia (verde/ámbar)."""
+    """El motivo (informativo) y de qué escalón salieron los vecinos."""
     partes = [estilos.badge(_MOTIVOS.get(pendiente.motivo, pendiente.motivo), "info")]
     sugerencia = pendiente.sugerencia
     if sugerencia is None:
         partes.append(estilos.badge("Sin sugerencia — asignar a mano", "neutro"))
     elif sugerencia.confianza == "barrio":
         partes.append(
-            estilos.badge(
-                f"Alta confianza — {sugerencia.vecinos_en_zona} de "
-                f"{sugerencia.total_vecinos} vecinos del barrio",
-                "verde",
-            )
+            estilos.badge(f"Alta confianza — {sugerencia.total_vecinos} vecinos del barrio", "verde")
         )
     else:
-        partes.append(
-            estilos.badge(
-                f"Solo por ciudad — {sugerencia.vecinos_en_zona} de {sugerencia.total_vecinos} vecinos",
-                "ambar",
-            )
-        )
+        partes.append(estilos.badge(f"Solo por ciudad — {sugerencia.total_vecinos} vecinos", "ambar"))
     return " ".join(partes)
+
+
+def _mostrar_opciones(sugerencia: SugerenciaDTO) -> None:
+    """Las zonas candidatas con su respaldo, el nivel usado y vecinos de ejemplo.
+
+    Se muestran las tres y no solo la ganadora porque el margen es parte de la
+    decisión, y los vecinos con su dirección porque se reconoce la calle aunque
+    no se reconozca el nombre de la zona.
+    """
+    st.caption(f"Vecinos encontrados por: {sugerencia.nivel}.")
+    for puesto, opcion in enumerate(sugerencia.opciones, start=1):
+        marca = "**" if puesto == 1 else ""
+        st.markdown(
+            f"{marca}{puesto}. {html.escape(opcion.zona)}{marca} &nbsp; "
+            f'<span class="texto-suave">{opcion.vecinos} de {sugerencia.total_vecinos} vecinos '
+            f"({opcion.porcentaje:.0%})</span>",
+            unsafe_allow_html=True,
+        )
+        for vecino in opcion.ejemplos:
+            st.markdown(
+                f'<span class="texto-suave">&nbsp;&nbsp;&nbsp;· {html.escape(vecino.etiqueta)}</span>',
+                unsafe_allow_html=True,
+            )
 
 
 def _fila_pendiente(pendiente: ClientePendiente, zonas_nombres: list[str]) -> str | None:
@@ -130,10 +144,10 @@ def _fila_pendiente(pendiente: ClientePendiente, zonas_nombres: list[str]) -> st
 
     opciones: list[str] = []
     if pendiente.sugerencia is not None:
-        opciones.append(pendiente.sugerencia.zona)
-        opciones.extend(
-            alternativa for alternativa, _ in pendiente.sugerencia.alternativas if alternativa not in opciones
-        )
+        _mostrar_opciones(pendiente.sugerencia)
+        for opcion in pendiente.sugerencia.opciones:
+            if opcion.zona not in opciones:
+                opciones.append(opcion.zona)
     opciones.extend([_OPCION_MANUAL, _OPCION_OMITIR])
 
     eleccion = st.selectbox("Zona para este cliente", opciones, key=f"eleccion_{pendiente.codigo}")

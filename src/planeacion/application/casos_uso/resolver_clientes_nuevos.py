@@ -8,7 +8,12 @@ el barrio mal. Nada se persiste hasta que Rudy confirma con ``confirmar_cliente`
 
 from collections.abc import Sequence
 
-from planeacion.application.dto.clientes_nuevos import ClientePendiente, SugerenciaDTO
+from planeacion.application.dto.clientes_nuevos import (
+    ClientePendiente,
+    OpcionDTO,
+    SugerenciaDTO,
+    VecinoDTO,
+)
 from planeacion.application.dto.pivote import ClienteNoResueltoDTO
 from planeacion.application.puertos.salida.repositorios import (
     RepositorioClientes,
@@ -92,10 +97,17 @@ def _a_sugerencia_dto(sugerencia: SugerenciaDeZona | None) -> SugerenciaDTO | No
     if sugerencia is None:
         return None
     return SugerenciaDTO(
-        zona=sugerencia.zona_sugerida.nombre,
-        municipio=sugerencia.zona_sugerida.municipio.nombre,
-        vecinos_en_zona=sugerencia.vecinos_en_zona,
+        opciones=tuple(
+            OpcionDTO(
+                zona=opcion.zona.nombre,
+                municipio=opcion.zona.municipio.nombre,
+                vecinos=opcion.vecinos,
+                porcentaje=opcion.porcentaje,
+                ejemplos=tuple(VecinoDTO(etiqueta=vecino.etiqueta) for vecino in opcion.ejemplos),
+            )
+            for opcion in sugerencia.opciones
+        ),
         total_vecinos=sugerencia.total_vecinos,
         confianza=sugerencia.confianza.value,
-        alternativas=tuple((zona.nombre, votos) for zona, votos in sugerencia.alternativas),
+        nivel=sugerencia.confianza.descripcion,
     )

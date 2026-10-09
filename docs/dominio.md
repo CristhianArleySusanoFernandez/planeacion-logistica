@@ -356,6 +356,42 @@ las filas en vez de reescribirlas, para no tener dos fuentes de verdad.
 | `vehiculos_referencia` | 12 | Divisor del "Promedio Vh". **Fijo a propósito**: es el de la hoja que la operación mira, y usar "los carros con carga" daría otro número. |
 | `kilos_max_por_unidad` | 25 | Techo de la guarda de kilos. Una unidad de venta es una caja o un display; ningún producto sano de 2026 se acerca, y hay fichas con 715,5 kg (ver § 5). |
 
+## 6.bis.2 Sugerencia de zona para clientes nuevos
+
+Cuando un pedido trae un cliente que no está en la maestra, el Paso 2 propone zona por **voto de
+vecinos**: los clientes que ya tienen zona y comparten ubicación. La ubicación se toma **después** de
+aplicar las correcciones de `CAMBIOS`, así que un cliente que ECOM trae en la ciudad equivocada se
+vota con la ciudad real.
+
+**Escalera de respaldo**, en orden, con el escalón usado siempre a la vista en pantalla:
+
+1. **misma ciudad y mismo barrio** — el match fino, "vecinos del mismo barrio";
+2. **solo la misma ciudad** — "el barrio no coincidió con ninguno"; la confianza es menor y el badge
+   lo dice en ámbar;
+3. **sin sugerencia** — ciudad desconocida. No se adivina: se asigna a mano.
+
+No hay un escalón intermedio de "barrio normalizado" porque **el primero ya compara normalizado**:
+`normalizar_ubicacion` pasa a mayúsculas, quita tildes, colapsa espacios y saca el prefijo DANE, así
+que `"15001 - Tunjá"` + `"  Céntro "` y `TUNJA` + `CENTRO` caen en el mismo grupo desde el primer
+intento.
+
+Se muestran **las tres mejores zonas con su respaldo** (`14 de 18 vecinos, 78 %`) y no solo la
+ganadora, porque el margen es parte de la decisión: 78 % contra 17 % y 40 % contra 35 % se resuelven
+distinto, y eso lo decide una persona. Debajo de cada zona van **hasta tres vecinos de ejemplo con su
+dirección**, los que tengan dirección primero: se reconoce la calle aunque no se reconozca el nombre
+de la zona.
+
+> **Mejora futura: sugerir por cercanía (coordenadas).** La hoja `MAESTRA COMPLETA` trae en la
+> columna `AR` ("COORDENADAS FINALES", armada de `AP`/`AQ`) coordenadas `lat, lon` para **4.140 de
+> 7.603 filas (54,5 %)**, que cruzan con **4.136 de los 9.200 clientes de la base (45 %)**. La
+> columna `COORDENADAS` de la hoja `PEDIDOS` sale de ahí por `VLOOKUP`, no de ECOM: el `.xls` crudo
+> no trae coordenadas en ninguna de sus 38 columnas. Con eso se podría sugerir por los k vecinos más
+> cercanos, pero **queda condicionado** a que la empresa reimporte `MAESTRA COMPLETA` periódicamente
+> con `planeacion-resincronizar` (que ya lee esa hoja), porque un cliente **nuevo** nunca trae
+> coordenadas al Paso 1: aparece en el pedido y todavía no está en ninguna maestra. Sin esa
+> reimportación, la sugerencia por cercanía no tendría con qué trabajar justo en el caso que
+> importa.
+
 ## 6.ter Rendimiento: qué se cachea y cuándo se invalida
 
 Medido con `planeacion-medir` sobre el `.xls` del 7 de octubre de 2026 (1.269 facturas, 4.960 filas),
@@ -424,7 +460,8 @@ El proyecto se desarrolló en seis etapas, todas terminadas:
 1. **Fundación**: esqueleto hexagonal, esquema de Supabase y siembra desde el Excel de referencia.
 2. **Ingesta y pivote**: lectura del ECOM crudo, normalización, resolución de zona por cliente y
    pivote por zona, validado contra la hoja `PLANEACION` del mismo día.
-3. **Clientes nuevos**: asistente que sugiere zona a los #N/D por voto de vecinos (ciudad + barrio).
+3. **Clientes nuevos**: asistente que sugiere zona a los #N/D por voto de vecinos, con las tres
+   mejores zonas, su porcentaje de respaldo y vecinos de ejemplo (ver § 6.bis.2).
 4. **Balanceador**: reparto de zonas a carros por heurística, con warm-start desde la planeación del
    mismo día de la semana anterior y repertorio de zonas por carro.
 5. **UI y exportación**: Streamlit para revisar y ajustar con recálculo en vivo, exportación del
