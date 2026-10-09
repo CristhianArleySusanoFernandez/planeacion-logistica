@@ -22,6 +22,7 @@ planeacion-auditar-zonas = "planeacion.infraestructura.adaptadores.entrada.cli.a
 planeacion-fusionar-zonas = "planeacion.infraestructura.adaptadores.entrada.cli.fusionar_zonas:main"
 planeacion-validar = "planeacion.infraestructura.adaptadores.entrada.cli.validar:main"
 planeacion-resincronizar = "planeacion.infraestructura.adaptadores.entrada.cli.resincronizar:main"
+planeacion-municipios-zona = "planeacion.infraestructura.adaptadores.entrada.cli.municipios_de_zona:main"
 
 [dependency-groups]
 dev = [
