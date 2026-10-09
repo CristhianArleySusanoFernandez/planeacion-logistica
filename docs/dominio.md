@@ -392,6 +392,41 @@ de la zona.
 > reimportación, la sugerencia por cercanía no tendría con qué trabajar justo en el caso que
 > importa.
 
+## 6.quater Errores: qué ve la usuaria y qué se propaga
+
+La app la usa una sola persona, que no es técnica y no tiene acceso al servidor. Un traceback le
+dice que algo se rompió pero no qué hacer, así que cada fallo **previsible** se traduce a tres cosas:
+qué pasó, qué hacer y a dónde ir. `web/errores.py` clasifica (sin Streamlit, para poder probarlo con
+la excepción real) y `web/panel_error.py` dibuja. El tono es en **usted**.
+
+| código | se reconoce por | qué se le dice | enlace |
+|---|---|---|---|
+| `BD_SIN_CONEXION` | `httpx.TransportError` (connect/read timeout incluidos) | La base no responde; suele ser el proyecto de Supabase pausado por falta de uso. Restore/Resume, esperar 1–2 min y Reintentar | panel del proyecto |
+| `BD_CREDENCIALES` | `APIError` 401/403/`PGRST301` o mensaje con `JWT`/`Invalid API key` | La base rechazó las claves; no se arregla desde la app, hay que avisar | panel de Render |
+| `BD_MIGRACION_FALTANTE` | `APIError` `42P01`/`PGRST205` (tabla) o `42703` (columna) | Falta aplicar una actualización, con **el número de migración** deducido de `migrations/*.sql` | editor SQL del proyecto |
+| `ARCHIVO_NO_RECONOCIDO` | `ColumnasEcomFaltantes` | Qué columnas se esperaban y cuáles trae el archivo; verificar que sea el informe de pedidos | — |
+| `ARCHIVO_VACIO` | `SinPedidosParaPivotear` | El archivo se leyó pero no trae pedidos; si se descargó temprano, volver a descargarlo | — |
+| `ARCHIVO_FECHA` | `SinPedidosEnLaFecha` | Se buscaban los pedidos de un día y el archivo no tiene ninguno de ese día | — |
+
+**Lo que no se reconoce se propaga, a propósito.** No hay un `except Exception` que muestre "ocurrió
+un error" para todo: eso esconderia los bugs de verdad en lugar de arreglarlos. El traceback sigue
+yendo al log con el código adelante (`[BD_SIN_CONEXION] …`) para poder filtrarlo en Render.
+
+El enlace a Supabase se **deriva** de `SUPABASE_URL` (`https://<ref>.supabase.co` →
+`https://supabase.com/dashboard/project/<ref>`), así que no hay una variable de entorno más que
+pueda quedar mal puesta; si la URL no tiene esa forma, el panel va sin botón en vez de con un botón
+a ninguna parte. **Reintentar** limpia el cache de lecturas antes de redibujar: si no, un problema ya
+resuelto por fuera seguiría en pantalla hasta que venciera el TTL y el botón parecería roto.
+
+> **Por qué hace falta además un aviso al arrancar.** `parametros` y `carro_zonas` **toleran** que su
+> tabla no exista y devuelven vacío, para que la app funcione sobre una base a medio migrar. Para
+> esas dos el panel nunca se mostraría y el síntoma sería silencioso, así que `web/diagnostico.py`
+> consulta una fila de cada tabla conocida al arrancar y avisa con un `st.warning` **no bloqueante**:
+> qué falta, su migración y qué pasa mientras tanto. El caso grave va con nombre: sin `carro_zonas`
+> el balanceador asume que cualquier carro puede atender cualquier zona de su municipio, o sea que
+> **el reparto sale mal**; sin `parametros` solo se usan los valores por defecto y el reparto sigue
+> siendo correcto.
+
 ## 6.ter Rendimiento: qué se cachea y cuándo se invalida
 
 Medido con `planeacion-medir` sobre el `.xls` del 7 de octubre de 2026 (1.269 facturas, 4.960 filas),

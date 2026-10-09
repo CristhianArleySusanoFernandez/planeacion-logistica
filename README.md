@@ -374,6 +374,28 @@ Notas del entorno:
 - El logo es opcional: se muestra si existe
   `src/planeacion/infraestructura/adaptadores/entrada/web/assets/logo.png`.
 
+### Probar a mano el aviso de base pausada
+
+La prueba que no se puede automatizar, porque hay que pausar el proyecto de verdad. Toma unos
+minutos y conviene repetirla cuando se toque `web/errores.py` o `web/panel_error.py`:
+
+1. Entrar al [panel de Supabase](https://supabase.com/dashboard) con la cuenta de la empresa, abrir
+   el proyecto de Planeación Logística y usar *Settings → General → Pause project*.
+2. Abrir la app y entrar a **Configuración** (es la pantalla que lee de la base en cada render).
+3. Verificar que aparece el panel: título "La base de datos no responde", los cinco pasos, el botón
+   **Abrir el panel de Supabase** y el botón **🔄 Reintentar**. Abajo tiene que decir
+   `Código del error: BD_SIN_CONEXION`. No tiene que haber ningún traceback.
+4. Pulsar **Reintentar** con el proyecto todavía pausado: el panel vuelve a salir y la app sigue
+   respondiendo (no se queda en blanco ni hay que recargar).
+5. Volver al panel de Supabase y usar *Restore* / *Resume*. Esperar 1 o 2 minutos.
+6. Pulsar **Reintentar** en la app, **sin recargar la página**: la pantalla de Configuración tiene
+   que cargar normal. Si sigue fallando, es que el proyecto todavía está despertando; esperar y
+   repetir.
+7. En los logs de Render tiene que quedar una línea que empieza con `[BD_SIN_CONEXION]` y su
+   traceback completo.
+
+El paso 6 es el que importa: el botón existe para no tener que recargar el navegador.
+
 ### Limitación conocida del plan gratuito: la app se duerme
 
 El plan gratuito donde corre la app la **suspende tras ~15 minutos sin uso** y tarda cerca de un
