@@ -24,7 +24,13 @@ pueda revisarlo y ajustarlo.
 - **Cliente**: un negocio que compra. Cada cliente pertenece a una **zona fija** y se visita un **día fijo
   de la semana** (un cliente de los miércoles siempre cae en miércoles).
 - **Zona** (a veces llamada *ruta* en los datos viejos): agrupación geográfica de clientes. Su nombre tiene
-  el formato `(MUNICIPIO):  NOMBRE`, por ejemplo `(BARBOSA):  BARBOSA-PUENTE`.
+  el formato `(MUNICIPIO):  NOMBRE`, por ejemplo `(BARBOSA):  BARBOSA-PUENTE`. El municipio se saca de ese
+  paréntesis y **no hace falta que esté al principio**: la maestra trae nombres marcados con una
+  letra adelante (`Y (TUNJA): RUTA OCCIDENTE`, `ZZZ(CHIQUINQUIRA): ...`) o con el municipio al final
+  (`PARAISO (TUNJA)`), y con el ancla al inicio quedaban todos en `OTROS`. Fuera del inicio solo se
+  acepta si es uno de los municipios propios (`MUNICIPIOS_PROPIOS`), porque hay paréntesis
+  decorativos que crearían pools fantasma sin ningún carro: `VIAJERA 1 (RAMIRIQUI)` o el `(CHIQUI)`
+  que lleva en el medio la zona más larga de Chiquinquirá.
 - **Municipio**: el prefijo de la zona. Los principales son `BARBOSA`, `CHIQUINQUIRA`, `TUNJA`. Las zonas sin
   prefijo (rutas "viajeras" o sueltas como `VILLA DE LEYVA`, `RUTA MUZO`) se agrupan en un municipio especial
   llamado `OTROS`. Las rutas **8 a 13** son las viajeras: su `municipio` es `OTROS` —ese es el pool con el

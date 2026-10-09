@@ -44,9 +44,35 @@ class TestParsearMunicipio:
     def test_sin_prefijo_es_otros(self) -> None:
         assert parsear_municipio("VILLA DE LEYVA") == MUNICIPIO_OTROS
 
-    def test_parentesis_no_inicial_es_otros(self) -> None:
-        # El municipio solo cuenta como prefijo: "PARAISO (TUNJA)" no es de TUNJA.
-        assert parsear_municipio("PARAISO (TUNJA)") == MUNICIPIO_OTROS
+    def test_el_municipio_corrido_por_una_letra_marcadora_cuenta(self) -> None:
+        """La maestra trae nombres marcados con una letra adelante. El municipio
+        está escrito; con el ancla al inicio quedaban todos en OTROS."""
+        assert parsear_municipio("Y (TUNJA): RUTA OCCIDENTE") == "TUNJA"
+        assert parsear_municipio("W (TUNJA): RUTA OCCIDENTE") == "TUNJA"
+        assert parsear_municipio("ZZZ(CHIQUINQUIRA): CHIQUIN RUTA 1 NORTE") == "CHIQUINQUIRA"
+
+    def test_el_municipio_al_final_tambien_cuenta(self) -> None:
+        assert parsear_municipio("PARAISO (TUNJA)") == "TUNJA"
+
+    def test_un_nombre_sin_ningun_parentesis_es_otros(self) -> None:
+        assert parsear_municipio("VENTAQUEMADA - VUELTA AL MUNDO") == MUNICIPIO_OTROS
+        assert parsear_municipio("RAQUIRA") == MUNICIPIO_OTROS
+
+    def test_un_parentesis_decorativo_no_crea_un_municipio(self) -> None:
+        """Lo que no está al inicio solo se acepta si es un municipio propio: si
+        no, estos nombres crearían pools fantasma sin ningún carro."""
+        assert parsear_municipio("VIAJERA 1 (RAMIRIQUI)") == MUNICIPIO_OTROS
+        assert parsear_municipio("MM LA CABANA VIAJERA 1 (RAMIRIQUI)") == MUNICIPIO_OTROS
+
+    def test_el_parentesis_decorativo_no_le_gana_al_prefijo(self) -> None:
+        """La zona real más larga de Chiquinquirá trae un "(CHIQUI)" en el medio."""
+        nombre = "(CHIQUINQUIRA): SURINEMA-PRADOSUR-POLO-COUNTRY-BOYACA ALTO Y BAJO (CHIQUI) RUTA SUR 4"
+
+        assert parsear_municipio(nombre) == "CHIQUINQUIRA"
+
+    def test_al_inicio_se_acepta_un_municipio_que_la_base_no_conoce(self) -> None:
+        """Ese es el formato oficial: una cabecera nueva tiene que poder entrar."""
+        assert parsear_municipio("(SOGAMOSO): CENTRO") == "SOGAMOSO"
 
 
 class TestDetectarReglaChiquinquira:
