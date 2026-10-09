@@ -28,6 +28,11 @@ from openpyxl.worksheet.worksheet import Worksheet
 
 from planeacion.application.dto.planeacion import PlaneacionCompleta
 from planeacion.domain.modelo import CargaCarro, clave_orden_carro
+from planeacion.domain.servicios.alertas_operativas import (
+    alerta_de_promedio_por_vehiculo,
+    alertas_de_conductores,
+    alertas_por_ruta,
+)
 
 _GRAMOS_POR_KILO = Decimal("1000")
 _SIN_CARRO = "#N/A"
@@ -44,7 +49,20 @@ ENCABEZADO_PLANEACION = (
     "Suma de Kilos",
     "Clientes Unicos",
 )
-ENCABEZADO_BASE = ("Ruta", "Facturas", "Clientes", "Pesos", "Kilos", "CONDUCTOR", "AUX", "CIUDAD")
+ENCABEZADO_BASE = (
+    "Ruta",
+    "Facturas",
+    "Clientes",
+    "Pesos",
+    "Kilos",
+    "CONDUCTOR",
+    "AUX",
+    "CIUDAD",
+    # La columna I del archivo de la empresa no tiene encabezado y lleva las
+    # zonas; la J es nuestra: las alertas del conductor de esa ruta.
+    "",
+    "Alerta",
+)
 ENCABEZADO_PEDIDOS = (
     "Fecha",
     "Pedido",
@@ -179,6 +197,11 @@ class ExportadorExcelPlaneacion:
 
     def _hoja_base(self, hoja: Worksheet, planeacion: PlaneacionCompleta) -> None:
         _escribir_encabezado(hoja, 1, ENCABEZADO_BASE)
+        cargas_por_municipio = planeacion.resultado.cargas_por_municipio
+        todas = [carga for lista in cargas_por_municipio.values() for carga in lista]
+        alertas = list(alertas_de_conductores(cargas_por_municipio))
+        del_dia = alerta_de_promedio_por_vehiculo(planeacion.total_facturas)
+        alerta_por_ruta = alertas_por_ruta(alertas, todas)
         cargas: list[CargaCarro] = sorted(
             (
                 carga
@@ -203,8 +226,24 @@ class ExportadorExcelPlaneacion:
             hoja.cell(row=fila, column=8, value=carga.carro.municipio_real or pool)
             zonas = ", ".join(sorted(zona.zona.nombre for zona in carga.zonas))
             hoja.cell(row=fila, column=9, value=zonas)
+            hoja.cell(row=fila, column=10, value=alerta_por_ruta.get(carga.carro.numero))
+        # La alerta del día entera no cuelga de ninguna ruta: va debajo de la tabla.
+        if del_dia is not None:
+            hoja.cell(row=len(cargas) + 3, column=1, value=del_dia.texto).font = _NEGRITA
         _ajustar_anchos(
-            hoja, {"A": 10, "B": 10, "C": 10, "D": 14, "E": 12, "F": 22, "G": 22, "H": 16, "I": 80}
+            hoja,
+            {
+                "A": 10,
+                "B": 10,
+                "C": 10,
+                "D": 14,
+                "E": 12,
+                "F": 22,
+                "G": 22,
+                "H": 16,
+                "I": 80,
+                "J": 34,
+            },
         )
         hoja.freeze_panes = "A2"
 

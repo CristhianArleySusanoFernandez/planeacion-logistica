@@ -201,11 +201,18 @@ def test_sin_clientes_no_resueltos_no_se_escribe_la_fila(tmp_path: Path) -> None
 
 def test_hoja_base_resume_por_carro(tmp_path: Path) -> None:
     hoja = load_workbook(_exportar(tmp_path))["BASE"]
-    assert tuple(hoja.cell(row=1, column=c).value for c in range(1, 9)) == ENCABEZADO_BASE
+    encabezados = tuple(hoja.cell(row=1, column=c).value for c in range(1, len(ENCABEZADO_BASE) + 1))
+    # La columna I no lleva encabezado en el archivo de la empresa: openpyxl
+    # devuelve None donde el nuestro pone "".
+    assert encabezados == tuple(valor or None for valor in ENCABEZADO_BASE)
     fila_10 = tuple(hoja.cell(row=2, column=c).value for c in range(1, 10))
     assert fila_10 == ("10", 2, 2, 1000.50, 12.5, "ANA", "LUIS", "BARBOSA", _ZONA_UNO.nombre)
     assert hoja["A3"].value == "20"
     assert hoja["A4"].value is None  # solo carros con zonas
+    # Los dos conductores quedan muy por debajo del mínimo de 50 clientes (el
+    # ejemplo tiene 2 y 1), así que la columna de alerta lo dice en los dos.
+    assert hoja["J2"].value == "pocos clientes: 2"
+    assert hoja["J3"].value == "pocos clientes: 1"
 
 
 def test_la_hoja_base_lleva_el_destino_real_de_las_viajeras(tmp_path: Path) -> None:

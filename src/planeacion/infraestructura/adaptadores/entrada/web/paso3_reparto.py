@@ -21,6 +21,11 @@ from planeacion.domain.modelo import (
     clave_orden_carro,
 )
 from planeacion.domain.servicios.agrupacion_por_conductor import agrupar_por_conductor
+from planeacion.domain.servicios.alertas_operativas import (
+    Alerta,
+    alerta_de_promedio_por_vehiculo,
+    alertas_de_conductores,
+)
 from planeacion.infraestructura.adaptadores.entrada.web import estado, estilos
 
 
@@ -55,6 +60,7 @@ def mostrar(contenedor: Contenedor) -> None:
 
     _resumen_balance(resultado.metricas_iniciales, resultado.metricas_finales, resultado.cargas_por_municipio)
 
+    _alertas_operativas(resultado.cargas_por_municipio, planeacion.total_facturas)
     _resumen_por_conductor(resultado.cargas_por_municipio)
 
     municipios = sorted(resultado.cargas_por_municipio)
@@ -145,6 +151,38 @@ def _resumen_balance(
         "entre los carros (menor = mejor). El reparto se equilibra por <b>tres</b> variables "
         "—clientes, pesos y kilos— y <b>el color lo pone la peor de las tres</b>, no el promedio: "
         f"{leyenda}.</span>",
+        unsafe_allow_html=True,
+    )
+
+
+def _alertas_operativas(cargas_por_municipio: dict[str, list[CargaCarro]], total_facturas: int) -> None:
+    """Los indicadores que mira la jefatura, debajo del balance.
+
+    Ninguno cambia el reparto: son metas, no reglas. La operación incumple el
+    mínimo de clientes 19 veces en los 16 archivos de septiembre y octubre de
+    2026, así que imponerlo rechazaría repartos que ellos hacen todas las semanas.
+    """
+    alertas: list[Alerta] = list(alertas_de_conductores(cargas_por_municipio))
+    del_dia = alerta_de_promedio_por_vehiculo(total_facturas)
+    if del_dia is not None:
+        alertas.append(del_dia)
+
+    estilos.titulo_seccion("Alertas operativas")
+    if not alertas:
+        st.markdown(
+            '<span class="texto-suave">Sin alertas: ningún conductor queda por debajo del '
+            "mínimo de clientes ni por encima del máximo de facturas.</span>",
+            unsafe_allow_html=True,
+        )
+        return
+    for alerta in alertas:
+        st.markdown(
+            f"{estilos.badge('⚠ revisar', 'ambar')} {html.escape(alerta.texto)}",
+            unsafe_allow_html=True,
+        )
+    st.markdown(
+        '<span class="texto-suave">Son <b>metas, no reglas</b>: el reparto propuesto no se '
+        "modifica por estas alertas. Los umbrales se editan en Configuración → Parámetros.</span>",
         unsafe_allow_html=True,
     )
 

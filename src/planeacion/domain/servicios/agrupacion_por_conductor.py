@@ -27,6 +27,9 @@ class CargaConductor:
     clientes: int
     pesos: Decimal
     kilos: Decimal
+    # Los municipios de sus rutas: hoy un conductor reparte en uno solo, pero las
+    # alertas se aplican por municipio y el dato no se puede perder en la suma.
+    municipios: tuple[str, ...] = ()
 
 
 _SIN_CONDUCTOR = "sin conductor"
@@ -53,6 +56,9 @@ def agrupar_por_conductor(cargas: Sequence[CargaCarro]) -> list[CargaConductor]:
             clientes=sum(c.clientes for c in grupo),
             pesos=sum((c.pesos for c in grupo), Decimal("0")),
             kilos=sum((c.kilos for c in grupo), Decimal("0")),
+            municipios=tuple(
+                sorted({c.carro.municipio.nombre for c in grupo if c.carro.municipio is not None})
+            ),
         )
         for clave, grupo in por_conductor.items()
     ]

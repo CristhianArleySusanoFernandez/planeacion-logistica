@@ -71,7 +71,25 @@ pueda revisarlo y ajustarlo.
 
 5. **Ciclo semanal**: la planeación de un día se parece mucho a la del **mismo día de la semana anterior**.
    Por eso el motor de balanceo arranca ("warm-start") desde la planeación del mismo día de semana previa.
-6. **Repertorio de zonas por carro y día** (tabla `carro_zonas`, migraciones 002 y 003): cada carro solo
+6. **Alertas operativas: metas, no reglas.** La jefatura pidió tres indicadores y ninguno
+   restringe el reparto, porque la operación los incumple ella misma todas las semanas:
+
+   - **mínimo de 50 clientes por conductor** en Tunja, Barbosa y Chiquinquirá (las viajeras del pool
+     `OTROS` quedan fuera: pocas visitas y mucho kilómetro es su naturaleza). Sobre los 16 archivos
+     de septiembre y octubre de 2026, el reparto real lo incumple **20 veces**: Wilmar 7 días, José
+     Jiménez 6, José Yovany Salamanca 3, Luis Eduardo 2, Camilo Pacheco 1 y Jairo Garzón 1;
+   - **máximo de 110 facturas por conductor**, que el reparto real pasa **19 veces**, siempre los
+     mismos dos: Angélica Arias 10 días y Fabián 9, sin que nunca se llamara un carro externo;
+   - **promedio por vehículo** = facturas del día ÷ `vehiculos_referencia` (12, el divisor **fijo**
+     de la hoja de Julián, no la cantidad de carros con carga: cambiarlo daría otro número y
+     rompería la comparación con lo que la operación ya mira). Osciló entre 91 y 112, con un solo
+     día por encima de 110.
+
+   Se suman **por conductor y no por ruta**: dos rutas de 30 clientes no son dos problemas, son un
+   conductor con 60. Se muestran en el Paso 3 debajo del balance y en la columna *Alerta* de la hoja
+   `BASE`; la del promedio, que es del día entero y no cuelga de ninguna ruta, va debajo de la tabla.
+
+7. **Repertorio de zonas por carro y día** (tabla `carro_zonas`, migraciones 002 y 003): cada carro solo
    puede atender las zonas de su repertorio y el balanceador elige únicamente entre carros elegibles.
    El repertorio **depende del día de la semana**: `(TUNJA): ASIS` va en el carro 13 casi toda la semana
    pero en el 12 los jueves; `(BARBOSA): MUNICIPIO CITE` va en el 5 salvo los sábados, que va en el 3.
