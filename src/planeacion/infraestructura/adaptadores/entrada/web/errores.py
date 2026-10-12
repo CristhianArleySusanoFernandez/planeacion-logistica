@@ -14,6 +14,7 @@ esconderia los bugs de verdad, que es lo contrario de lo que hace falta.
 """
 
 import logging
+import os
 import re
 from dataclasses import dataclass
 from pathlib import Path
@@ -41,27 +42,59 @@ _COLUMNA_INEXISTENTE = "42703"
 # códigos propios, y a veces solo con el mensaje.
 _NO_AUTORIZADO = ("PGRST301", "PGRST302", "401", "403", "42501")
 _SENALES_DE_CLAVE = ("jwt", "invalid api key", "no api key", "unauthorized")
-# El proyecto está despertando: PostgREST todavía no contesta y lo que llega es
-# el estado HTTP del proxy. Pasó en producción al presionar Reintentar mientras
-# Supabase arrancaba, y ahí el código viene como ENTERO, no como texto.
-_ARRANCANDO = ("502", "503", "504")
-_SENALES_DE_ARRANQUE = ("starting", "upgrading", "paused", "unavailable", "bad gateway")
+# El proyecto está despertando y lo que llega es el estado HTTP de quien esté
+# delante de PostgREST. Se acepta CUALQUIER 5xx y no una lista cerrada: la lista
+# se quedó corta en producción con un 521 de Cloudflare ("Web server is down"),
+# que no estaba entre 502/503/504 y terminó en un traceback para la usuaria.
+# Un 5xx es, por definición, un problema del otro lado: nunca lo arregla quien usa
+# la app, y el consejo es siempre el mismo (esperar y reintentar).
+_PRIMER_ESTADO_DE_SERVIDOR = 500
+_ULTIMO_ESTADO_DE_SERVIDOR = 599
+_SENALES_DE_ARRANQUE = (
+    "starting",
+    "upgrading",
+    "paused",
+    "unavailable",
+    "bad gateway",
+    "web server is down",
+    "cloudflare",
+)
 
 _PANEL_RENDER = "https://dashboard.render.com"
 _REFERENCIA_SUPABASE = re.compile(r"https://([a-z0-9]+)\.supabase\.(co|in)", re.IGNORECASE)
 
 
-def _carpeta_de_migraciones() -> Path | None:
-    """Busca `migrations/` subiendo desde este archivo.
+# Para un despliegue donde ni el módulo ni el directorio de trabajo estén dentro
+# del repo. Es opcional: si no está, se busca en los dos lugares de siempre.
+VARIABLE_DE_MIGRACIONES = "PLANEACION_MIGRACIONES"
 
-    Se busca en vez de fijar la cantidad de niveles porque contar carpetas se
-    rompe en silencio la primera vez que alguien mueve un módulo: devolvería
-    None y el aviso perdería el número de migración sin que nada falle.
+_RUTA_DEL_MODULO = Path(__file__).resolve()
+
+
+def _carpeta_de_migraciones() -> Path | None:
+    """Dónde están los `.sql`, probando tres orígenes en orden de confianza.
+
+    1. ``PLANEACION_MIGRACIONES``, si alguien la configuró: lo explícito manda.
+    2. Subiendo desde este módulo: sirve cuando se corre desde el checkout.
+    3. Subiendo desde el directorio de trabajo: **es el caso de Render**, donde la
+       app corre instalada en ``site-packages`` y el módulo no está dentro del
+       repo, pero el proceso sí arranca en su raíz.
+
+    Se busca en vez de contar niveles porque contar se rompe en silencio la
+    primera vez que alguien mueve un archivo. Si no aparece en ninguno, el panel
+    va sin el número de migración, que ya está previsto.
     """
-    for carpeta in Path(__file__).resolve().parents:
-        candidata = carpeta / "migrations"
+    configurada = os.environ.get(VARIABLE_DE_MIGRACIONES)
+    if configurada:
+        candidata = Path(configurada)
         if candidata.is_dir():
             return candidata
+
+    for origen in (_RUTA_DEL_MODULO, Path.cwd().resolve() / "x"):
+        for carpeta in origen.parents:
+            candidata = carpeta / "migrations"
+            if candidata.is_dir():
+                return candidata
     return None
 
 
@@ -188,11 +221,30 @@ def _como_texto(valor: object) -> str:
         return ""
 
 
+def _es_estado_de_servidor(codigo: str) -> bool:
+    """¿El código es un estado HTTP 5xx? Entero o texto, da igual."""
+    try:
+        numero = int(codigo)
+    except ValueError:
+        return False
+    return _PRIMER_ESTADO_DE_SERVIDOR <= numero <= _ULTIMO_ESTADO_DE_SERVIDOR
+
+
 def _clasificar_api(excepcion: APIError, supabase_url: str | None) -> ErrorUsuario | None:
     codigo = _como_texto(getattr(excepcion, "code", None))
     mensaje = _como_texto(getattr(excepcion, "message", None)).lower()
+    # Las señales se buscan en los TRES campos de texto: con el 521 de Cloudflare
+    # el `message` era el genérico "JSON could not be generated" y la pista real
+    # —la página de error entera— venía en `details`.
+    texto = " ".join(
+        (
+            mensaje,
+            _como_texto(getattr(excepcion, "details", None)).lower(),
+            _como_texto(getattr(excepcion, "hint", None)).lower(),
+        )
+    )
 
-    if codigo in _ARRANCANDO or any(senal in mensaje for senal in _SENALES_DE_ARRANQUE):
+    if _es_estado_de_servidor(codigo) or any(senal in texto for senal in _SENALES_DE_ARRANQUE):
         panel = panel_de_supabase(supabase_url)
         return ErrorUsuario(
             codigo=BD_INICIANDO,

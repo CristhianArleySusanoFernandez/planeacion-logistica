@@ -331,3 +331,131 @@ class TestSePropagaElErrorOriginal:
     def test_lo_no_reconocido_sigue_propagandose_tal_cual(self) -> None:
         with pytest.raises(ValueError, match="dato inválido"), conexion.errores_de_conexion():
             raise ValueError("dato inválido")
+
+
+class TestCualquierErrorDeServidor:
+    """Segundo fallo real: Cloudflare contestó 521 y la lista cerrada no lo cubría.
+
+    Con Supabase reactivándose, PostgREST devolvió ``code=521``,
+    ``message="JSON could not be generated"`` y la página de error de Cloudflare
+    entera en ``details``. No estaba entre 502/503/504 y el mensaje no tenía
+    ninguna palabra clave, así que el traceback llegó a la usuaria.
+    """
+
+    _HTML_DE_CLOUDFLARE = (
+        "<!DOCTYPE html><html><head><title>planeacion.supabase.co | 521: Web server is down"
+        "</title></head><body><h1>Error 521</h1><p>Web server is down</p>"
+        "<p>Ray ID: 8f3c2a1b</p></body></html>"
+    )
+
+    def test_el_521_de_cloudflare_se_reconoce(self) -> None:
+        excepcion = APIError(
+            {
+                "code": 521,
+                "message": "JSON could not be generated",
+                "details": self._HTML_DE_CLOUDFLARE,
+                "hint": None,
+            }
+        )
+
+        error = errores.clasificar(excepcion, _URL)
+
+        assert error is not None
+        assert error.codigo == errores.BD_INICIANDO
+        assert error.reintentable
+
+    def test_cualquier_5xx_entero_o_texto(self) -> None:
+        for codigo in (500, 502, 503, 504, 521, 530, 599, "500", "521", "599"):
+            error = errores.clasificar(APIError({"code": codigo, "message": ""}), _URL)
+            assert error is not None, codigo
+            assert error.codigo == errores.BD_INICIANDO, codigo
+
+    def test_lo_que_no_es_5xx_no_se_vuelve_arranque(self) -> None:
+        """El rango es 500–599: un 499 o un 600 no son problemas del servidor."""
+        for codigo in (499, 600, "23505", "42P01"):
+            error = errores.clasificar(APIError({"code": codigo, "message": ""}), _URL)
+            assert error is None or error.codigo != errores.BD_INICIANDO, codigo
+
+    def test_las_senales_se_buscan_tambien_en_details(self) -> None:
+        """Con el 521, la pista real no venía en `message` sino en `details`."""
+        excepcion = APIError(
+            {
+                "code": "",
+                "message": "JSON could not be generated",
+                "details": self._HTML_DE_CLOUDFLARE,
+            }
+        )
+
+        error = errores.clasificar(excepcion, _URL)
+
+        assert error is not None and error.codigo == errores.BD_INICIANDO
+
+    def test_y_tambien_en_hint(self) -> None:
+        excepcion = APIError({"code": "", "message": "x", "hint": "the project is paused"})
+
+        error = errores.clasificar(excepcion, _URL)
+
+        assert error is not None and error.codigo == errores.BD_INICIANDO
+
+    def test_un_5xx_no_se_confunde_con_credenciales_ni_con_migracion(self) -> None:
+        error = errores.clasificar(APIError({"code": 521, "message": "JSON could not"}), _URL)
+
+        assert error is not None
+        assert error.codigo not in (errores.BD_CREDENCIALES, errores.BD_MIGRACION_FALTANTE)
+
+
+class TestDondeBuscaLasMigraciones:
+    """En Render la app corre desde site-packages, fuera del checkout del repo."""
+
+    def _raiz_del_repo(self) -> Path:
+        return Path(__file__).resolve().parents[2]
+
+    def test_desde_el_modulo_cuando_se_corre_en_el_checkout(self) -> None:
+        assert errores.migracion_de("parametros") == "005"
+
+    def test_desde_el_cwd_cuando_el_modulo_esta_fuera_del_repo(
+        self, monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+    ) -> None:
+        """El caso de Render: el módulo instalado en site-packages, pero el proceso
+        arranca en la raíz del repo."""
+        afuera = tmp_path / "site-packages" / "planeacion" / "web" / "errores.py"
+        afuera.parent.mkdir(parents=True)
+        afuera.touch()
+        monkeypatch.setattr(errores, "_RUTA_DEL_MODULO", afuera)
+        monkeypatch.chdir(self._raiz_del_repo())
+
+        assert errores.migracion_de("parametros") == "005"
+
+    def test_la_variable_de_entorno_manda_sobre_los_demas(
+        self, monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+    ) -> None:
+        propia = tmp_path / "migraciones_aparte"
+        propia.mkdir()
+        (propia / "042_inventada.sql").write_text("create table parametros ();", encoding="utf-8")
+        monkeypatch.setenv(errores.VARIABLE_DE_MIGRACIONES, str(propia))
+
+        assert errores.migracion_de("parametros") == "042"
+
+    def test_una_variable_que_apunta_a_la_nada_no_rompe_la_busqueda(
+        self, monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+    ) -> None:
+        monkeypatch.setenv(errores.VARIABLE_DE_MIGRACIONES, str(tmp_path / "no_existe"))
+
+        assert errores.migracion_de("parametros") == "005"  # cae al módulo
+
+    def test_sin_migraciones_en_ninguna_parte_el_panel_va_sin_numero(
+        self, monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+    ) -> None:
+        afuera = tmp_path / "site-packages" / "planeacion" / "errores.py"
+        afuera.parent.mkdir(parents=True)
+        afuera.touch()
+        monkeypatch.setattr(errores, "_RUTA_DEL_MODULO", afuera)
+        monkeypatch.chdir(tmp_path)
+        monkeypatch.delenv(errores.VARIABLE_DE_MIGRACIONES, raising=False)
+
+        assert errores.migracion_de("parametros") is None
+        # Y el panel sigue saliendo, solo sin el número.
+        error = errores.clasificar(
+            APIError({"code": "42P01", "message": 'relation "public.parametros" does not exist'}), _URL
+        )
+        assert error is not None and error.codigo == errores.BD_MIGRACION_FALTANTE

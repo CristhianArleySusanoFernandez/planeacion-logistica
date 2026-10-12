@@ -402,12 +402,25 @@ la excepción real) y `web/panel_error.py` dibuja. El tono es en **usted**.
 | código | se reconoce por | qué se le dice | enlace |
 |---|---|---|---|
 | `BD_SIN_CONEXION` | `httpx.TransportError` (connect/read timeout incluidos) | La base no responde; suele ser el proyecto de Supabase pausado por falta de uso. Restore/Resume, esperar 1–2 min y Reintentar | panel del proyecto |
-| `BD_INICIANDO` | `APIError` 502/503/504 o mensaje con `starting`/`upgrading`/`paused`/`unavailable` | El proyecto está despertando y todavía no responde: esperar un minuto y Reintentar | panel del proyecto |
+| `BD_INICIANDO` | `APIError` con **cualquier 5xx** (entero o texto), o `starting`/`upgrading`/`paused`/`unavailable`/`web server is down`/`cloudflare` en `message`, `details` o `hint` | El proyecto está despertando y todavía no responde: esperar un minuto y Reintentar | panel del proyecto |
 | `BD_CREDENCIALES` | `APIError` 401/403/`PGRST301` o mensaje con `JWT`/`Invalid API key` | La base rechazó las claves; no se arregla desde la app, hay que avisar | panel de Render |
 | `BD_MIGRACION_FALTANTE` | `APIError` `42P01`/`PGRST205` (tabla) o `42703` (columna) | Falta aplicar una actualización, con **el número de migración** deducido de `migrations/*.sql` | editor SQL del proyecto |
 | `ARCHIVO_NO_RECONOCIDO` | `ColumnasEcomFaltantes` | Qué columnas se esperaban y cuáles trae el archivo; verificar que sea el informe de pedidos | — |
 | `ARCHIVO_VACIO` | `SinPedidosParaPivotear` | El archivo se leyó pero no trae pedidos; si se descargó temprano, volver a descargarlo | — |
 | `ARCHIVO_FECHA` | `SinPedidosEnLaFecha` | Se buscaban los pedidos de un día y el archivo no tiene ninguno de ese día | — |
+
+> **Un 5xx es siempre del otro lado.** La lista cerrada de 502/503/504 se quedó corta en producción:
+> con Supabase reactivándose, Cloudflare contestó **521 "Web server is down"**, PostgREST lo envolvió
+> con `message="JSON could not be generated"` y la página de error entera en `details`, y el caso
+> terminó en un traceback. Ahora se acepta **cualquier estado 500–599** y las palabras clave se
+> buscan en `message`, `details` **y** `hint`, porque la pista real no siempre viene en el mensaje.
+>
+> **Dónde se buscan las migraciones.** El número que muestra `BD_MIGRACION_FALTANTE` sale de
+> `migrations/*.sql`, y la carpeta se busca en tres lugares: la variable opcional
+> `PLANEACION_MIGRACIONES`, subiendo desde el módulo (sirve al correr desde el checkout) y subiendo
+> desde el directorio de trabajo. El tercero es el que importa en producción: en Render la app corre
+> instalada en `site-packages`, así que el módulo no está dentro del repo pero el proceso sí arranca
+> en su raíz. Si no aparece en ninguno, el panel va sin el número.
 
 > **El clasificador no puede fallar nunca.** Pasó en producción: al presionar Reintentar mientras
 > Supabase arrancaba, PostgREST no contestó y lo que se propagó fue el estado HTTP del proxy, con
