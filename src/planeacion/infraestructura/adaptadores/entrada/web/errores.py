@@ -13,6 +13,7 @@ La regla que lo mantiene honesto: lo que no se reconoce devuelve ``None`` y
 esconderia los bugs de verdad, que es lo contrario de lo que hace falta.
 """
 
+import logging
 import re
 from dataclasses import dataclass
 from pathlib import Path
@@ -23,7 +24,10 @@ from postgrest.exceptions import APIError
 from planeacion.domain.errores import SinPedidosEnLaFecha, SinPedidosParaPivotear
 from planeacion.infraestructura.adaptadores.salida.excel.lector_ecom import ColumnasEcomFaltantes
 
+_logger = logging.getLogger(__name__)
+
 BD_SIN_CONEXION = "BD_SIN_CONEXION"
+BD_INICIANDO = "BD_INICIANDO"
 BD_CREDENCIALES = "BD_CREDENCIALES"
 BD_MIGRACION_FALTANTE = "BD_MIGRACION_FALTANTE"
 ARCHIVO_NO_RECONOCIDO = "ARCHIVO_NO_RECONOCIDO"
@@ -37,6 +41,11 @@ _COLUMNA_INEXISTENTE = "42703"
 # códigos propios, y a veces solo con el mensaje.
 _NO_AUTORIZADO = ("PGRST301", "PGRST302", "401", "403", "42501")
 _SENALES_DE_CLAVE = ("jwt", "invalid api key", "no api key", "unauthorized")
+# El proyecto está despertando: PostgREST todavía no contesta y lo que llega es
+# el estado HTTP del proxy. Pasó en producción al presionar Reintentar mientras
+# Supabase arrancaba, y ahí el código viene como ENTERO, no como texto.
+_ARRANCANDO = ("502", "503", "504")
+_SENALES_DE_ARRANQUE = ("starting", "upgrading", "paused", "unavailable", "bad gateway")
 
 _PANEL_RENDER = "https://dashboard.render.com"
 _REFERENCIA_SUPABASE = re.compile(r"https://([a-z0-9]+)\.supabase\.(co|in)", re.IGNORECASE)
@@ -109,7 +118,25 @@ def clasificar(excepcion: BaseException, supabase_url: str | None = None) -> Err
 
     ``supabase_url`` llega por parámetro y no se lee del entorno acá adentro para
     que el módulo siga siendo puro: quien llama ya tiene los ajustes.
+
+    **No falla nunca.** Si clasificar se rompe, se registra y se devuelve None,
+    para que quien llama vuelva a lanzar la excepción ORIGINAL. Un error en el
+    traductor de errores tapaba el problema real y ponía el suyo en su lugar, que
+    es exactamente lo que no tiene que pasar: pasó en producción con un ``code``
+    entero y la usuaria vio un AttributeError de este módulo en vez del aviso de
+    que la base estaba arrancando.
     """
+    try:
+        return _clasificar(excepcion, supabase_url)
+    except Exception:  # noqa: BLE001 — el clasificador no puede ser la causa del fallo
+        _logger.exception(
+            "El clasificador de errores falló con %s; se propaga la excepción original",
+            type(excepcion).__name__,
+        )
+        return None
+
+
+def _clasificar(excepcion: BaseException, supabase_url: str | None) -> ErrorUsuario | None:
     if isinstance(excepcion, APIError):
         return _clasificar_api(excepcion, supabase_url)
     if isinstance(excepcion, httpx.TransportError):
@@ -145,9 +172,44 @@ def _sin_conexion(supabase_url: str | None) -> ErrorUsuario:
     )
 
 
+def _como_texto(valor: object) -> str:
+    """Lo que venga → texto limpio, sin suponer el tipo y sin fallar nunca.
+
+    ``APIError.code`` llega como **entero** cuando PostgREST no contestó y lo que
+    se propaga es el estado HTTP del proxy (502/503/504 mientras el proyecto
+    arranca). Un ``.strip()`` directo sobre eso rompía el clasificador justo en el
+    momento en que más falta hacía: la usuaria presionando Reintentar.
+    """
+    if valor is None:
+        return ""
+    try:
+        return str(valor).strip()
+    except Exception:  # noqa: BLE001 — un __str__ ajeno no puede tumbar el panel
+        return ""
+
+
 def _clasificar_api(excepcion: APIError, supabase_url: str | None) -> ErrorUsuario | None:
-    codigo = (excepcion.code or "").strip()
-    mensaje = (excepcion.message or "").lower()
+    codigo = _como_texto(getattr(excepcion, "code", None))
+    mensaje = _como_texto(getattr(excepcion, "message", None)).lower()
+
+    if codigo in _ARRANCANDO or any(senal in mensaje for senal in _SENALES_DE_ARRANQUE):
+        panel = panel_de_supabase(supabase_url)
+        return ErrorUsuario(
+            codigo=BD_INICIANDO,
+            titulo="La base de datos está arrancando",
+            que_paso=(
+                "El proyecto de Supabase está despertando y todavía no responde consultas. "
+                "Es normal justo después de reactivarlo."
+            ),
+            que_hacer=(
+                "Espere un minuto.",
+                "Presione Reintentar acá abajo.",
+                "Si después de varios intentos sigue igual, revise en el panel que el proyecto "
+                "haya quedado activo.",
+            ),
+            enlace=("Abrir el panel de Supabase", panel) if panel else None,
+            reintentable=True,
+        )
 
     if codigo in _NO_AUTORIZADO or any(senal in mensaje for senal in _SENALES_DE_CLAVE):
         return ErrorUsuario(
@@ -167,7 +229,7 @@ def _clasificar_api(excepcion: APIError, supabase_url: str | None) -> ErrorUsuar
         )
 
     if codigo in _TABLA_INEXISTENTE or codigo == _COLUMNA_INEXISTENTE:
-        nombre = _nombre_que_falta(excepcion.message or "")
+        nombre = _nombre_que_falta(mensaje)
         numero = migracion_de(nombre.split(".")[-1]) if nombre else None
         detalle = f" ({nombre})" if nombre else ""
         pasos = ["Avise a quien administra la aplicación."]

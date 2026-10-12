@@ -402,11 +402,20 @@ la excepción real) y `web/panel_error.py` dibuja. El tono es en **usted**.
 | código | se reconoce por | qué se le dice | enlace |
 |---|---|---|---|
 | `BD_SIN_CONEXION` | `httpx.TransportError` (connect/read timeout incluidos) | La base no responde; suele ser el proyecto de Supabase pausado por falta de uso. Restore/Resume, esperar 1–2 min y Reintentar | panel del proyecto |
+| `BD_INICIANDO` | `APIError` 502/503/504 o mensaje con `starting`/`upgrading`/`paused`/`unavailable` | El proyecto está despertando y todavía no responde: esperar un minuto y Reintentar | panel del proyecto |
 | `BD_CREDENCIALES` | `APIError` 401/403/`PGRST301` o mensaje con `JWT`/`Invalid API key` | La base rechazó las claves; no se arregla desde la app, hay que avisar | panel de Render |
 | `BD_MIGRACION_FALTANTE` | `APIError` `42P01`/`PGRST205` (tabla) o `42703` (columna) | Falta aplicar una actualización, con **el número de migración** deducido de `migrations/*.sql` | editor SQL del proyecto |
 | `ARCHIVO_NO_RECONOCIDO` | `ColumnasEcomFaltantes` | Qué columnas se esperaban y cuáles trae el archivo; verificar que sea el informe de pedidos | — |
 | `ARCHIVO_VACIO` | `SinPedidosParaPivotear` | El archivo se leyó pero no trae pedidos; si se descargó temprano, volver a descargarlo | — |
 | `ARCHIVO_FECHA` | `SinPedidosEnLaFecha` | Se buscaban los pedidos de un día y el archivo no tiene ninguno de ese día | — |
+
+> **El clasificador no puede fallar nunca.** Pasó en producción: al presionar Reintentar mientras
+> Supabase arrancaba, PostgREST no contestó y lo que se propagó fue el estado HTTP del proxy, con
+> `APIError.code` como **entero**; el `.strip()` del clasificador voló con un `AttributeError` y la
+> usuaria vio ese error en vez del aviso. Dos reglas desde entonces: los campos de las excepciones
+> ajenas se normalizan con `str()` **sin suponer el tipo**, y si el manejo del error se rompe —al
+> clasificar, al leer los ajustes o al dibujar el panel— se registra y se vuelve a lanzar la
+> excepción **original**. El traductor de errores no puede reemplazar el problema real por el suyo.
 
 **Lo que no se reconoce se propaga, a propósito.** No hay un `except Exception` que muestre "ocurrió
 un error" para todo: eso esconderia los bugs de verdad en lugar de arreglarlos. El traceback sigue

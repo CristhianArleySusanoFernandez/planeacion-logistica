@@ -48,12 +48,25 @@ def errores_de_conexion(*, detener: bool = True, clave: str = "") -> Iterator[No
     try:
         yield
     except Exception as excepcion:
-        error = clasificar(excepcion, _url_de_supabase())
+        try:
+            error = clasificar(excepcion, _url_de_supabase())
+        except Exception:
+            # Doble red: `clasificar` ya se protege sola, pero leer los ajustes
+            # también puede fallar. Lo que no puede pasar es que el traductor de
+            # errores reemplace el error real por el suyo.
+            _logger.exception("Falló el manejo del error; se propaga el original")
+            raise excepcion from None
         if error is None:
             raise
         # El traceback completo queda en los logs del servidor, con el código
         # adelante para poder filtrar por él en el panel de Render.
         _logger.exception("[%s] %s", error.codigo, error.titulo)
-        panel_error.mostrar(error, clave=clave)
+        try:
+            panel_error.mostrar(error, clave=clave)
+        except Exception:
+            # Si ni el panel se puede dibujar, mejor el traceback del problema
+            # real que uno del panel: al menos dice qué pasó de verdad.
+            _logger.exception("No se pudo dibujar el panel de %s", error.codigo)
+            raise excepcion from None
         if detener:
             st.stop()

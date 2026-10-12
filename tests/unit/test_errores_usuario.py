@@ -17,7 +17,7 @@ import pytest
 from postgrest.exceptions import APIError
 
 from planeacion.domain.errores import SinPedidosEnLaFecha, SinPedidosParaPivotear
-from planeacion.infraestructura.adaptadores.entrada.web import errores
+from planeacion.infraestructura.adaptadores.entrada.web import conexion, errores
 from planeacion.infraestructura.adaptadores.salida.excel.lector_ecom import (
     ColumnasEcomFaltantes,
     LectorEcomExcel,
@@ -205,3 +205,129 @@ class TestMigracionDe:
     def test_lo_que_no_esta_en_ninguna_devuelve_none(self) -> None:
         assert errores.migracion_de("tabla_inventada") is None
         assert errores.migracion_de("") is None
+
+
+class TestBaseArrancando:
+    """El fallo real de producción: Reintentar mientras Supabase despertaba.
+
+    PostgREST todavía no contestaba y lo que se propagó fue el estado HTTP del
+    proxy, con ``code`` como **entero**. El ``.strip()`` del clasificador voló con
+    un AttributeError y la usuaria vio ese error en vez del aviso.
+    """
+
+    def test_el_codigo_503_entero_se_reconoce(self) -> None:
+        error = errores.clasificar(APIError({"code": 503, "message": "no response"}), _URL)
+
+        assert error is not None
+        assert error.codigo == errores.BD_INICIANDO
+        assert error.reintentable
+
+    def test_tambien_502_y_504_como_enteros(self) -> None:
+        for estado in (502, 504):
+            error = errores.clasificar(APIError({"code": estado, "message": ""}), _URL)
+            assert error is not None, estado
+            assert error.codigo == errores.BD_INICIANDO
+
+    def test_tambien_por_el_mensaje_cuando_no_hay_codigo(self) -> None:
+        for mensaje in ("project is starting up", "upgrading", "project is paused", "unavailable"):
+            error = errores.clasificar(APIError({"code": "", "message": mensaje}), _URL)
+            assert error is not None, mensaje
+            assert error.codigo == errores.BD_INICIANDO
+
+    def test_dice_esperar_un_minuto_y_reintentar(self) -> None:
+        error = errores.clasificar(APIError({"code": 503, "message": ""}), _URL)
+
+        assert error is not None
+        assert any("minuto" in paso for paso in error.que_hacer)
+        assert error.enlace is not None and "supabase.com/dashboard" in error.enlace[1]
+
+    def test_no_se_confunde_con_un_problema_de_credenciales(self) -> None:
+        """503 no es 401: el consejo es esperar, no avisarle a nadie."""
+        error = errores.clasificar(APIError({"code": 503, "message": ""}), _URL)
+
+        assert error is not None and error.codigo != errores.BD_CREDENCIALES
+
+
+class TestElClasificadorNoPuedeFallar:
+    """Un error en el traductor de errores tapaba el problema real con el suyo."""
+
+    def test_code_none_no_revienta(self) -> None:
+        assert errores.clasificar(APIError({"code": None, "message": None}), _URL) is None
+
+    def test_un_code_de_un_tipo_inesperado_no_revienta(self) -> None:
+        """`object()` no tiene strip ni se parece a nada: igual hay que sobrevivir."""
+        excepcion = APIError({"code": "x", "message": "y"})
+        excepcion.code = object()  # type: ignore[assignment]
+
+        assert errores.clasificar(excepcion, _URL) is None
+
+    def test_un_api_error_sin_atributo_code_no_revienta(self) -> None:
+        excepcion = APIError({"code": "x", "message": "y"})
+        del excepcion.code
+
+        assert errores.clasificar(excepcion, _URL) is None
+
+    def test_si_el_str_del_code_explota_tampoco_revienta(self) -> None:
+        class CodigoHostil:
+            def __str__(self) -> str:
+                raise RuntimeError("no me conviertas")
+
+        excepcion = APIError({"code": "x", "message": "y"})
+        excepcion.code = CodigoHostil()  # type: ignore[assignment]
+
+        assert errores.clasificar(excepcion, _URL) is None
+
+    def test_si_clasificar_se_rompe_devuelve_none_para_que_se_propague_el_original(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """La garantía que importa: devuelve None, no lanza lo suyo."""
+
+        def _explota(*_args: object, **_kwargs: object) -> None:
+            raise RuntimeError("bug del clasificador")
+
+        monkeypatch.setattr(errores, "_clasificar", _explota)
+
+        assert errores.clasificar(httpx.ConnectError("sin red"), _URL) is None
+
+
+class TestSePropagaElErrorOriginal:
+    """Lo que vio la usuaria en producción fue el error del clasificador, no el suyo.
+
+    Estas pruebas fijan la garantía al revés: pase lo que pase en el manejo, la
+    excepción que sale es la que de verdad ocurrió.
+    """
+
+    def test_si_clasificar_se_rompe_sale_la_excepcion_original(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        def _explota(*_args: object, **_kwargs: object) -> None:
+            raise RuntimeError("bug en el manejo de errores")
+
+        monkeypatch.setattr(conexion, "clasificar", _explota)
+
+        with pytest.raises(httpx.ConnectError, match="sin red"), conexion.errores_de_conexion():
+            raise httpx.ConnectError("sin red")
+
+    def test_si_leer_los_ajustes_se_rompe_sale_la_excepcion_original(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        def _explota() -> str:
+            raise RuntimeError("no se pudo leer la configuración")
+
+        monkeypatch.setattr(conexion, "_url_de_supabase", _explota)
+
+        with pytest.raises(ValueError, match="el problema real"), conexion.errores_de_conexion():
+            raise ValueError("el problema real")
+
+    def test_si_el_panel_no_se_puede_dibujar_sale_la_excepcion_original(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        def _explota(*_args: object, **_kwargs: object) -> None:
+            raise RuntimeError("falló el dibujo")
+
+        monkeypatch.setattr(conexion.panel_error, "mostrar", _explota)
+
+        with pytest.raises(httpx.ConnectError, match="sin red"), conexion.errores_de_conexion():
+            raise httpx.ConnectError("sin red")
+
+    def test_lo_no_reconocido_sigue_propagandose_tal_cual(self) -> None:
+        with pytest.raises(ValueError, match="dato inválido"), conexion.errores_de_conexion():
+            raise ValueError("dato inválido")
