@@ -22,5 +22,6 @@ dist/
 # que no se trague tests/unit/datos/, que SÍ se versiona (fixtures recortados).
 /datos/
 /datos_historico/
+/datos_prueba/
 /salidas/
 ~$*
