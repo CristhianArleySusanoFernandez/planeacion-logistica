@@ -143,19 +143,37 @@ class NivelDesbalance(Enum):
     CRITICO = "critico"
 
 
-# Criterio de negocio: hasta 10 % de coeficiente de variación el reparto se
-# considera parejo, entre 10 % y 20 % conviene revisarlo y por encima de 20 %
-# hay carros claramente desiguales. Vive acá, y no en cada adaptador, para que
-# la CLI y la UI no puedan juzgar distinto la misma planeación.
-UMBRAL_CV_ACEPTABLE = 0.10
-UMBRAL_CV_ATENCION = 0.20
+# Criterio de negocio, y por eso es configurable: hasta este CV el reparto se
+# considera parejo, hasta el siguiente conviene revisarlo y por encima hay carros
+# claramente desiguales. Vive acá, y no en cada adaptador, para que la CLI y la
+# UI no puedan juzgar distinto la misma planeación.
+#
+# Los valores de julio de 2026 eran 0,10 y 0,20, de cuando la flota era otra. Con
+# la flota de 22 rutas **el reparto real de la operación mide 25 a 46 % de CV**,
+# así que con esos cortes los cuatro municipios quedaban en rojo todos los días:
+# un semáforo siempre rojo no informa nada. Se ajustan a 0,25 y 0,40 para que el
+# color vuelva a distinguir un día parejo de uno desparejo, y quedan en la tabla
+# de parámetros para moverlos midiendo y sin desplegar.
+UMBRAL_CV_ACEPTABLE = 0.25
+UMBRAL_CV_ATENCION = 0.40
 
 
-def clasificar_cv(cv: float) -> NivelDesbalance:
-    """CV → nivel. Los bordes: 0,10 exacto ya es ATENCION y 0,20 exacto todavía lo es."""
-    if cv < UMBRAL_CV_ACEPTABLE:
+@dataclass(frozen=True)
+class UmbralesDesbalance:
+    """Los dos cortes del semáforo, juntos porque solo tienen sentido en pareja."""
+
+    aceptable: float = UMBRAL_CV_ACEPTABLE
+    atencion: float = UMBRAL_CV_ATENCION
+
+
+UMBRALES_POR_DEFECTO = UmbralesDesbalance()
+
+
+def clasificar_cv(cv: float, umbrales: UmbralesDesbalance = UMBRALES_POR_DEFECTO) -> NivelDesbalance:
+    """CV → nivel. Los bordes: el corte bajo exacto ya es ATENCION y el alto todavía lo es."""
+    if cv < umbrales.aceptable:
         return NivelDesbalance.ACEPTABLE
-    if cv <= UMBRAL_CV_ATENCION:
+    if cv <= umbrales.atencion:
         return NivelDesbalance.ATENCION
     return NivelDesbalance.CRITICO
 
@@ -182,13 +200,17 @@ class MetricasDesbalance:
 
     @property
     def nivel(self) -> NivelDesbalance:
+        """El nivel con los umbrales por defecto; con otros, ``nivel_segun``."""
+        return self.nivel_segun(UMBRALES_POR_DEFECTO)
+
+    def nivel_segun(self, umbrales: UmbralesDesbalance) -> NivelDesbalance:
         """El nivel lo marca la peor de las TRES dimensiones que se equilibran.
 
         Incluir kilos sube de nivel a varios municipios, y eso es correcto: si el
         reparto se juzga por tres variables, el semáforo tiene que decir la verdad
         sobre las tres. Cuál manda se ve en los tres CV, que van por separado.
         """
-        return clasificar_cv(self.cv_peor)
+        return clasificar_cv(self.cv_peor, umbrales)
 
 
 @dataclass

@@ -16,7 +16,12 @@ from string import Template
 
 import streamlit as st
 
-from planeacion.domain.modelo import NivelDesbalance, clasificar_cv
+from planeacion.domain.modelo import (
+    UMBRALES_POR_DEFECTO,
+    NivelDesbalance,
+    UmbralesDesbalance,
+    clasificar_cv,
+)
 
 # ------------------------------------------------ paleta de MARCA (decorativa)
 AZUL_MARINO = "#1B3C8F"  # principal: encabezados, botones
@@ -338,13 +343,13 @@ _COLOR_SEMAFORO = {
 }
 
 
-def color_semaforo(cv: float) -> str:
+def color_semaforo(cv: float, umbrales: UmbralesDesbalance = UMBRALES_POR_DEFECTO) -> str:
     """El nivel lo decide el dominio; acá solo se le asigna color. Nunca los de la marca."""
-    return _COLOR_SEMAFORO[clasificar_cv(cv)]
+    return _COLOR_SEMAFORO[clasificar_cv(cv, umbrales)]
 
 
-def punto_semaforo(cv: float) -> str:
-    return f'<span class="punto-semaforo" style="background:{color_semaforo(cv)}"></span>'
+def punto_semaforo(cv: float, umbrales: UmbralesDesbalance = UMBRALES_POR_DEFECTO) -> str:
+    return f'<span class="punto-semaforo" style="background:{color_semaforo(cv, umbrales)}"></span>'
 
 
 def punto_color(color: str) -> str:

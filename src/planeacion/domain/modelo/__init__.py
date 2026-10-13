@@ -3,12 +3,14 @@
 from planeacion.domain.modelo.balanceo import (
     UMBRAL_CV_ACEPTABLE,
     UMBRAL_CV_ATENCION,
+    UMBRALES_POR_DEFECTO,
     AsignacionZona,
     CargaCarro,
     MetricasDesbalance,
     NivelDesbalance,
     ReglasBalanceo,
     ResultadoBalanceo,
+    UmbralesDesbalance,
     clasificar_cv,
 )
 from planeacion.domain.modelo.carro import Carro, clave_conductor, clave_orden_carro
@@ -35,6 +37,7 @@ __all__ = [
     "DIAS_LABORALES",
     "DIAS_SEMANA",
     "MUNICIPIO_OTROS",
+    "UMBRALES_POR_DEFECTO",
     "UMBRAL_CV_ACEPTABLE",
     "UMBRAL_CV_ATENCION",
     "CATALOGO",
@@ -59,6 +62,7 @@ __all__ = [
     "ReglasBalanceo",
     "ResultadoBalanceo",
     "SugerenciaDeZona",
+    "UmbralesDesbalance",
     "Zona",
     "ZonaAgregada",
     "clasificar_cv",

@@ -72,7 +72,9 @@ pueda revisarlo y ajustarlo.
    en 0,5 por defecto). Los kilos los pidió la operación: dos carros pueden quedar parejos en
    clientes y en plata y uno llevar el triple de peso, que es el que termina cargando y descargando.
    El semáforo del Paso 3 lo marca **la peor de las tres**, no el promedio, y los tres CV se
-   muestran por separado para ver cuál manda. Los kilos solo son un criterio con la guarda de
+   muestran por separado para ver cuál manda. Sus dos cortes son parámetros
+   (`umbral_cv_aceptable` 0,25 y `umbral_cv_atencion` 0,40) y la leyenda los lee de ahí, así que el
+   texto nunca puede decir un número distinto del que pinta el color. Los kilos solo son un criterio con la guarda de
    `guarda_kilos` delante; sin ella serían ruido (ver § 5).
 
 5. **Ciclo semanal**: la planeación de un día se parece mucho a la del **mismo día de la semana anterior**.
@@ -354,6 +356,8 @@ las filas en vez de reescribirlas, para no tener dos fuentes de verdad.
 | `min_clientes_conductor` | 50 | Meta de la jefatura para Tunja, Barbosa y Chiquinquirá. **Solo avisa**: el reparto real la incumple 20 veces en 16 días. |
 | `max_facturas_conductor` | 110 | Facturas desde las que conviene revisar el carro externo. **Solo avisa**: Angélica Arias y Fabián lo pasan casi todos los días sin externo. |
 | `vehiculos_referencia` | 12 | Divisor del "Promedio Vh". **Fijo a propósito**: es el de la hoja que la operación mira, y usar "los carros con carga" daría otro número. |
+| `umbral_cv_aceptable` | 0,25 | Hasta este CV el semáforo va en verde. Los 0,10 de julio de 2026 eran de otra flota: el reparto **real** mide 25–46 %, así que los cuatro municipios salían en rojo siempre. |
+| `umbral_cv_atencion` | 0,40 | Hasta acá ámbar, por encima rojo. Solo cambia el color: los umbrales no entran en la función de costo. |
 | `kilos_max_por_unidad` | 25 | Techo de la guarda de kilos. Una unidad de venta es una caja o un display; ningún producto sano de 2026 se acerca, y hay fichas con 715,5 kg (ver § 5). |
 
 ## 6.bis.2 Sugerencia de zona para clientes nuevos

@@ -14,11 +14,10 @@ from planeacion.config.contenedor import (
 )
 from planeacion.domain.errores import ErrorDeDominio, MovimientoInvalido
 from planeacion.domain.modelo import (
-    UMBRAL_CV_ACEPTABLE,
-    UMBRAL_CV_ATENCION,
     CargaCarro,
     MetricasDesbalance,
     Parametros,
+    UmbralesDesbalance,
     clave_orden_carro,
 )
 from planeacion.domain.modelo.parametros import (
@@ -64,7 +63,13 @@ def mostrar(contenedor: Contenedor) -> None:
             "Configuración → Zonas por carro y regenera el reparto."
         )
 
-    _resumen_balance(resultado.metricas_iniciales, resultado.metricas_finales, resultado.cargas_por_municipio)
+    parametros = Parametros(valores=datos.parametros(contenedor))
+    _resumen_balance(
+        resultado.metricas_iniciales,
+        resultado.metricas_finales,
+        resultado.cargas_por_municipio,
+        parametros.umbrales_desbalance(),
+    )
 
     _alertas_operativas(contenedor, resultado.cargas_por_municipio, planeacion.total_facturas)
     _resumen_por_conductor(resultado.cargas_por_municipio)
@@ -117,6 +122,7 @@ def _tarjeta_municipio(
     inicial: MetricasDesbalance,
     final: MetricasDesbalance,
     cargas: list[CargaCarro],
+    umbrales: UmbralesDesbalance,
 ) -> str:
     """Card de un municipio: punto del semáforo, CV antes → después y mini-barras
     con los pesos de cada carro (para ver de un vistazo qué tan parejo quedó)."""
@@ -124,7 +130,7 @@ def _tarjeta_municipio(
     barras = estilos.barras_carros([(f"C{c.carro.numero}", float(c.pesos)) for c in cargas if c.zonas])
     return (
         '<div class="tarjeta-kpi">'
-        f'<div class="valor" style="font-size:1rem">{estilos.punto_semaforo(peor_cv)}'
+        f'<div class="valor" style="font-size:1rem">{estilos.punto_semaforo(peor_cv, umbrales)}'
         f"{html.escape(municipio)}</div>"
         f'<div class="detalle">Clientes: {inicial.cv_clientes:.0%} → <b>{final.cv_clientes:.0%}</b>'
         f" &nbsp;·&nbsp; Pesos: {inicial.cv_pesos:.0%} → <b>{final.cv_pesos:.0%}</b>"
@@ -137,20 +143,22 @@ def _resumen_balance(
     iniciales: dict[str, MetricasDesbalance],
     finales: dict[str, MetricasDesbalance],
     cargas_por_municipio: dict[str, list[CargaCarro]],
+    umbrales: UmbralesDesbalance,
 ) -> None:
     estilos.titulo_seccion("Balance por municipio")
     estilos.fila_metricas(
         [
-            _tarjeta_municipio(municipio, iniciales[municipio], m, cargas_por_municipio[municipio])
+            _tarjeta_municipio(municipio, iniciales[municipio], m, cargas_por_municipio[municipio], umbrales)
             for municipio, m in sorted(finales.items())
         ]
     )
-    # Los cortes se leen del dominio para que la leyenda no pueda mentirle a los colores.
+    # Los cortes salen de los MISMOS umbrales que pintan los puntos: la leyenda no
+    # puede quedar diciendo "10 %" mientras el color usa otro corte.
     leyenda = (
-        f"{estilos.punto_color(estilos.SEMAFORO_VERDE)}menos de {UMBRAL_CV_ACEPTABLE:.0%} &nbsp; "
-        f"{estilos.punto_color(estilos.SEMAFORO_AMBAR)}{UMBRAL_CV_ACEPTABLE:.0%}–"
-        f"{UMBRAL_CV_ATENCION:.0%} &nbsp; "
-        f"{estilos.punto_color(estilos.SEMAFORO_ROJO)}más de {UMBRAL_CV_ATENCION:.0%}"
+        f"{estilos.punto_color(estilos.SEMAFORO_VERDE)}menos de {umbrales.aceptable:.0%} &nbsp; "
+        f"{estilos.punto_color(estilos.SEMAFORO_AMBAR)}{umbrales.aceptable:.0%}–"
+        f"{umbrales.atencion:.0%} &nbsp; "
+        f"{estilos.punto_color(estilos.SEMAFORO_ROJO)}más de {umbrales.atencion:.0%}"
     )
     st.markdown(
         '<span class="texto-suave">CV = qué tan parejo quedó el reparto '

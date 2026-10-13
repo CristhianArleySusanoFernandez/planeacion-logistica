@@ -16,7 +16,13 @@ from dataclasses import dataclass
 from decimal import Decimal
 from types import MappingProxyType
 
-from planeacion.domain.modelo.balanceo import REGLAS_POR_DEFECTO, ReglasBalanceo
+from planeacion.domain.modelo.balanceo import (
+    REGLAS_POR_DEFECTO,
+    UMBRAL_CV_ACEPTABLE,
+    UMBRAL_CV_ATENCION,
+    ReglasBalanceo,
+    UmbralesDesbalance,
+)
 
 CLAVE_W_CLIENTES = "w_clientes"
 CLAVE_W_PESOS = "w_pesos"
@@ -26,6 +32,8 @@ CLAVE_MIN_CLIENTES_CONDUCTOR = "min_clientes_conductor"
 CLAVE_MAX_FACTURAS_CONDUCTOR = "max_facturas_conductor"
 CLAVE_VEHICULOS_REFERENCIA = "vehiculos_referencia"
 CLAVE_KILOS_MAX_POR_UNIDAD = "kilos_max_por_unidad"
+CLAVE_UMBRAL_CV_ACEPTABLE = "umbral_cv_aceptable"
+CLAVE_UMBRAL_CV_ATENCION = "umbral_cv_atencion"
 
 
 @dataclass(frozen=True)
@@ -77,6 +85,18 @@ CATALOGO: tuple[DefinicionParametro, ...] = (
         "carga: se deja fijo para que el número sea comparable con el que ellos ya miran.",
     ),
     DefinicionParametro(
+        CLAVE_UMBRAL_CV_ACEPTABLE,
+        Decimal(str(UMBRAL_CV_ACEPTABLE)),
+        "Hasta este CV el reparto se ve verde en el semáforo. Los 0,10 de julio de 2026 dejaban "
+        "los cuatro municipios en rojo todos los días: el reparto real mide 25 a 46 %.",
+    ),
+    DefinicionParametro(
+        CLAVE_UMBRAL_CV_ATENCION,
+        Decimal(str(UMBRAL_CV_ATENCION)),
+        "Hasta este CV el semáforo va en ámbar; por encima, rojo. Solo cambia el color: el "
+        "reparto propuesto es el mismo.",
+    ),
+    DefinicionParametro(
         CLAVE_KILOS_MAX_POR_UNIDAD,
         Decimal("25"),
         "Kilos por unidad desde los que una línea de ECOM se considera mal cargada y sus kilos "
@@ -110,6 +130,13 @@ class Parametros:
 
     def flotante(self, clave: str) -> float:
         return float(self.numero(clave))
+
+    def umbrales_desbalance(self) -> UmbralesDesbalance:
+        """Los dos cortes del semáforo, como estén configurados."""
+        return UmbralesDesbalance(
+            aceptable=self.flotante(CLAVE_UMBRAL_CV_ACEPTABLE),
+            atencion=self.flotante(CLAVE_UMBRAL_CV_ATENCION),
+        )
 
     def reglas_balanceo(self) -> ReglasBalanceo:
         """Los cuatro pesos de la función de costo, tal como están configurados."""
