@@ -223,6 +223,49 @@ Después se ajusta a mano en la UI (Configuración → Zonas por carro), que mue
 
 El guardado sigue siendo automático por casilla, sin botón.
 
+## Rutina semanal con las planeaciones nuevas
+
+Cada semana el responsable de planeación entrega sus `.xlsm` del día junto con el `.xls` de ECOM
+correspondiente. **El orden importa: primero medir, después sembrar.**
+
+1. **Los archivos nuevos van a `datos_prueba/`** (ignorada por git, como `datos/`). Mientras estén
+   ahí, no están en el repertorio.
+
+2. **Medir con ellos, que es la única medición honesta.** Son días que el repertorio nunca vio, así
+   que la coincidencia es *out-of-sample*:
+
+   ```bash
+   uv run planeacion-validar "datos_prueba/*.xlsm" --ecom "datos_prueba/infpedidos*.xls"
+   ```
+
+   Es el número que vale. Medir después de sembrar da un valor optimista, porque el reparto se estaría
+   comparando contra los mismos días que lo configuraron. Conviene guardar el resultado: la serie de
+   mediciones out-of-sample es lo que dice si la app está mejorando o no.
+
+3. **Sembrar el repertorio con TODOS los archivos, no solo los nuevos:**
+
+   ```bash
+   uv run planeacion-sembrar-repertorio "datos/*.xlsm" "datos_prueba/*.xlsm" --vaciar
+   ```
+
+   > **Por qué con `--vaciar` y con todos.** La siembra es idempotente —`upsert` por
+   > (carro, zona, día), no duplica— pero **no es incremental**: la columna `frecuencia` se **pisa**
+   > con el conteo de la corrida. Sembrar solo los dos días nuevos dejaría a cada par que aparezca en
+   > ellos con frecuencia 1 o 2, borrando el conteo de las semanas anteriores y arruinando el
+   > desempate por costumbre. `--vaciar` respalda el repertorio a
+   > `salidas/carro_zonas_respaldo_<fecha>.csv` antes de borrar.
+
+4. **Mover los archivos a `datos/`**, que es donde vive el histórico ya sembrado.
+
+5. **Revisar el reporte de la siembra**: pares por día, zonas que siguen sin carro y, sobre todo, las
+   dos listas de avisos — carros del histórico que no están en la flota y **zonas que no casan con el
+   catálogo**. Esas no se siembran, así que una zona nueva que la operación empezó a usar sigue sin
+   carro hasta darla de alta en Configuración → Zonas.
+
+Ejemplo real (octubre de 2026, los días 8 y 9 agregados a los 16 que había): out-of-sample **93,0 %**
+de coincidencia (97,4 % el jueves y 88,6 % el viernes), y tras sembrar los 18 archivos el repertorio
+pasó de 647 a **662 pares**, con 10 zonas-día que dejaron de estar sin carro.
+
 ## Validación contra las planeaciones manuales
 
 Mide qué tan cerca queda la propuesta automática de lo que Rudy hizo a mano, sobre varios días.
