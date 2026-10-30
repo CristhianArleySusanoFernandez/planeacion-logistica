@@ -21,7 +21,7 @@ inactivas (no borradas) porque los refuerzos puntuales no son flota.
 import argparse
 import csv
 import sys
-from collections import defaultdict
+from collections import Counter, defaultdict
 from collections.abc import Sequence
 from datetime import date
 from pathlib import Path
@@ -51,12 +51,14 @@ from planeacion.infraestructura.adaptadores.entrada.cli.resincronizacion import 
     Cambio,
     DatosCompletos,
     FilaCliente,
+    OrigenDeZona,
     PlanClientes,
     PlanCorrecciones,
     Planes,
     PlanFlota,
     PlanOverrides,
     PlanZonas,
+    mapear_origenes,
     planear_clientes,
     planear_correcciones,
     planear_flota,
@@ -64,9 +66,11 @@ from planeacion.infraestructura.adaptadores.entrada.cli.resincronizacion import 
     planear_zonas,
     reparar_mojibake,
     tiene_mojibake,
+    zonas_a_desactivar,
 )
 from planeacion.infraestructura.adaptadores.salida.excel.lector_referencia import (
     HOJA_MAESTRA_COMPLETA,
+    FilaMaestra,
     FilaRutaBase,
     LectorReferenciaExcel,
 )
@@ -195,6 +199,54 @@ def _reportar_zonas(reporte: _Reporte, plan: PlanZonas, fusiones: list[tuple[str
         reporte.linea(f"    - {variante!r} → {canonica!r}")
 
 
+def _reportar_zonas_vacias(reporte: _Reporte, a_desactivar: list[Zona], aplicar: bool) -> None:
+    """Las zonas que se quedan sin clientes con la maestra nueva.
+
+    Se listan SIEMPRE, se escriben solo con --desactivar-vacias: apagar una zona
+    cambia lo que la app ofrece en pantalla y es una decisión, no un efecto
+    secundario de resincronizar. Nunca se borran, así que su repertorio —que es
+    trabajo de configuración— sobrevive y la zona puede volver.
+    """
+    reporte.titulo(f"Zonas que se quedan sin clientes ({len(a_desactivar)})")
+    destino = "se **desactivan**" if aplicar else "NO se tocan (pasar --desactivar-vacias)"
+    reporte.linea(f"Con la maestra nueva no les queda ningún cliente. {destino}; nunca se borran.")
+    for zona in a_desactivar[:_MAX_EJEMPLOS]:
+        reporte.linea(f"- `{zona.nombre}` ({zona.municipio.nombre})")
+    if len(a_desactivar) > _MAX_EJEMPLOS:
+        reporte.linea(f"- ... y {len(a_desactivar) - _MAX_EJEMPLOS} más")
+
+
+def _reportar_origenes(reporte: _Reporte, origenes: list[OrigenDeZona]) -> None:
+    """De dónde vienen los clientes de cada zona nueva.
+
+    Es la entrada de la herencia de repertorio: una zona que es el 100 % de una
+    vieja puede heredar su repertorio tal cual, y una que mezcla dos lo hereda
+    ponderado. Solo se muestran las zonas que mezclan o cambiaron de nombre; las
+    que siguen igual no tienen nada que contar.
+    """
+    por_zona: dict[str, list[OrigenDeZona]] = {}
+    for origen in origenes:
+        por_zona.setdefault(origen.zona_nueva, []).append(origen)
+    mezcladas = {
+        zona: lista
+        for zona, lista in por_zona.items()
+        if len(lista) > 1 or (lista and lista[0].zona_vieja != zona)
+    }
+    reporte.titulo(f"De dónde viene cada zona nueva ({len(mezcladas)} de {len(por_zona)})")
+    reporte.linea(
+        "Fracción de los clientes de la zona nueva que venían de cada zona vieja. Es lo que usa "
+        "`planeacion-heredar-repertorio` para estimar el repertorio de la zona nueva."
+    )
+    for zona, lista in sorted(mezcladas.items(), key=lambda par: -sum(o.clientes for o in par[1]))[
+        :_MAX_EJEMPLOS
+    ]:
+        total = lista[0].total_de_la_zona
+        detalle = ", ".join(f"{o.zona_vieja} {o.fraccion:.0%}" for o in lista[:4])
+        reporte.linea(f"- `{zona}` ({total} cliente(s)): {detalle}")
+    if len(mezcladas) > _MAX_EJEMPLOS:
+        reporte.linea(f"- ... y {len(mezcladas) - _MAX_EJEMPLOS} más (están todas en el CSV)")
+
+
 def _reportar_clientes(reporte: _Reporte, plan: PlanClientes) -> None:
     reporte.titulo("Clientes (MAESTRA + MAESTRA COMPLETA)")
     reporte.linea(f"- sin cambios: {plan.sin_cambios}")
@@ -229,6 +281,20 @@ def _reportar_overrides(reporte: _Reporte, plan: PlanOverrides) -> None:
     reporte.linea(f"- en la base y no en el archivo: {len(plan.solo_en_base)} (NO se borran)")
     reporte.lista(plan.cambios, "cambios")
     reporte.lista(plan.zonas_no_encontradas, "overrides descartados porque su zona no existe")
+
+
+def _filas_de(maestra: Sequence[FilaMaestra]) -> list[FilaCliente]:
+    """Las filas de la hoja MAESTRA sin el tipo del lector de Excel."""
+    return [
+        FilaCliente(
+            codigo=fila.codigo,
+            direccion=fila.direccion,
+            ciudad=fila.ciudad,
+            barrio=fila.barrio,
+            ruta=fila.ruta,
+        )
+        for fila in maestra
+    ]
 
 
 def _construir_planes(lector: LectorReferenciaExcel, contenedor: Contenedor) -> Planes:
@@ -266,21 +332,7 @@ def _construir_planes(lector: LectorReferenciaExcel, contenedor: Contenedor) -> 
     zonas_por_nombre: dict[str, Zona] = {zona.nombre: zona for zona in zonas_base}
     zonas_por_nombre.update({zona.nombre: zona for zona in plan_zonas.nuevas})
 
-    plan_clientes = planear_clientes(
-        [
-            FilaCliente(
-                codigo=fila.codigo,
-                direccion=fila.direccion,
-                ciudad=fila.ciudad,
-                barrio=fila.barrio,
-                ruta=fila.ruta,
-            )
-            for fila in maestra
-        ],
-        completa,
-        clientes_base,
-        zonas_por_nombre,
-    )
+    plan_clientes = planear_clientes(_filas_de(maestra), completa, clientes_base, zonas_por_nombre)
     plan_correcciones = planear_correcciones(
         [
             CorreccionUbicacion(
@@ -297,6 +349,23 @@ def _construir_planes(lector: LectorReferenciaExcel, contenedor: Contenedor) -> 
         contenedor.overrides.listar(),
         zonas_por_nombre,
     )
+
+    origenes = mapear_origenes(_filas_de(maestra), clientes_base, zonas_por_nombre)
+    # Los clientes que la zona tendrá DESPUÉS de aplicar. Se cuenta sobre el mapeo
+    # de orígenes, que recorre TODAS las filas de la maestra: contar solo el plan
+    # dejaría afuera a los clientes que no cambiaron —la mayoría— y haría pasar
+    # por vacía a cualquier zona cuya gente se quedó quieta.
+    clientes_finales: Counter[str] = Counter()
+    for origen in origenes:
+        clientes_finales[origen.zona_nueva] = origen.total_de_la_zona
+    # Los que están en la base y no en la maestra no se borran, así que siguen
+    # sosteniendo a su zona.
+    zona_de_base = {cliente.codigo: cliente.zona for cliente in clientes_base}
+    for codigo in plan_clientes.solo_en_base:
+        zona = zona_de_base.get(codigo)
+        if zona is not None:
+            clientes_finales[zona.nombre] += 1
+    a_desactivar = zonas_a_desactivar(zonas_base, clientes_finales)
 
     fusiones = [
         (variante, planear_fusion(grupo).canonica)
@@ -316,6 +385,8 @@ def _construir_planes(lector: LectorReferenciaExcel, contenedor: Contenedor) -> 
         overrides=plan_overrides,
         fusiones=fusiones,
         razones_sociales_mal_codificadas=sin_reparar,
+        origenes=origenes,
+        a_desactivar=a_desactivar,
     )
 
 
@@ -375,6 +446,12 @@ def main() -> int:
         help="escribe los cambios en Supabase (por defecto solo reporta)",
     )
     parser.add_argument(
+        "--desactivar-vacias",
+        action="store_true",
+        help="las zonas que queden sin ningún cliente pasan a activo = false (nunca se borran y "
+        "conservan su repertorio). Se listan igual sin esta bandera.",
+    )
+    parser.add_argument(
         "--solo-respaldo",
         action="store_true",
         help="exporta las tablas a salidas/respaldo_<fecha>/ y termina (para revisarlo antes de aplicar)",
@@ -407,19 +484,29 @@ def main() -> int:
             print(f"Al archivo le faltan hojas: {', '.join(faltantes)}", file=sys.stderr)
             return 1
         planes = _construir_planes(lector, contenedor)
-        reporte = _armar_reporte(args.ruta_xlsm, planes, aplicado=False)
+        reporte = _armar_reporte(
+            args.ruta_xlsm, planes, aplicado=False, desactivar_vacias=args.desactivar_vacias
+        )
         reporte.imprimir()
         _escribir_reporte(reporte, args.salidas / f"resincronizacion_{date.today().isoformat()}.md")
+        # El mapeo sale SIEMPRE, incluso en modo reporte: es la entrada de la
+        # herencia de repertorio y conviene poder revisarlo antes de aplicar nada.
+        _escribir_mapeo(planes.origenes, args.salidas / f"mapeo_zonas_{date.today().isoformat()}.csv")
 
         if not args.aplicar:
             print("\nModo reporte: no se escribió nada. Para aplicar: --aplicar")
             return 0
 
-        _aplicar(contenedor, planes)
+        _aplicar(contenedor, planes, desactivar_vacias=args.desactivar_vacias)
         print("\n" + "=" * 78)
         print("VERIFICACION (se recalcula el reporte contra la base ya escrita)")
         print("=" * 78)
-        verificacion = _armar_reporte(args.ruta_xlsm, _construir_planes(lector, contenedor), aplicado=True)
+        verificacion = _armar_reporte(
+            args.ruta_xlsm,
+            _construir_planes(lector, contenedor),
+            aplicado=True,
+            desactivar_vacias=args.desactivar_vacias,
+        )
         verificacion.imprimir()
         _escribir_reporte(
             verificacion, args.salidas / f"resincronizacion_{date.today().isoformat()}_verificacion.md"
@@ -427,7 +514,7 @@ def main() -> int:
     return 0
 
 
-def _armar_reporte(ruta: Path, planes: Planes, aplicado: bool) -> _Reporte:
+def _armar_reporte(ruta: Path, planes: Planes, aplicado: bool, desactivar_vacias: bool = False) -> _Reporte:
     reporte = _Reporte()
     reporte.linea(f"# Resincronización {'(verificación)' if aplicado else '(reporte)'} — {date.today()}")
     reporte.linea()
@@ -439,6 +526,8 @@ def _armar_reporte(ruta: Path, planes: Planes, aplicado: bool) -> _Reporte:
     )
     _reportar_flota(reporte, planes.flota)
     _reportar_zonas(reporte, planes.zonas, planes.fusiones)
+    _reportar_zonas_vacias(reporte, planes.a_desactivar, aplicar=desactivar_vacias)
+    _reportar_origenes(reporte, planes.origenes)
     _reportar_clientes(reporte, planes.clientes)
     _reportar_correcciones(reporte, planes.correcciones)
     _reportar_overrides(reporte, planes.overrides)
@@ -458,7 +547,27 @@ def _armar_reporte(ruta: Path, planes: Planes, aplicado: bool) -> _Reporte:
     return reporte
 
 
-def _aplicar(contenedor: Contenedor, planes: Planes) -> None:
+def _escribir_mapeo(origenes: list[OrigenDeZona], destino: Path) -> int:
+    """El mapeo zona vieja → zona nueva con sus conteos, para la herencia."""
+    destino.parent.mkdir(parents=True, exist_ok=True)
+    with destino.open("w", encoding="utf-8", newline="") as archivo:
+        escritor = csv.writer(archivo)
+        escritor.writerow(["zona_nueva", "zona_vieja", "clientes", "total_de_la_zona", "fraccion"])
+        for origen in origenes:
+            escritor.writerow(
+                [
+                    origen.zona_nueva,
+                    origen.zona_vieja,
+                    origen.clientes,
+                    origen.total_de_la_zona,
+                    f"{origen.fraccion:.4f}",
+                ]
+            )
+    print(f"Mapeo de zonas guardado en {destino} ({len(origenes)} fila(s))")
+    return len(origenes)
+
+
+def _aplicar(contenedor: Contenedor, planes: Planes, desactivar_vacias: bool = False) -> None:
     plan_flota, plan_zonas = planes.flota, planes.zonas
     plan_clientes, plan_correcciones, plan_overrides = planes.clientes, planes.correcciones, planes.overrides
     print("\n" + "=" * 78)
@@ -497,3 +606,13 @@ def _aplicar(contenedor: Contenedor, planes: Planes) -> None:
     if plan_overrides.a_guardar:
         contenedor.overrides.guardar_lote(plan_overrides.a_guardar, ids_zonas)
     print(f"  overrides escritos: {len(plan_overrides.a_guardar)}")
+
+    if desactivar_vacias:
+        for zona in planes.a_desactivar:
+            contenedor.zonas.actualizar_zona(zona)
+        print(f"  zonas desactivadas por quedar sin clientes: {len(planes.a_desactivar)}")
+    elif planes.a_desactivar:
+        print(
+            f"  {len(planes.a_desactivar)} zona(s) quedaron sin clientes y NO se tocaron "
+            "(pasar --desactivar-vacias)"
+        )

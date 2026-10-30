@@ -17,8 +17,10 @@ from planeacion.domain.modelo import (
     Zona,
 )
 from planeacion.infraestructura.adaptadores.entrada.cli.resincronizacion import (
+    SIN_ORIGEN,
     DatosCompletos,
     FilaCliente,
+    mapear_origenes,
     planear_clientes,
     planear_correcciones,
     planear_flota,
@@ -26,6 +28,7 @@ from planeacion.infraestructura.adaptadores.entrada.cli.resincronizacion import 
     planear_zonas,
     reparar_mojibake,
     tiene_mojibake,
+    zonas_a_desactivar,
 )
 
 _TUNJA = Municipio(nombre="TUNJA")
@@ -279,3 +282,121 @@ class TestCodificacion:
         assert reparar_mojibake(roto) == roto
         assert tiene_mojibake(roto)
         assert not tiene_mojibake("PEÑA")
+
+
+def _fila(codigo: str, ruta: str) -> FilaCliente:
+    return FilaCliente(codigo=codigo, direccion="", ciudad="", barrio="", ruta=ruta)
+
+
+def _cliente(codigo: str, zona: Zona | None) -> Cliente:
+    return Cliente(codigo=codigo, razon_social=codigo, zona=zona)
+
+
+class TestMapeoDeOrigenes:
+    """De qué zonas viejas viene cada zona nueva.
+
+    Es lo que alimenta la herencia de repertorio, así que las fracciones tienen
+    que ser exactas: con ellas se decide qué carro atiende una zona que la
+    operación nunca vio con ese nombre.
+    """
+
+    _ZONA_NUEVA = Zona(nombre="(TUNJA): NIEVES", municipio=_TUNJA)
+    _ZONAS = {_ZONA_NUEVA.nombre: _ZONA_NUEVA}
+
+    def test_un_renombre_puro_deja_un_solo_origen_al_100(self) -> None:
+        filas = [_fila("1", "(TUNJA): NIEVES"), _fila("2", "(TUNJA): NIEVES")]
+        base = [_cliente("1", _ZONA_ASIS), _cliente("2", _ZONA_ASIS)]
+
+        origenes = mapear_origenes(filas, base, self._ZONAS)
+
+        assert len(origenes) == 1
+        assert (origenes[0].zona_vieja, origenes[0].clientes, origenes[0].fraccion) == (
+            _ZONA_ASIS.nombre,
+            2,
+            1.0,
+        )
+
+    def test_una_fusion_reparte_las_fracciones_y_suman_uno(self) -> None:
+        otra = Zona(nombre="(TUNJA): OTRA", municipio=_TUNJA)
+        filas = [_fila(str(i), "(TUNJA): NIEVES") for i in range(5)]
+        base = [_cliente("0", _ZONA_ASIS), _cliente("1", _ZONA_ASIS), _cliente("2", _ZONA_ASIS)]
+        base += [_cliente("3", otra), _cliente("4", otra)]
+
+        origenes = mapear_origenes(filas, base, self._ZONAS)
+
+        fracciones = {o.zona_vieja: o.fraccion for o in origenes}
+        assert fracciones == {_ZONA_ASIS.nombre: 0.6, otra.nombre: 0.4}
+        assert sum(fracciones.values()) == 1.0
+
+    def test_el_origen_mayoritario_va_primero(self) -> None:
+        """La tabla se lee como "esta zona es sobre todo la vieja X"."""
+        otra = Zona(nombre="(TUNJA): OTRA", municipio=_TUNJA)
+        filas = [_fila("1", "(TUNJA): NIEVES"), _fila("2", "(TUNJA): NIEVES")]
+        base = [_cliente("1", otra), _cliente("2", _ZONA_ASIS)]
+        filas.append(_fila("3", "(TUNJA): NIEVES"))
+        base.append(_cliente("3", _ZONA_ASIS))
+
+        origenes = mapear_origenes(filas, base, self._ZONAS)
+
+        assert origenes[0].zona_vieja == _ZONA_ASIS.nombre
+
+    def test_el_cliente_que_no_cambio_es_origen_de_su_propia_zona(self) -> None:
+        """Si la zona no cambió de nombre, su mejor candidato a repertorio es el
+        suyo: aparece como origen de sí misma y no como un hueco."""
+        filas = [_fila("1", "(TUNJA): NIEVES")]
+        base = [_cliente("1", self._ZONA_NUEVA)]
+
+        origenes = mapear_origenes(filas, base, self._ZONAS)
+
+        assert origenes[0].zona_vieja == self._ZONA_NUEVA.nombre
+
+    def test_el_cliente_nuevo_no_aporta_peso_a_ninguna_zona_vieja(self) -> None:
+        filas = [_fila("1", "(TUNJA): NIEVES"), _fila("2", "(TUNJA): NIEVES")]
+        base = [_cliente("1", _ZONA_ASIS)]
+
+        origenes = mapear_origenes(filas, base, self._ZONAS)
+
+        por_origen = {o.zona_vieja: o.clientes for o in origenes}
+        assert por_origen == {_ZONA_ASIS.nombre: 1, SIN_ORIGEN: 1}
+
+    def test_una_zona_que_no_existe_en_el_catalogo_no_entra(self) -> None:
+        """Si la zona no se pudo crear, mapearla sería prometer una herencia que
+        no tiene dónde escribirse."""
+        filas = [_fila("1", "(TUNJA): INVENTADA")]
+
+        assert mapear_origenes(filas, [_cliente("1", _ZONA_ASIS)], self._ZONAS) == []
+
+    def test_el_cliente_repetido_en_la_hoja_se_cuenta_una_vez(self) -> None:
+        """La maestra trae filas duplicadas; gana la primera, como en el plan de
+        clientes. Contarlo dos veces inflaría su peso en la herencia."""
+        filas = [_fila("1", "(TUNJA): NIEVES"), _fila("1", "(TUNJA): NIEVES")]
+
+        origenes = mapear_origenes(filas, [_cliente("1", _ZONA_ASIS)], self._ZONAS)
+
+        assert origenes[0].total_de_la_zona == 1
+
+
+class TestZonasADesactivar:
+    def test_la_zona_sin_clientes_se_apaga_sin_perder_su_municipio(self) -> None:
+        apagadas = zonas_a_desactivar([_ZONA_NIEVES, _ZONA_ASIS], {_ZONA_NIEVES.nombre: 12})
+
+        assert [(z.nombre, z.activa, z.municipio) for z in apagadas] == [(_ZONA_ASIS.nombre, False, _TUNJA)]
+
+    def test_una_zona_ya_inactiva_no_se_vuelve_a_listar(self) -> None:
+        """Para que el reporte no repita todas las corridas lo mismo."""
+        inactiva = Zona(nombre="(TUNJA): VIEJA", municipio=_TUNJA, activa=False)
+
+        assert zonas_a_desactivar([inactiva], {}) == []
+
+    def test_la_zona_con_clientes_no_se_toca(self) -> None:
+        assert zonas_a_desactivar([_ZONA_NIEVES], {_ZONA_NIEVES.nombre: 1}) == []
+
+    def test_conserva_la_regla_de_chiquinquira(self) -> None:
+        """La zona puede volver: apagarla no es olvidar de qué lado queda."""
+        zona = Zona(
+            nombre="(CHIQUINQUIRA): NORTE",
+            municipio=Municipio(nombre="CHIQUINQUIRA"),
+            regla_chiquinquira=ReglaChiquinquira.NORTE,
+        )
+
+        assert zonas_a_desactivar([zona], {})[0].regla_chiquinquira == ReglaChiquinquira.NORTE

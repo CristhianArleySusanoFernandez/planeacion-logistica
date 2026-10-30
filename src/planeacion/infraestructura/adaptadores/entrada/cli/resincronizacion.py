@@ -139,6 +139,12 @@ class Planes:
     overrides: "PlanOverrides"
     fusiones: list[tuple[str, str]] = field(default_factory=list)
     razones_sociales_mal_codificadas: int = 0
+    # De dónde vienen los clientes de cada zona nueva: la entrada de la herencia
+    # de repertorio (ver planeacion-heredar-repertorio).
+    origenes: list["OrigenDeZona"] = field(default_factory=list)
+    # Zonas activas que se quedaron sin clientes. Se listan siempre; se escriben
+    # solo con --desactivar-vacias, porque apagar una zona es una decisión.
+    a_desactivar: list[Zona] = field(default_factory=list)
 
 
 # --------------------------------------------------------------------- flota
@@ -398,6 +404,99 @@ def planear_clientes(
 
     plan.solo_en_base = sorted(codigo for codigo in por_codigo if codigo not in vistos)
     return plan
+
+
+# ------------------------------------------------------- mapeo viejo -> nuevo
+
+# Marca para el cliente que no estaba en la base: no tiene zona de origen y no
+# puede aportar peso a ninguna herencia.
+SIN_ORIGEN = "(cliente nuevo)"
+
+
+@dataclass(frozen=True)
+class OrigenDeZona:
+    """De dónde vienen los clientes de una zona nueva, y cuántos.
+
+    Es la entrada de la herencia de repertorio: si el 60 % de los clientes de una
+    zona venían de A y el 40 % de B, su repertorio nuevo se puede estimar
+    mezclando los de A y B con esos pesos.
+    """
+
+    zona_nueva: str
+    zona_vieja: str
+    clientes: int
+    total_de_la_zona: int
+
+    @property
+    def fraccion(self) -> float:
+        if self.total_de_la_zona <= 0:
+            return 0.0
+        return self.clientes / self.total_de_la_zona
+
+
+def mapear_origenes(
+    filas: Sequence[FilaCliente],
+    clientes_base: Sequence[Cliente],
+    zonas_por_nombre: Mapping[str, Zona],
+) -> list[OrigenDeZona]:
+    """Por cada zona de la maestra nueva, de qué zonas venían sus clientes.
+
+    Se cuentan **todos** los clientes de la zona nueva y no solo los que
+    cambiaron: un cliente que ya estaba en Z aporta a Z como origen de sí misma,
+    que es lo correcto —su repertorio viejo es el mejor candidato para el nuevo— y
+    hace que las fracciones sumen 1.
+    """
+    zona_en_base = {
+        cliente.codigo: cliente.zona.nombre if cliente.zona else SIN_ORIGEN for cliente in clientes_base
+    }
+    conteo: dict[tuple[str, str], int] = {}
+    total_por_zona: dict[str, int] = {}
+    vistos: set[str] = set()
+    for fila in filas:
+        if fila.codigo in vistos:
+            continue
+        vistos.add(fila.codigo)
+        nombre_nuevo = normalizar_nombre_zona(fila.ruta) if fila.ruta else ""
+        if not nombre_nuevo or nombre_nuevo not in zonas_por_nombre:
+            continue
+        origen = zona_en_base.get(fila.codigo, SIN_ORIGEN)
+        conteo[(nombre_nuevo, origen)] = conteo.get((nombre_nuevo, origen), 0) + 1
+        total_por_zona[nombre_nuevo] = total_por_zona.get(nombre_nuevo, 0) + 1
+
+    origenes = [
+        OrigenDeZona(
+            zona_nueva=nueva,
+            zona_vieja=vieja,
+            clientes=cuantos,
+            total_de_la_zona=total_por_zona[nueva],
+        )
+        for (nueva, vieja), cuantos in conteo.items()
+    ]
+    # Por zona, y dentro de ella el origen que más aporta primero: así la tabla se
+    # lee como "esta zona es sobre todo la vieja X".
+    return sorted(origenes, key=lambda o: (o.zona_nueva, -o.clientes, o.zona_vieja))
+
+
+# ---------------------------------------------------------- zonas sin clientes
+
+
+def zonas_a_desactivar(zonas_base: Sequence[Zona], clientes_finales: Mapping[str, int]) -> list[Zona]:
+    """Las zonas activas que se quedaron sin ningún cliente después de la maestra nueva.
+
+    Se devuelven con ``activa=False`` para guardarlas así. **No se borran**: su
+    repertorio se conserva —es trabajo de configuración y la zona puede volver— y
+    el histórico de planeaciones sigue apuntando a ellas.
+    """
+    return [
+        Zona(
+            nombre=zona.nombre,
+            municipio=zona.municipio,
+            regla_chiquinquira=zona.regla_chiquinquira,
+            activa=False,
+        )
+        for zona in zonas_base
+        if zona.activa and clientes_finales.get(zona.nombre, 0) == 0
+    ]
 
 
 # ------------------------------------------------- correcciones y overrides
