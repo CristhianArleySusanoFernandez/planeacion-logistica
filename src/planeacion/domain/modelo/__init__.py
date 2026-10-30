@@ -31,7 +31,12 @@ from planeacion.domain.modelo.pivote import (
     ZonaAgregada,
 )
 from planeacion.domain.modelo.sugerencia import ConfianzaSugerencia, SugerenciaDeZona
-from planeacion.domain.modelo.zona import ReglaChiquinquira, Zona
+from planeacion.domain.modelo.zona import (
+    NOMBRES_ESPECIALES,
+    ReglaChiquinquira,
+    Zona,
+    nombre_sin_prefijo,
+)
 
 __all__ = [
     "DIAS_LABORALES",
@@ -42,6 +47,7 @@ __all__ = [
     "UMBRAL_CV_ATENCION",
     "CATALOGO",
     "DEFECTOS",
+    "NOMBRES_ESPECIALES",
     "AsignacionZona",
     "CargaCarro",
     "Carro",
@@ -65,6 +71,7 @@ __all__ = [
     "UmbralesDesbalance",
     "Zona",
     "ZonaAgregada",
+    "nombre_sin_prefijo",
     "clasificar_cv",
     "clave_conductor",
     "clave_orden_carro",
