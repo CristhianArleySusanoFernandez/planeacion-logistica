@@ -21,7 +21,15 @@ dist/
 # Datos crudos (los .xlsm/.xlsx pesan ~30 MB cada uno). Con barra inicial, para
 # que no se trague tests/unit/datos/, que SÍ se versiona (fixtures recortados).
 /datos/
-/datos_historico/
+/datos_historico/*
 /datos_prueba/
 /salidas/
+
+# Excepcion: el repertorio de la maestra vieja SI se versiona. Pesa unos 30 KB y
+# es el origen permanente de la herencia de repertorio: cada resiembra con
+# --vaciar parte de cero y lo vuelve a necesitar, asi que no puede vivir solo en
+# una carpeta ignorada ni en un respaldo con fecha que la siguiente corrida pisa.
+# La carpeta se ignora con /* y no con /, porque git no entra en un directorio
+# excluido y la excepcion nunca se evaluaria.
+!/datos_historico/repertorio_maestra_vieja.csv
 ~$*

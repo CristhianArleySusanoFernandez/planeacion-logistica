@@ -200,7 +200,35 @@ cuando el bloque de ECOM pegado **no cuadra** con los totales de su propia hoja 
 un **volumen anómalo**: menos de un cuarto de la mediana de zonas del lote, que es como se
 detecta un archivo abandonado a medias.
 
+Solo siembra la **flota activa**: las rutas de refuerzo que aparecen algunos días —la 23 de
+octubre de 2026, con un conductor distinto cada vez— se saltan y se listan aparte. Su repertorio no
+se consultaría nunca, porque el balanceador no usa rutas inactivas, pero en la pestaña Repertorio se
+vería como una ruta más de la flota.
+
 Es idempotente (upsert por trío carro-zona-día; re-correr actualiza las frecuencias).
+
+### Heredar el repertorio cuando cambian los nombres de las zonas
+
+`planeacion-heredar-repertorio` estima el repertorio de una zona nueva a partir de las viejas de las
+que vinieron sus clientes. Es la herramienta para un cambio de maestra: sembrar de cero con una sola
+semana de archivos deja todo en "visto 1 vez" y pierde meses de costumbre.
+
+```bash
+uv run planeacion-heredar-repertorio salidas/mapeo_zonas_<fecha>.csv --aplicar
+```
+
+El mapeo lo escribe `planeacion-resincronizar` en cada corrida: por cada zona nueva, qué fracción de
+sus clientes venía de cada zona vieja. Si el 60 % venía de A y el 40 % de B, la frecuencia heredada es
+`round(0,6 × frec(A) + 0,4 × frec(B))`, con mínimo 1 donde la suma sea positiva.
+
+Tres límites deliberados: **no pisa lo sembrado** (si la zona ya tiene algún par ese día, el día
+entero se respeta), **no inventa pares** (solo propaga los que existen en los orígenes, y un par de
+origen con frecuencia 0 hereda 0, porque ese 0 es una decisión) y **no toca las zonas especiales**.
+
+> **Orden obligatorio: siembra `--vaciar` → herencia, y el origen es
+> `datos_historico/repertorio_maestra_vieja.csv`.** Ver la rutina semanal más abajo: el `--vaciar`
+> borra los pares de las zonas viejas, que son el origen de la herencia, y el respaldo con fecha de
+> `salidas/` se pisa en cada corrida.
 
 Con `--borrar-frecuencia-cero` la siembra además **borra** los pares que quedaron en 0 —los que
 no salieron de ningún histórico— dejando solo lo observado. Es destructivo, así que va detrás de
@@ -255,16 +283,45 @@ correspondiente. **El orden importa: primero medir, después sembrar.**
    > desempate por costumbre. `--vaciar` respalda el repertorio a
    > `salidas/carro_zonas_respaldo_<fecha>.csv` antes de borrar.
 
-4. **Mover los archivos a `datos/`**, que es donde vive el histórico ya sembrado.
+4. **Heredar el repertorio, inmediatamente después de sembrar y siempre en ese orden:**
 
-5. **Revisar el reporte de la siembra**: pares por día, zonas que siguen sin carro y, sobre todo, las
+   ```bash
+   uv run planeacion-heredar-repertorio salidas/mapeo_zonas_<fecha>.csv --aplicar
+   ```
+
+   > **El orden es obligatorio: siembra `--vaciar` → herencia. Nunca al revés.** La herencia solo
+   > escribe donde la zona **no tiene ningún par ese día**, así que corrida antes de la siembra
+   > rellenaría huecos que la siembra está por llenar con datos reales, y después la siembra los
+   > pisaría: el resultado no sería incorrecto, sería trabajo tirado. Al revés sí importa de verdad:
+   > el `--vaciar` borra los pares de las zonas viejas, que son **el origen** de la herencia.
+   >
+   > **Y nunca con `--desde-respaldo salidas/carro_zonas_respaldo_<fecha>.csv`.** Ese archivo se pisa
+   > en cada corrida: desde la segunda resiembra ya no contiene el repertorio de la maestra vieja,
+   > sino lo que sembró la corrida anterior, y heredar de ahí sale vacío **sin dar error**. El origen
+   > permanente es `datos_historico/repertorio_maestra_vieja.csv`, que está versionado en el repo y
+   > es el valor por defecto de la bandera: lo normal es no pasarla.
+
+5. **Mover los archivos a `datos/`**, que es donde vive el histórico ya sembrado.
+
+6. **Revisar el reporte de la siembra**: pares por día, zonas que siguen sin carro y, sobre todo, las
    dos listas de avisos — carros del histórico que no están en la flota y **zonas que no casan con el
    catálogo**. Esas no se siembran, así que una zona nueva que la operación empezó a usar sigue sin
    carro hasta darla de alta en Configuración → Zonas.
 
-Ejemplo real (octubre de 2026, los días 8 y 9 agregados a los 16 que había): out-of-sample **93,0 %**
-de coincidencia (97,4 % el jueves y 88,6 % el viernes), y tras sembrar los 18 archivos el repertorio
-pasó de 647 a **662 pares**, con 10 zonas-día que dejaron de estar sin carro.
+### El histórico comparable empieza el 20 de octubre de 2026
+
+A finales de octubre de 2026 la operación **redujo la maestra de 193 zonas a 101** y movió unos 3.600
+clientes de zona. Los archivos anteriores usan nombres que ya no existen: están en
+`datos_historico/nombres_viejos/` y **no sirven para sembrar ni para medir**. Sus mediciones siguen
+siendo ciertas, pero **no son comparables** con las de ahora: son de otra maestra, con otras zonas y
+otra flota. En particular el **93,0 %** que figuraba acá antes (días 8 y 9 de octubre, 18 archivos,
+647 → 662 pares) corresponde a esa maestra vieja.
+
+La serie comparable arranca con la semana del 20 de octubre de 2026. Primera medición out-of-sample
+con la maestra nueva: **87,5 %** (martes 27, 49 de 56 zonas), y **96,4 %** contando por camión en vez
+de por planilla —5 de las 7 diferencias son entre las dos planillas del mismo vehículo, así que la
+carga va en el mismo camión y solo cambia en cuál de sus dos hojas aparece. Repertorio resultante:
+**381 pares sembrados + 87 heredados = 468**.
 
 ## Validación contra las planeaciones manuales
 

@@ -9,6 +9,9 @@ Las dos reglas que más importan: lo sembrado con el nombre nuevo **manda** sobr
 lo heredado, y un par con frecuencia 0 **no es** un par ausente.
 """
 
+import csv
+from pathlib import Path
+
 from planeacion.application.puertos.salida.repositorios import ParRepertorio
 from planeacion.infraestructura.adaptadores.entrada.cli.herencia import (
     ENCABEZADO_MAPEO,
@@ -414,3 +417,111 @@ class TestLecturaDelRespaldo:
         filas = [["14", "NIEVES", _LUNES, "x"], ["", "NIEVES", _LUNES, "1"], ["15", "ASIS", _LUNES, "3"]]
 
         assert leer_respaldo(filas) == {ParRepertorio("15", "ASIS", _LUNES): 3}
+
+
+class _RepertorioFalso:
+    """Un `carro_zonas` en memoria, para correr ciclos de vaciado y siembra."""
+
+    def __init__(self, pares: dict[ParRepertorio, int]) -> None:
+        self.pares = dict(pares)
+
+    def frecuencias(self) -> dict[ParRepertorio, int]:
+        return dict(self.pares)
+
+    def vaciar(self) -> int:
+        cuantos = len(self.pares)
+        self.pares.clear()
+        return cuantos
+
+
+class _ContenedorFalso:
+    def __init__(self, repertorio: _RepertorioFalso) -> None:
+        self.carro_zonas = repertorio
+
+
+class TestElOrigenFijoSobreviveALasResiembras:
+    """`datos_historico/repertorio_maestra_vieja.csv` es el origen PERMANENTE.
+
+    Cada resiembra con `--vaciar` deja la tabla en cero, así que el respaldo con
+    fecha que escribe la siembra solo contiene lo que había justo antes: a partir
+    de la segunda resiembra eso ya no es el repertorio de la maestra vieja, es lo
+    sembrado en la corrida anterior. Heredar de ahí perdería la costumbre que la
+    herencia existe para conservar, y lo haría en silencio.
+
+    Por eso el origen vive en un archivo de nombre fijo, versionado, que ninguna
+    corrida escribe.
+    """
+
+    _VIEJOS = {
+        ParRepertorio("3", "CHIQUIN RUTA 1 NORTE", _LUNES): 18,
+        ParRepertorio("3", "CHIQUIN RUTA 1 NORTE", _MARTES): 15,
+    }
+    _ORIGENES = [_origen("CHIQUIN NORTE RUTA 3 - 4", "CHIQUIN RUTA 1 NORTE", 339, 339)]
+
+    def _ciclo(self, contenedor: _ContenedorFalso, salidas: Path, sembrado: dict[ParRepertorio, int]) -> None:
+        """Lo que hace una resiembra: vaciar (con respaldo con fecha) y sembrar."""
+        from planeacion.infraestructura.adaptadores.entrada.cli.sembrar_repertorio import _vaciar
+
+        _vaciar(contenedor, salidas)  # type: ignore[arg-type]
+        contenedor.carro_zonas.pares.update(sembrado)
+
+    def test_dos_vaciados_seguidos_no_alteran_el_archivo_de_origen(self, tmp_path: Path) -> None:
+        fijo = tmp_path / "repertorio_maestra_vieja.csv"
+        contenedor = _ContenedorFalso(_RepertorioFalso(self._VIEJOS))
+        from planeacion.infraestructura.adaptadores.entrada.cli.sembrar_repertorio import (
+            respaldar_repertorio,
+        )
+
+        respaldar_repertorio(contenedor, fijo)  # type: ignore[arg-type]
+        antes = fijo.read_bytes()
+
+        sembrado = {ParRepertorio("3", "CHIQUIN NORTE RUTA 3 - 4", _LUNES): 1}
+        self._ciclo(contenedor, tmp_path, sembrado)
+        self._ciclo(contenedor, tmp_path, sembrado)
+
+        assert fijo.read_bytes() == antes
+
+    def test_la_herencia_da_lo_mismo_en_la_primera_y_en_la_segunda_resiembra(self, tmp_path: Path) -> None:
+        """La prueba de que el archivo fijo cumple su función."""
+        fijo = tmp_path / "repertorio_maestra_vieja.csv"
+        contenedor = _ContenedorFalso(_RepertorioFalso(self._VIEJOS))
+        from planeacion.infraestructura.adaptadores.entrada.cli.sembrar_repertorio import (
+            respaldar_repertorio,
+        )
+
+        respaldar_repertorio(contenedor, fijo)  # type: ignore[arg-type]
+        with fijo.open(encoding="utf-8", newline="") as archivo:
+            del_origen = leer_respaldo(csv.reader(archivo))
+
+        sembrado = {ParRepertorio("3", "CHIQUIN NORTE RUTA 3 - 4", _LUNES): 1}
+        self._ciclo(contenedor, tmp_path, sembrado)
+        primera = heredar(self._ORIGENES, contenedor.carro_zonas.frecuencias(), frecuencias_origen=del_origen)
+        self._ciclo(contenedor, tmp_path, sembrado)
+        segunda = heredar(self._ORIGENES, contenedor.carro_zonas.frecuencias(), frecuencias_origen=del_origen)
+
+        # El martes se hereda las dos veces: la siembra solo cubrió el lunes.
+        assert primera.pares == segunda.pares
+        assert primera.pares == [ParRepertorio("3", "CHIQUIN NORTE RUTA 3 - 4", _MARTES, frecuencia=15)]
+
+    def test_heredar_del_respaldo_con_fecha_pierde_la_costumbre(self, tmp_path: Path) -> None:
+        """Lo que pasaría si se usara el archivo equivocado.
+
+        En la segunda resiembra, el respaldo con fecha ya no tiene a la zona vieja:
+        tiene lo sembrado en la corrida anterior. La herencia sale vacía y nadie se
+        enteraría.
+        """
+        contenedor = _ContenedorFalso(_RepertorioFalso(self._VIEJOS))
+        sembrado = {ParRepertorio("3", "CHIQUIN NORTE RUTA 3 - 4", _LUNES): 1}
+        self._ciclo(contenedor, tmp_path, sembrado)
+        self._ciclo(contenedor, tmp_path, sembrado)
+
+        con_fecha = next(tmp_path.glob("carro_zonas_respaldo_*.csv"))
+        with con_fecha.open(encoding="utf-8", newline="") as archivo:
+            del_respaldo = leer_respaldo(csv.reader(archivo))
+
+        herencia = heredar(
+            self._ORIGENES, contenedor.carro_zonas.frecuencias(), frecuencias_origen=del_respaldo
+        )
+
+        assert "CHIQUIN RUTA 1 NORTE" not in {par.nombre_zona for par in del_respaldo}
+        assert herencia.pares == []

@@ -252,3 +252,29 @@ class TestRespaldoDelRepertorio:
 
         assert respaldar_repertorio(self._contenedor({}), ruta) == 0
         assert ruta.read_text(encoding="utf-8").strip() == "numero_carro,nombre_zona,dia_semana,frecuencia"
+
+
+class TestSoloLaFlotaActivaSiembra:
+    """Las rutas de refuerzo no dejan repertorio.
+
+    La 23 de octubre de 2026 aparece en algunas hojas PLANEACION con un conductor
+    distinto cada vez y está inactiva en la base. Si sembrara, tendría pares que
+    el balanceador nunca consultaría y en la pestaña Repertorio se vería como una
+    ruta más de la flota.
+    """
+
+    _PARES = {("14", "(TUNJA): NIEVES", "lunes"), ("23", "(TUNJA): NIEVES", "lunes")}
+    _ZONAS = {"(TUNJA): NIEVES"}
+
+    def test_el_par_de_una_ruta_inactiva_no_entra(self) -> None:
+        validos, desconocidos, _ = cruzar_pares(self._PARES, {"14"}, self._ZONAS)
+
+        assert validos == {("14", "(TUNJA): NIEVES", "lunes")}
+        assert set(desconocidos) == {"23"}
+
+    def test_con_la_ruta_activa_el_par_si_entra(self) -> None:
+        """La misma entrada: lo que cambia es el estado de la ruta, nada más."""
+        validos, desconocidos, _ = cruzar_pares(self._PARES, {"14", "23"}, self._ZONAS)
+
+        assert len(validos) == 2
+        assert desconocidos == {}

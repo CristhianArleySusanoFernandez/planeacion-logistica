@@ -573,6 +573,64 @@ El proyecto se desarrolló en seis etapas, todas terminadas:
    la propuesta queda mejor o igual en las tres variables (25,5 contra 25,7 en clientes, 31,6 contra
    32,1 en pesos, 36,1 contra 36,8 en kilos).
 
+### Cambio de maestra de octubre de 2026
+
+A finales de octubre de 2026 la operación **redujo la maestra de 193 zonas a 101** (9.220 clientes) y
+movió **3.602 clientes de zona**: fusionó zonas (`CENTRO` + `CENTRO 2` → `CENTRO`; `MONIQUIRA`,
+`MONIQUIRA 2` y `MONIQUIRA B` → `MONIQUIRA`), partió otras en dos planillas
+(`RUTA OCCIDENTE 1`/`2`), renombró muchas y sacó de circulación las que no usaba. De las zonas
+viejas, **124 quedaron sin un solo cliente**.
+
+Eso dejó el repertorio —qué carro atiende qué zona cada día, con su `frecuencia`— apuntando a
+nombres que ya no reciben pedidos. El repertorio es trabajo de configuración de meses y no se
+reconstruye a mano, así que se **heredó por mapeo de clientes** en vez de resembrarse de cero:
+
+1. `planeacion-resincronizar` escribe `salidas/mapeo_zonas_<fecha>.csv`: por cada zona nueva, qué
+   fracción de sus clientes venía de cada zona vieja. Cuenta **todas** las filas de la maestra y no
+   solo las que cambiaron, así que un cliente que se quedó en su zona aparece como origen de sí misma
+   y las fracciones suman 1.
+2. `--desactivar-vacias` pasa a `activo = false` las 124 zonas sin clientes. **No se borran**: su
+   repertorio es justamente el origen de la herencia, y la zona puede volver.
+3. `planeacion-sembrar-repertorio --vaciar` siembra la semana nueva (un archivo por día, lunes a
+   sábado).
+4. `planeacion-heredar-repertorio` rellena los huecos que la semana no cubrió.
+
+Resultado: **381 pares sembrados + 87 heredados = 468**, y una sola zona activa sin ningún par
+(`SAMACA- LA CUMBRE`, una vereda de un cliente que no pidió esa semana). La primera medición
+out-of-sample con la maestra nueva dio **87,5 %** (martes 27 de octubre).
+
+**El histórico comparable arranca el 20 de octubre de 2026.** Los archivos anteriores están en
+`datos_historico/nombres_viejos/` y no sirven ni para sembrar ni para medir: sus mediciones siguen
+siendo ciertas pero **no son comparables**, porque son de otra maestra. El 93,0 % de principios de
+octubre es de esa serie vieja.
+
+#### El orden es obligatorio: siembra `--vaciar` → herencia
+
+Y el origen de la herencia es `datos_historico/repertorio_maestra_vieja.csv`, versionado en el repo.
+Las dos cosas por el mismo motivo: **el `--vaciar` borra los pares de las zonas viejas, que son el
+origen de la herencia**. De los 713 pares que había, 341 eran de las 124 zonas desactivadas. Heredar
+de la base ya vaciada, o del respaldo con fecha de `salidas/` —que se pisa en cada corrida y desde la
+segunda resiembra solo tiene lo que sembró la anterior—, **no da error**: encuentra poco o nada de
+dónde heredar y escribe 15 pares en vez de 93, en silencio. De ahí que `heredar()` reciba las dos
+entradas separadas: `frecuencias` (lo que hay en la base, decide qué días no se tocan) y
+`frecuencias_origen` (de dónde heredar).
+
+#### Limitación conocida: no se distingue lo heredado de lo observado
+
+La columna `frecuencia` no dice si un par salió de un archivo real o de una estimación, y en la
+pestaña Repertorio una zona heredada se ve igual que una recién sembrada (`×1`, `×2`). No se agregó
+una columna para marcar la fuente, y el motivo es que **hoy no hace falta**: por la regla 3 de la
+herencia —solo escribe donde la zona no tiene **ningún** par ese día— lo heredado y lo observado
+nunca coexisten para una misma zona-día. La fuente es deducible: si la zona-día tiene pares, son de
+la siembra; si los tiene por herencia, es porque la siembra no la cubrió.
+
+**Si esa regla cambia** —por ejemplo, si alguna vez se decide mezclar la estimación con lo observado
+en el mismo día, o sumar en vez de respetar— entonces sí hay que marcar la fuente en la base, porque
+dejarían de ser distinguibles y la usuaria no tendría cómo saber a qué le está creyendo.
+
+El reporte de la siembra y el de la herencia sí dan la cuenta separada por día, que es lo que hace
+falta para auditar una corrida.
+
 ### Limitación conocida: zonas que cruzan de pool
 
 El municipio de la zona define el pool con el que se balancea, y hay asignaciones reales que lo

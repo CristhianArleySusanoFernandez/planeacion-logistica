@@ -29,6 +29,13 @@ from planeacion.infraestructura.adaptadores.entrada.cli.sembrar_repertorio impor
     respaldar_repertorio,
 )
 
+# El origen PERMANENTE de la herencia: el repertorio de la maestra vieja, tal como
+# estaba antes de la primera resiembra. Va versionado y de nombre fijo porque cada
+# resiembra con --vaciar deja la tabla en cero, y el respaldo con fecha que la
+# siembra escribe solo tiene lo que había justo antes: a partir de la segunda
+# resiembra, eso ya es lo sembrado en la corrida anterior y no la costumbre vieja.
+ORIGEN_DE_LA_HERENCIA = Path("datos_historico/repertorio_maestra_vieja.csv")
+
 _MAX_EJEMPLOS = 10
 # La base los guarda en minúscula; se compara sin tener en cuenta mayúsculas para
 # que el orden del reporte sea el de la semana y no el alfabético.
@@ -106,10 +113,10 @@ def main() -> int:
     parser.add_argument(
         "--desde-respaldo",
         type=Path,
-        help="hereda del repertorio guardado en este CSV en vez del que hay en la base. "
-        "OBLIGATORIO después de una resiembra con --vaciar: el vaciado borra los pares de "
-        "las zonas viejas, que son el origen de la herencia. Es el "
-        "salidas/carro_zonas_respaldo_<fecha>.csv que escribe la siembra antes de vaciar.",
+        default=ORIGEN_DE_LA_HERENCIA,
+        help=f"CSV del que heredar (por defecto {ORIGEN_DE_LA_HERENCIA}). Nunca el respaldo con "
+        "fecha de salidas/: ese se pisa en cada corrida y a partir de la segunda resiembra ya "
+        "no tiene el repertorio viejo. Si el archivo no existe, se hereda de la base.",
     )
     parser.add_argument(
         "--salidas",
@@ -139,17 +146,23 @@ def main() -> int:
     # desactivadas: son justamente el origen de la herencia.
     frecuencias = contenedor.carro_zonas.frecuencias()
     del_origen = None
-    if args.desde_respaldo is not None:
-        if not args.desde_respaldo.exists():
-            print(f"No existe el respaldo {args.desde_respaldo}", file=sys.stderr)
-            return 1
+    if args.desde_respaldo.exists():
         with args.desde_respaldo.open(encoding="utf-8", newline="") as archivo:
             del_origen = leer_respaldo(csv.reader(archivo))
         if not del_origen:
-            print(f"El respaldo {args.desde_respaldo} no tiene pares utilizables", file=sys.stderr)
+            print(f"El archivo {args.desde_respaldo} no tiene pares utilizables", file=sys.stderr)
             return 1
-        print(f"Heredando del respaldo {args.desde_respaldo}: {len(del_origen)} par(es) de origen")
-        print(f"Repertorio actual en la base: {len(frecuencias)} par(es) (mandan sobre la herencia)")
+        print(f"Origen de la herencia: {args.desde_respaldo} ({len(del_origen)} pares)")
+    elif args.desde_respaldo != ORIGEN_DE_LA_HERENCIA:
+        print(f"No existe el archivo {args.desde_respaldo}", file=sys.stderr)
+        return 1
+    else:
+        # Antes de la primera resiembra el repertorio viejo todavía está en la
+        # base, así que heredar de ahí es correcto. Después NO: el aviso está para
+        # que una herencia silenciosamente vacía no pase por buena.
+        print(f"AVISO: no existe {ORIGEN_DE_LA_HERENCIA}; se hereda del repertorio de la base.")
+        print("  Si ya se corrió una resiembra con --vaciar, el origen viejo ya no está ahí.")
+    print(f"Repertorio actual en la base: {len(frecuencias)} pares (mandan sobre la herencia)")
     herencia = heredar(origenes, frecuencias, especiales, frecuencias_origen=del_origen)
     _reportar(herencia, especiales, aplicado=False)
 

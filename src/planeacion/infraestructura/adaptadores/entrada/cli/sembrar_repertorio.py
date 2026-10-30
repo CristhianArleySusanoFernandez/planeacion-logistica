@@ -383,16 +383,31 @@ def main() -> int:
     contenedor = crear_contenedor(settings)
     if args.vaciar:
         _vaciar(contenedor, args.salidas)
-    numeros_carros = {carro.numero for carro in contenedor.carros.listar()}
+    # Solo la flota ACTIVA siembra repertorio. Las rutas de refuerzo —la 23 de
+    # octubre, que cambia de conductor según el día— aparecen en algunas hojas,
+    # pero el balanceador no las usa: su repertorio no se consultaría nunca y en
+    # la pestaña Repertorio se vería como una ruta más.
+    carros_base = contenedor.carros.listar()
+    numeros_carros = {carro.numero for carro in carros_base if carro.activo}
+    inactivos = {carro.numero: carro.conductor for carro in carros_base if not carro.activo}
     nombres_zonas = {zona.nombre for zona in contenedor.zonas.listar()}
     validos, carros_desconocidos, zonas_desconocidas = cruzar_pares(
         set(frecuencias), numeros_carros, nombres_zonas
     )
+    rutas_inactivas = {numero: dias for numero, dias in carros_desconocidos.items() if numero in inactivos}
+    carros_desconocidos = {
+        numero: dias for numero, dias in carros_desconocidos.items() if numero not in inactivos
+    }
 
     print(f"\nTríos (carro, zona, día) distintos en el histórico: {len(frecuencias)}")
     print("Distribución por veces observado:")
     for etiqueta, cuantos in distribucion_de_frecuencias(frecuencias).items():
         print(f"  visto {etiqueta}: {cuantos} par(es)")
+    if rutas_inactivas:
+        print("\nRutas inactivas del histórico (se saltan: el balanceador no las usa):")
+        for numero in sorted(rutas_inactivas, key=clave_orden_carro):
+            dias_de_la_ruta = ", ".join(sorted(rutas_inactivas[numero]))
+            print(f"  - ruta {numero} ({inactivos[numero]}): aparece en {dias_de_la_ruta}")
     if carros_desconocidos:
         print("\nAVISO: carros del histórico que NO están en la base (se saltan):")
         for numero in sorted(carros_desconocidos, key=clave_orden_carro):
