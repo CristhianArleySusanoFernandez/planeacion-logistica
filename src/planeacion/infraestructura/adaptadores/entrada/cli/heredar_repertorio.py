@@ -23,6 +23,7 @@ from planeacion.infraestructura.adaptadores.entrada.cli.herencia import (
     Herencia,
     heredar,
     leer_mapeo,
+    leer_respaldo,
 )
 from planeacion.infraestructura.adaptadores.entrada.cli.sembrar_repertorio import (
     respaldar_repertorio,
@@ -103,6 +104,14 @@ def main() -> int:
         help="escribe los pares heredados en Supabase (por defecto solo reporta)",
     )
     parser.add_argument(
+        "--desde-respaldo",
+        type=Path,
+        help="hereda del repertorio guardado en este CSV en vez del que hay en la base. "
+        "OBLIGATORIO después de una resiembra con --vaciar: el vaciado borra los pares de "
+        "las zonas viejas, que son el origen de la herencia. Es el "
+        "salidas/carro_zonas_respaldo_<fecha>.csv que escribe la siembra antes de vaciar.",
+    )
+    parser.add_argument(
         "--salidas",
         type=Path,
         default=Path("salidas"),
@@ -129,7 +138,19 @@ def main() -> int:
     # Las frecuencias traen el repertorio completo, incluidas las zonas ya
     # desactivadas: son justamente el origen de la herencia.
     frecuencias = contenedor.carro_zonas.frecuencias()
-    herencia = heredar(origenes, frecuencias, especiales)
+    del_origen = None
+    if args.desde_respaldo is not None:
+        if not args.desde_respaldo.exists():
+            print(f"No existe el respaldo {args.desde_respaldo}", file=sys.stderr)
+            return 1
+        with args.desde_respaldo.open(encoding="utf-8", newline="") as archivo:
+            del_origen = leer_respaldo(csv.reader(archivo))
+        if not del_origen:
+            print(f"El respaldo {args.desde_respaldo} no tiene pares utilizables", file=sys.stderr)
+            return 1
+        print(f"Heredando del respaldo {args.desde_respaldo}: {len(del_origen)} par(es) de origen")
+        print(f"Repertorio actual en la base: {len(frecuencias)} par(es) (mandan sobre la herencia)")
+    herencia = heredar(origenes, frecuencias, especiales, frecuencias_origen=del_origen)
     _reportar(herencia, especiales, aplicado=False)
 
     if not args.aplicar:

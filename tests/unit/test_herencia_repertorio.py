@@ -12,10 +12,12 @@ lo heredado, y un par con frecuencia 0 **no es** un par ausente.
 from planeacion.application.puertos.salida.repositorios import ParRepertorio
 from planeacion.infraestructura.adaptadores.entrada.cli.herencia import (
     ENCABEZADO_MAPEO,
+    ENCABEZADO_RESPALDO,
     SIN_ORIGEN,
     Origen,
     heredar,
     leer_mapeo,
+    leer_respaldo,
 )
 
 _LUNES = "LUNES"
@@ -355,3 +357,60 @@ class TestElRepertorioNoFiltraPorEstadoDeLaZona:
         herencia = heredar(origenes, repositorio.frecuencias())  # type: ignore[attr-defined]
 
         assert herencia.pares == [ParRepertorio("3", nueva, _LUNES, frecuencia=18)]
+
+
+class TestHeredarDespuesDeVaciar:
+    """El origen de la herencia vive fuera de la base después de un --vaciar.
+
+    La resiembra con `--vaciar` borra el repertorio completo, y eso incluye los
+    pares de las 124 zonas viejas, que son el único origen de la herencia. Si la
+    herencia leyera de la base ya vaciada no daría error: no encontraría de dónde
+    heredar y escribiría poco o nada, en silencio. De ahí que las dos entradas
+    estén separadas.
+    """
+
+    def test_hereda_del_respaldo_aunque_la_base_este_vaciada(self) -> None:
+        origenes = [_origen("NIEVES 1", "NIEVES", 10, 10)]
+        respaldo = _frecuencias(("14", "NIEVES", _LUNES, 12))
+
+        herencia = heredar(origenes, {}, frecuencias_origen=respaldo)
+
+        assert herencia.pares == [ParRepertorio("14", "NIEVES 1", _LUNES, frecuencia=12)]
+
+    def test_lo_recien_sembrado_manda_sobre_el_respaldo(self) -> None:
+        """Las dos entradas tienen papeles distintos: el respaldo dice de dónde
+        heredar, la base dice qué no tocar."""
+        origenes = [_origen("NIEVES 1", "NIEVES", 10, 10)]
+        respaldo = _frecuencias(("14", "NIEVES", _LUNES, 12), ("14", "NIEVES", _MARTES, 12))
+        sembrado = _frecuencias(("21", "NIEVES 1", _LUNES, 1))
+
+        herencia = heredar(origenes, sembrado, frecuencias_origen=respaldo)
+
+        assert herencia.pares == [ParRepertorio("14", "NIEVES 1", _MARTES, frecuencia=12)]
+        assert herencia.dias_respetados == {"NIEVES 1": {_LUNES}}
+
+    def test_sin_respaldo_el_origen_es_la_propia_base(self) -> None:
+        """El caso normal, sin vaciado: una sola fuente."""
+        origenes = [_origen("NIEVES 1", "NIEVES", 10, 10)]
+        frecuencias = _frecuencias(("14", "NIEVES", _LUNES, 7))
+
+        assert heredar(origenes, frecuencias) == heredar(
+            origenes, frecuencias, frecuencias_origen=frecuencias
+        )
+
+
+class TestLecturaDelRespaldo:
+    def test_lee_los_pares_y_saltea_el_encabezado(self) -> None:
+        filas = [list(ENCABEZADO_RESPALDO), ["14", "(TUNJA): NIEVES", _LUNES, "12"]]
+
+        assert leer_respaldo(filas) == {ParRepertorio("14", "(TUNJA): NIEVES", _LUNES): 12}
+
+    def test_conserva_el_cero(self) -> None:
+        """Un 0 es una decisión deliberada: perderlo al leer el respaldo haría que
+        la herencia lo tratara como un par que nunca existió."""
+        assert leer_respaldo([["14", "NIEVES", _LUNES, "0"]]) == {ParRepertorio("14", "NIEVES", _LUNES): 0}
+
+    def test_una_fila_incompleta_se_descarta_sin_reventar(self) -> None:
+        filas = [["14", "NIEVES", _LUNES, "x"], ["", "NIEVES", _LUNES, "1"], ["15", "ASIS", _LUNES, "3"]]
+
+        assert leer_respaldo(filas) == {ParRepertorio("15", "ASIS", _LUNES): 3}

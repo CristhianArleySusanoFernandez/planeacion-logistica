@@ -34,6 +34,8 @@ from planeacion.domain.modelo import nombre_sin_prefijo
 SIN_ORIGEN = "(cliente nuevo)"
 
 ENCABEZADO_MAPEO = ("zona_nueva", "zona_vieja", "clientes", "total_de_la_zona", "fraccion")
+# El respaldo que escribe `planeacion-sembrar-repertorio` antes de vaciar.
+ENCABEZADO_RESPALDO = ("numero_carro", "nombre_zona", "dia_semana", "frecuencia")
 
 
 @dataclass(frozen=True)
@@ -105,21 +107,30 @@ def heredar(
     origenes: Sequence[Origen],
     frecuencias: Mapping[ParRepertorio, int],
     especiales: Collection[str] = (),
+    frecuencias_origen: Mapping[ParRepertorio, int] | None = None,
 ) -> Herencia:
     """Qué pares de repertorio le tocarían a cada zona nueva.
 
-    ``frecuencias`` es el repertorio tal como está hoy: incluye tanto los pares de
-    las zonas viejas (el origen de la herencia, aunque esas zonas estén ya
-    desactivadas) como los de las nuevas (lo sembrado, que manda).
+    Son DOS entradas, y conviene no confundirlas:
+
+    - ``frecuencias``: el repertorio tal como está hoy en la base. Decide qué días
+      ya están cubiertos y por lo tanto no se tocan.
+    - ``frecuencias_origen``: de dónde heredar. Por defecto las mismas, pero la
+      resiembra con ``--vaciar`` **borra los pares de las zonas viejas**, que son
+      justamente el origen: ahí hay que pasarle el respaldo anterior al vaciado.
+      Separarlas es lo que permite vaciar y heredar en la misma corrida.
     """
+    del_origen = frecuencias if frecuencias_origen is None else frecuencias_origen
     nombres_especiales = {nombre_sin_prefijo(nombre).upper() for nombre in especiales}
     herencia = Herencia()
 
-    # El repertorio actual, indexado para preguntar por zona y por (zona, día).
+    # Lo que hay hoy: qué zona tiene pares en qué días (lo que no se toca).
     dias_con_pares: dict[str, set[str]] = {}
-    por_zona_dia: dict[tuple[str, str], dict[str, int]] = {}
-    for par, frecuencia in frecuencias.items():
+    for par in frecuencias:
         dias_con_pares.setdefault(par.nombre_zona, set()).add(par.dia_semana)
+    # De dónde heredar, indexado por (zona de origen, día).
+    por_zona_dia: dict[tuple[str, str], dict[str, int]] = {}
+    for par, frecuencia in del_origen.items():
         por_zona_dia.setdefault((par.nombre_zona, par.dia_semana), {})[par.numero_carro] = frecuencia
 
     for zona_nueva, sus_origenes in _por_zona_nueva(origenes).items():
@@ -184,3 +195,25 @@ def _mezclar(
     # Mínimo 1 donde la suma es positiva: redondear 0,4 a 0 convertiría "este
     # carro la atiende poco" en "este carro no la atiende", que es otra cosa.
     return {numero_carro: max(1, round(total)) if total > 0 else 0 for numero_carro, total in suma.items()}
+
+
+def leer_respaldo(lineas: Iterable[Sequence[str]]) -> dict[ParRepertorio, int]:
+    """El CSV de respaldo del repertorio → frecuencias, para heredar de ahí.
+
+    Hace falta porque la resiembra con ``--vaciar`` borra los pares de las zonas
+    viejas, que son el origen de la herencia: sin este archivo, heredar después de
+    vaciar no encontraría nada de dónde heredar y saldría vacío sin dar error.
+    """
+    frecuencias: dict[ParRepertorio, int] = {}
+    for fila in lineas:
+        if len(fila) < 4 or tuple(campo.strip() for campo in fila[:4]) == ENCABEZADO_RESPALDO:
+            continue
+        carro, zona, dia = (campo.strip() for campo in fila[:3])
+        if not carro or not zona or not dia:
+            continue
+        try:
+            frecuencia = int(fila[3])
+        except ValueError:
+            continue
+        frecuencias[ParRepertorio(carro, zona, dia)] = frecuencia
+    return frecuencias
