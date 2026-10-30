@@ -217,18 +217,24 @@ def _imprimir_detalle(resultado: ResultadoValidacion) -> None:
         f"sin carro elegible: {resultado.zonas_sin_carro}"
     )
     print(
-        f"  COINCIDENCIA: {comparacion.coincidencias}/{comparacion.comparables} = "
+        f"  COINCIDENCIA por planilla: {comparacion.coincidencias}/{comparacion.comparables} = "
         f"{comparacion.porcentaje:.1%}   (pesimista sobre las {comparacion.zonas_manuales} "
         f"del manual: {comparacion.porcentaje_pesimista:.1%})"
+    )
+    print(
+        f"  COINCIDENCIA por camión:   {comparacion.coincidencias_por_camion}/"
+        f"{comparacion.comparables} = {comparacion.porcentaje_por_camion:.1%}"
+        f"   ({comparacion.mismo_camion} diferencia(s) son otra planilla del mismo camión)"
     )
 
     if comparacion.diferencias:
         print(f"\n  Diferencias ({len(comparacion.diferencias)}):")
         for diferencia in comparacion.diferencias:
+            marca = " [mismo camión, otra planilla]" if diferencia.mismo_conductor else ""
             print(
                 f"    {diferencia.zona[:52]:52s} manual {diferencia.carro_manual:>3s} -> "
                 f"propuesto {diferencia.carro_propuesto:>3s}  "
-                f"({diferencia.clientes} cli, ${diferencia.pesos:,.2f})"
+                f"({diferencia.clientes} cli, ${diferencia.pesos:,.2f}){marca}"
             )
     if comparacion.sin_propuesta:
         print(f"\n  Zonas del manual que la app no asignó ({len(comparacion.sin_propuesta)}):")
@@ -241,23 +247,30 @@ def _imprimir_resumen(resultados: list[ResultadoValidacion]) -> None:
     print("RESUMEN")
     print("=" * 100)
     print(
-        f"{'Archivo':45s} {'Zonas':>6s} {'Coinciden':>10s} {'%':>7s} {'Sin carro':>10s} "
-        f"{'Kg fuera':>9s} {'Lineas':>7s}"
+        f"{'Archivo':45s} {'Zonas':>6s} {'Coinciden':>10s} {'%':>7s} {'% camion':>9s} "
+        f"{'Sin carro':>10s} {'Kg fuera':>9s} {'Lineas':>7s}"
     )
     for resultado in resultados:
         comparacion = resultado.comparacion
         print(
             f"{resultado.archivo[:45]:45s} {comparacion.comparables:6d} "
             f"{comparacion.coincidencias:10d} {comparacion.porcentaje:7.1%} "
+            f"{comparacion.porcentaje_por_camion:9.1%} "
             f"{resultado.zonas_sin_carro:10d} {resultado.kilos_excluidos:9,.0f} "
             f"{resultado.lineas_kilos_excluidos:7d}"
         )
     porcentajes = [resultado.comparacion.porcentaje for resultado in resultados]
+    por_camion = [resultado.comparacion.porcentaje_por_camion for resultado in resultados]
     print("-" * 100)
-    print(f"{'PROMEDIO':45s} {'':6s} {'':10s} {sum(porcentajes) / len(porcentajes):7.1%}")
-    print(f"{'MEDIANA':45s} {'':6s} {'':10s} {statistics.median(porcentajes):7.1%}")
-    print(f"{'MINIMO':45s} {'':6s} {'':10s} {min(porcentajes):7.1%}")
-    print(f"{'MAXIMO':45s} {'':6s} {'':10s} {max(porcentajes):7.1%}")
+    # Las dos columnas juntas: por planilla es lo estricto contra la hoja, por
+    # camión es si la carga llega al vehículo correcto. Una sin la otra engaña.
+    for etiqueta, valor, valor_camion in (
+        ("PROMEDIO", sum(porcentajes) / len(porcentajes), sum(por_camion) / len(por_camion)),
+        ("MEDIANA", statistics.median(porcentajes), statistics.median(por_camion)),
+        ("MINIMO", min(porcentajes), min(por_camion)),
+        ("MAXIMO", max(porcentajes), max(por_camion)),
+    ):
+        print(f"{etiqueta:45s} {'':6s} {'':10s} {valor:7.1%} {valor_camion:9.1%}")
     _imprimir_por_dia(resultados)
     _imprimir_balance(resultados)
     _imprimir_peor_dia(resultados)
@@ -542,6 +555,13 @@ def main() -> int:
         caso_uso = crear_generar_planeacion(contenedor)
     else:
         caso_uso = crear_generar_planeacion(contenedor, lector=LectorEcomEmbebido())
+    # Número de ruta -> conductor_clave: lo que deja ver si dos rutas distintas son
+    # dos planillas del mismo camión (Fabián 1 y 2, Javier Reyes 14 y 15...).
+    # Las rutas sin conductor registrado quedan fuera: sin clave no se puede
+    # afirmar que dos rutas sean el mismo camión, y no se inventa la igualdad.
+    claves_de_conductor = {
+        carro.numero: carro.conductor_clave for carro in contenedor.carros.listar() if carro.conductor_clave
+    }
     reglas = ReglasBalanceo(w_kilos=args.w_kilos, w_frecuencia=args.w_frecuencia)
     print(f"Pesos: kilos {args.w_kilos} | desempate por frecuencia {args.w_frecuencia}")
     resultados: list[ResultadoValidacion] = []
@@ -570,7 +590,7 @@ def main() -> int:
                 clientes=planeacion.total_clientes,
             ),
             totales_manuales=totales,
-            comparacion=comparar_asignaciones(manual, planeacion.asignaciones()),
+            comparacion=comparar_asignaciones(manual, planeacion.asignaciones(), claves_de_conductor),
             metricas=dict(planeacion.resultado.metricas_finales),
             metricas_manual=metricas_del_manual(planeacion, manual),
             zonas_sin_carro=len(planeacion.resultado.zonas_sin_carro),

@@ -318,10 +318,27 @@ otra flota. En particular el **93,0 %** que figuraba acá antes (días 8 y 9 de 
 647 → 662 pares) corresponde a esa maestra vieja.
 
 La serie comparable arranca con la semana del 20 de octubre de 2026. Primera medición out-of-sample
-con la maestra nueva: **87,5 %** (martes 27, 49 de 56 zonas), y **96,4 %** contando por camión en vez
-de por planilla —5 de las 7 diferencias son entre las dos planillas del mismo vehículo, así que la
-carga va en el mismo camión y solo cambia en cuál de sus dos hojas aparece. Repertorio resultante:
-**381 pares sembrados + 87 heredados = 468**.
+con la maestra nueva, martes 27: **87,5 % por planilla** (49 de 56 zonas) y **96,4 % por camión**
+(54 de 56). Repertorio resultante: **381 pares sembrados + 87 heredados = 468**.
+
+### Las dos coincidencias: por planilla y por camión
+
+El validador reporta siempre las dos, y nunca una sin la otra:
+
+- **Por planilla**: la ruta propuesta es exactamente la de la hoja. Es lo estricto.
+- **Por camión**: la ruta propuesta tiene el mismo `conductor_clave` que la de la hoja, o sea que es
+  **el mismo vehículo, otra planilla**.
+
+La diferencia no es cosmética. Cinco conductores llevan dos planillas (Fabián 1 y 2, Angélica 1 y 2,
+Raúl, Javier Reyes, Carlos) y la operación intercambia carga entre ellas según el día, para que las
+dos lleguen parejas a bodega. Si la app pone una zona en la planilla 1 y la hoja la tiene en la 2, la
+carga va en el camión correcto y cuál de las dos hojas la lleve lo decide bodega. El 27 de octubre,
+5 de las 7 diferencias eran de ese tipo —incluidos dos intercambios complementarios, donde la app
+usó el mismo par de planillas que la hoja, cruzadas—; las otras 2 (Santa Ana y Santa Lucía, 7
+clientes) sí iban a otro conductor.
+
+Medir solo por planilla castiga como error de reparto algo que no lo es; medir solo por camión
+esconde los errores reales. De ahí que vayan juntas.
 
 ## Validación contra las planeaciones manuales
 

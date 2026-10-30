@@ -597,7 +597,9 @@ reconstruye a mano, así que se **heredó por mapeo de clientes** en vez de rese
 
 Resultado: **381 pares sembrados + 87 heredados = 468**, y una sola zona activa sin ningún par
 (`SAMACA- LA CUMBRE`, una vereda de un cliente que no pidió esa semana). La primera medición
-out-of-sample con la maestra nueva dio **87,5 %** (martes 27 de octubre).
+out-of-sample con la maestra nueva dio **87,5 % por planilla y 96,4 % por camión** (martes 27 de
+octubre): 5 de las 7 diferencias eran entre las dos planillas del mismo vehículo. Ver
+`comparador_asignaciones.py` para por qué se reportan las dos métricas y nunca una sola.
 
 **El histórico comparable arranca el 20 de octubre de 2026.** Los archivos anteriores están en
 `datos_historico/nombres_viejos/` y no sirven ni para sembrar ni para medir: sus mediciones siguen

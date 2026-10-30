@@ -100,3 +100,87 @@ def test_las_zonas_que_la_app_asigno_de_mas_no_afectan_el_conteo() -> None:
     )
 
     assert (comparacion.zonas_manuales, comparacion.comparables, comparacion.coincidencias) == (1, 1, 1)
+
+
+class TestCoincidenciaPorCamion:
+    """Dos planillas del mismo camión no son dos vehículos distintos.
+
+    Cinco conductores llevan dos planillas (Fabián 1 y 2, Angélica 1 y 2, Raúl,
+    Javier Reyes, Carlos) y la operación intercambia carga entre las dos según el
+    día, para que lleguen parejas a bodega. Si la app pone una zona en la planilla
+    1 y la hoja la tiene en la 2, la carga va en el mismo camión y solo cambia en
+    cuál de las dos hojas aparece. Medir solo por planilla castiga eso como si
+    fuera un error de reparto; medir solo por camión esconde los errores reales.
+    Por eso van las dos.
+    """
+
+    _CLAVES = {"14": "JAVIER REYES", "15": "JAVIER REYES", "18": "JOSE YOVANY", "19": "LUIS EDUARDO"}
+
+    def _con_clave(self, nombre_zona: str, numero_carro: str) -> AsignacionZona:
+        asignacion = _asignacion(nombre_zona, numero_carro)
+        return AsignacionZona(
+            zona=asignacion.zona,
+            carro=Carro(numero=numero_carro, conductor_clave=self._CLAVES[numero_carro]),
+            facturas=asignacion.facturas,
+            clientes=asignacion.clientes,
+            pesos=asignacion.pesos,
+            kilos=asignacion.kilos,
+        )
+
+    def test_el_cambio_de_planilla_falla_por_planilla_y_acierta_por_camion(self) -> None:
+        comparacion = comparar_asignaciones(
+            {"NUEVO COLON": "14"}, [self._con_clave("NUEVO COLON", "15")], self._CLAVES
+        )
+
+        assert (comparacion.coincidencias, comparacion.porcentaje) == (0, 0.0)
+        assert (comparacion.coincidencias_por_camion, comparacion.porcentaje_por_camion) == (1, 1.0)
+        assert comparacion.diferencias[0].mismo_conductor is True
+
+    def test_el_cambio_de_conductor_falla_en_las_dos(self) -> None:
+        """La carga va a otro camión: eso es una diferencia de verdad."""
+        comparacion = comparar_asignaciones(
+            {"SANTA ANA": "19"}, [self._con_clave("SANTA ANA", "18")], self._CLAVES
+        )
+
+        assert comparacion.coincidencias == 0
+        assert comparacion.coincidencias_por_camion == 0
+        assert comparacion.diferencias[0].mismo_conductor is False
+
+    def test_un_acierto_por_planilla_tambien_lo_es_por_camion(self) -> None:
+        comparacion = comparar_asignaciones(
+            {"NUEVO COLON": "14"}, [self._con_clave("NUEVO COLON", "14")], self._CLAVES
+        )
+
+        assert comparacion.porcentaje == comparacion.porcentaje_por_camion == 1.0
+        assert comparacion.mismo_camion == 0
+
+    def test_la_mezcla_de_los_dos_casos_cuenta_cada_uno_donde_va(self) -> None:
+        manual = {"NUEVO COLON": "14", "SANTA ANA": "19", "TIBANA": "15"}
+        propuesta = [
+            self._con_clave("NUEVO COLON", "15"),  # otra planilla del mismo camión
+            self._con_clave("SANTA ANA", "18"),  # otro camión
+            self._con_clave("TIBANA", "15"),  # igual
+        ]
+
+        comparacion = comparar_asignaciones(manual, propuesta, self._CLAVES)
+
+        assert (comparacion.coincidencias, comparacion.comparables) == (1, 3)
+        assert comparacion.coincidencias_por_camion == 2
+        assert comparacion.mismo_camion == 1
+
+    def test_sin_las_claves_no_se_inventa_igualdad(self) -> None:
+        """Sin saber quién maneja cada ruta no se puede afirmar que sea el mismo
+        camión: la medición por camión cae a la de planilla, que es lo estricto."""
+        comparacion = comparar_asignaciones({"NUEVO COLON": "14"}, [self._con_clave("NUEVO COLON", "15")])
+
+        assert comparacion.coincidencias_por_camion == comparacion.coincidencias == 0
+
+    def test_una_ruta_del_manual_que_no_esta_en_la_flota_no_cuenta_como_mismo_camion(self) -> None:
+        """La ruta 23 de refuerzo aparece en hojas viejas y no está en la flota:
+        sin su clave, la diferencia se cuenta entera."""
+        comparacion = comparar_asignaciones(
+            {"NUEVO COLON": "23"}, [self._con_clave("NUEVO COLON", "14")], self._CLAVES
+        )
+
+        assert comparacion.coincidencias_por_camion == 0
+        assert comparacion.diferencias[0].mismo_conductor is False
