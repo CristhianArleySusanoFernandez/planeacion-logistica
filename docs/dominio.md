@@ -691,11 +691,13 @@ operación ya dijo, con 311 clientes, que Moniquirá la atiende Barbosa.
 | `DISTRIROSAS` | TUNJA | **TUNJA** | 2.905 clientes |
 | `MEDELLIN` | MEDELLÍN | `OTROS` | ninguna zona atiende Medellín: es otra ciudad de verdad |
 
-**COMFABOY contradice la práctica observada**: su cliente está en Moniquirá, pero Julián lo despachó
-con la ruta 18 (Tunja) las tres veces que hay registro. Se dejó en BARBOSA porque el criterio es la
-dirección, y porque un camión de Barbosa pasa a 20 km del cliente mientras el de Tunja está a 60. Si
-la práctica de Tunja resulta ser la correcta —por ejemplo porque el pedido se entrega en una sede de
-Tunja—, se cambia en Configuración → Zonas: es una fila.
+**COMFABOY está PENDIENTE DE CONFIRMACIÓN con la operación, no decidido.** Su cliente está en
+Moniquirá, pero Julián lo despachó con la ruta 18 (Tunja) las tres veces que hay registro: el
+criterio de la dirección y la práctica observada apuntan a municipios distintos. Quedó en BARBOSA
+provisionalmente porque el criterio aplicado es la dirección (y un camión de Barbosa pasa a 20 km del
+cliente, el de Tunja a 60), pero puede que el pedido se entregue en una sede de Tunja o se consolide
+desde allá por una razón que la dirección no refleja. Se resuelve preguntándole a Julián; si es
+Tunja, se cambia en Configuración → Zonas, que es una fila.
 
 `MEDELLIN` se queda en `OTROS`, y eso significa que el día que pida, la app le va a sugerir una
 viajera rural y **no se podrá mover a una ruta de Tunja desde el Paso 3**, porque una especial se
