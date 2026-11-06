@@ -668,19 +668,40 @@ sistema consulta una lista de nombres: `NOMBRES_ESPECIALES` existe solo para doc
 007. Si el balanceador la consultara habría dos verdades, y discreparían el día que la operación
 marque una zona nueva o le ponga ruta fija a una de las trece.
 
-#### Limitación conocida: cinco especiales caen en el pool OTROS
+#### El municipio de una zona de un solo cliente se decide por su dirección
 
 Cinco de los trece nombres no traen prefijo de municipio (`COMFABOY`, `DISTRIROSAS`, `IMPACTA`,
-`MEDELLIN`, `DISTRIBUCIONES LEON - CONCEPCION`), así que `parsear_municipio` los deja en `OTROS`,
-cuyas rutas son las viajeras rurales (Muzo, Florián, Garagoa, Miraflores). Para un cliente que en la
-práctica se despacha desde Tunja, eso hace que la app sugiera un camión que no le sirve: el 27 de
-octubre propuso la ruta 11 (Miraflores) para COMFABOY, que Julián despachó con la 18 (Tunja).
+`MEDELLIN`, `DISTRIBUCIONES LEON - CONCEPCION`), así que `parsear_municipio` los dejaba en `OTROS`,
+cuyas rutas son las viajeras rurales (Muzo, Florián, Garagoa, Miraflores). El 27 de octubre la app
+propuso la ruta 11 (Miraflores) para COMFABOY: un camión que no le sirve.
 
-El mecanismo funciona; lo que está mal es el municipio de la zona, que es un dato. La evidencia
-disponible apunta a TUNJA para dos de los cinco —COMFABOY con la ruta 18 dos veces y DISTRIBUCIONES
-LEON con la 20 una vez, más la 23 de refuerzo (Tunja) dos veces—; los otros tres no han pedido desde
-que hay registro, así que no hay con qué decidirlo. Se corrige con `planeacion-municipios-zona` o a
-mano en Configuración → Zonas, no con código.
+`proponer_por_evidencia` no sirve para estas zonas —exige 2 clientes y 3 asignaciones, y una zona de
+un cliente que pide de vez en cuando nunca los junta— y **tampoco habría que usarla**, porque mide
+quién la repartió y eso puede ser circunstancial. La dirección es el dato estable: el camión cambia,
+la puerta no. De ahí `proponer_por_la_ciudad_del_cliente`, que decide por la ciudad del cliente
+resuelta contra la geografía de la **propia base**: en qué pool están las zonas normales de los
+clientes de esa ciudad. No hay una tabla de municipios de Boyacá en el código, y no hace falta —la
+operación ya dijo, con 311 clientes, que Moniquirá la atiende Barbosa.
+
+| zona | ciudad del cliente | pool | por qué |
+|---|---|---|---|
+| `COMFABOY` | MONIQUIRÁ | **BARBOSA** | 311 clientes de Moniquirá están en zonas de Barbosa |
+| `DISTRIBUCIONES LEON - CONCEPCION` | SORACÁ | **TUNJA** | 52 clientes de Soracá están en zonas de Tunja |
+| `IMPACTA` | SORACÁ | **TUNJA** | ídem (su dirección es «KM 4 BIS BG TUNJA SORACA») |
+| `DISTRIROSAS` | TUNJA | **TUNJA** | 2.905 clientes |
+| `MEDELLIN` | MEDELLÍN | `OTROS` | ninguna zona atiende Medellín: es otra ciudad de verdad |
+
+**COMFABOY contradice la práctica observada**: su cliente está en Moniquirá, pero Julián lo despachó
+con la ruta 18 (Tunja) las tres veces que hay registro. Se dejó en BARBOSA porque el criterio es la
+dirección, y porque un camión de Barbosa pasa a 20 km del cliente mientras el de Tunja está a 60. Si
+la práctica de Tunja resulta ser la correcta —por ejemplo porque el pedido se entrega en una sede de
+Tunja—, se cambia en Configuración → Zonas: es una fila.
+
+`MEDELLIN` se queda en `OTROS`, y eso significa que el día que pida, la app le va a sugerir una
+viajera rural y **no se podrá mover a una ruta de Tunja desde el Paso 3**, porque una especial se
+mueve dentro de su municipio. Es correcto que sea así —el camión de Barbosa no pasa por la puerta de
+un cliente de Tunja— pero con el municipio mal puesto se vuelve un callejón sin salida que solo se
+sale por Configuración.
 
 ### Limitación conocida: zonas que cruzan de pool
 

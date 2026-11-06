@@ -26,6 +26,7 @@ verdad. Las que sí cambian de pool se marcan en el reporte.
 import argparse
 import sys
 from collections import Counter, defaultdict
+from collections.abc import Collection, Mapping, Sequence
 from dataclasses import dataclass
 from datetime import date
 from pathlib import Path
@@ -34,7 +35,7 @@ from pydantic import ValidationError
 
 from planeacion.config.contenedor import Contenedor, crear_contenedor
 from planeacion.config.settings import Settings
-from planeacion.domain.modelo import MUNICIPIO_OTROS, Municipio, Zona
+from planeacion.domain.modelo import MUNICIPIO_OTROS, Cliente, Municipio, Zona
 from planeacion.domain.servicios.parseo_zonas import (
     detectar_regla_chiquinquira,
     normalizar_nombre_zona,
@@ -57,6 +58,10 @@ ZONAS_QUE_SE_QUEDAN_VIAJERAS = ("RAQUIRA",)
 # porque igual se balancean en el pool de su única ruta elegible.
 MINIMO_CLIENTES = 2
 MINIMO_ASIGNACIONES = 3
+# Cuántos clientes de una ciudad hacen falta, en zonas normales, para aceptar que
+# esa ciudad "pertenece" a un pool. Con menos, la ciudad no tiene geografía
+# establecida en la base y no sirve para decidir.
+MINIMO_CLIENTES_DE_LA_CIUDAD = 5
 
 
 @dataclass(frozen=True)
@@ -114,6 +119,142 @@ def proponer_por_el_nombre(zonas: list[Zona]) -> list[PropuestaZona]:
                 )
             )
     return sorted(propuestas, key=lambda p: p.nombre)
+
+
+def normalizar_ciudad(ciudad: str) -> str:
+    """La ciudad del cliente, sin el código DANE que ECOM a veces le pega delante.
+
+    En la maestra la misma ciudad llega como ``TUNJA`` y como ``15001 - TUNJA``.
+    Solo se quita el prefijo si es **numérico**: hay ciudades cuyo nombre lleva un
+    guion de verdad (``BARBOSA - PUENTE NACIONAL``) y cortarlas perdería la mitad.
+    """
+    texto = (ciudad or "").strip().upper()
+    prefijo, separador, resto = texto.partition(" - ")
+    if separador and resto and prefijo.strip().isdigit():
+        return resto.strip()
+    return texto
+
+
+def pools_por_ciudad(zonas: Sequence[Zona], clientes: Sequence[Cliente]) -> dict[str, tuple[str, int]]:
+    """Ciudad → (pool que la atiende, cuántos clientes lo sostienen).
+
+    Se calcula con la geografía de la **propia base**: en qué pool están las zonas
+    normales de los clientes de esa ciudad. No hay una tabla de municipios de
+    Boyacá en el código, y no hace falta: la operación ya dijo, con 294 clientes,
+    que Moniquirá la atiende Barbosa.
+
+    Las zonas especiales no votan: son justo las que se quieren decidir.
+    """
+    municipio_de_zona = {zona.nombre: zona.municipio.nombre for zona in zonas if not zona.especial}
+    por_ciudad: dict[str, Counter[str]] = {}
+    for cliente in clientes:
+        if cliente.zona is None or cliente.zona.nombre not in municipio_de_zona:
+            continue
+        ciudad = normalizar_ciudad(cliente.ciudad or "")
+        if not ciudad:
+            continue
+        por_ciudad.setdefault(ciudad, Counter())[municipio_de_zona[cliente.zona.nombre]] += 1
+    resultado: dict[str, tuple[str, int]] = {}
+    for ciudad, pools in por_ciudad.items():
+        pool, cuantos = pools.most_common(1)[0]
+        if cuantos >= MINIMO_CLIENTES_DE_LA_CIUDAD:
+            resultado[ciudad] = (pool, cuantos)
+    return resultado
+
+
+@dataclass(frozen=True)
+class PropuestaPorCiudad:
+    """El municipio de una zona de UN cliente, decidido por su dirección."""
+
+    nombre: str
+    municipio_actual: str
+    ciudad_del_cliente: str
+    municipio_propuesto: str | None  # None = no hay con qué decidirlo
+    clientes_que_lo_sostienen: int
+    motivo: str
+
+
+def proponer_por_la_ciudad_del_cliente(
+    zonas: Sequence[Zona],
+    clientes: Sequence[Cliente],
+    candidatas: Collection[str],
+) -> list[PropuestaPorCiudad]:
+    """El municipio de una zona de un solo cliente, según DÓNDE ESTÁ el cliente.
+
+    ``proponer_por_evidencia`` no sirve para estas zonas: exige 2 clientes y 3
+    asignaciones, y una zona de un cliente que pide de vez en cuando nunca los
+    junta. Pero tampoco habría que usarla, porque mide **quién la repartió** y eso
+    puede ser circunstancial: a COMFABOY la llevó una ruta de Tunja, y su cliente
+    está en Moniquirá, que en esta base la atiende Barbosa con 294 clientes.
+
+    La dirección es el dato estable: el camión cambia, la puerta no.
+    """
+    geografia = pools_por_ciudad(zonas, clientes)
+    por_zona: dict[str, list[Cliente]] = {}
+    for cliente in clientes:
+        if cliente.zona is not None and cliente.zona.nombre in candidatas:
+            por_zona.setdefault(cliente.zona.nombre, []).append(cliente)
+
+    propuestas: list[PropuestaPorCiudad] = []
+    for zona in sorted(zonas, key=lambda z: z.nombre):
+        if zona.nombre not in candidatas:
+            continue
+        suyos = por_zona.get(zona.nombre, [])
+        ciudades = {normalizar_ciudad(cliente.ciudad or "") for cliente in suyos} - {""}
+        if not ciudades:
+            propuestas.append(
+                PropuestaPorCiudad(
+                    nombre=zona.nombre,
+                    municipio_actual=zona.municipio.nombre,
+                    ciudad_del_cliente="",
+                    municipio_propuesto=None,
+                    clientes_que_lo_sostienen=0,
+                    motivo="sus clientes no tienen ciudad en la maestra",
+                )
+            )
+            continue
+        if len(ciudades) > 1:
+            propuestas.append(
+                PropuestaPorCiudad(
+                    nombre=zona.nombre,
+                    municipio_actual=zona.municipio.nombre,
+                    ciudad_del_cliente=", ".join(sorted(ciudades)),
+                    municipio_propuesto=None,
+                    clientes_que_lo_sostienen=0,
+                    motivo="sus clientes están en ciudades distintas",
+                )
+            )
+            continue
+        ciudad = ciudades.pop()
+        encontrado = geografia.get(ciudad)
+        if encontrado is None:
+            propuestas.append(
+                PropuestaPorCiudad(
+                    nombre=zona.nombre,
+                    municipio_actual=zona.municipio.nombre,
+                    ciudad_del_cliente=ciudad,
+                    municipio_propuesto=None,
+                    clientes_que_lo_sostienen=0,
+                    motivo=f"ninguna zona normal atiende {ciudad}: es una ciudad de verdad aparte",
+                )
+            )
+            continue
+        pool, cuantos = encontrado
+        propuestas.append(
+            PropuestaPorCiudad(
+                nombre=zona.nombre,
+                municipio_actual=zona.municipio.nombre,
+                ciudad_del_cliente=ciudad,
+                municipio_propuesto=pool if pool != zona.municipio.nombre else None,
+                clientes_que_lo_sostienen=cuantos,
+                motivo=(
+                    f"{cuantos} cliente(s) de {ciudad} están en zonas del pool {pool}"
+                    if pool != zona.municipio.nombre
+                    else f"ya está en {pool}, que es el pool de {ciudad}"
+                ),
+            )
+        )
+    return propuestas
 
 
 def proponer_por_evidencia(
@@ -187,7 +328,36 @@ def _expandir(patrones: list[str]) -> list[Path]:
     return list(dict.fromkeys(rutas))
 
 
-def _lineas_del_reporte(por_nombre: list[PropuestaZona], por_evidencia: list[PropuestaZona]) -> list[str]:
+def _lineas_de_ciudad(propuestas: Sequence[PropuestaPorCiudad]) -> list[str]:
+    """La tabla de las zonas de un cliente: zona → ciudad → municipio propuesto."""
+    if not propuestas:
+        return []
+    lineas = [
+        "",
+        "## Zonas de un solo cliente (se deciden por la dirección, no por el camión)",
+        "",
+        "La evidencia por rutas no las alcanza: exige 2 clientes y 3 asignaciones. Y tampoco habría "
+        "que usarla, porque mide quién la repartió y eso puede ser circunstancial; la dirección es "
+        "el dato estable. El pool de cada ciudad sale de la propia base: en qué pool están las "
+        "zonas normales de los clientes de esa ciudad.",
+        "",
+        "| zona | pool hoy | ciudad del cliente | propuesto | evidencia |",
+        "|---|---|---|---|---|",
+    ]
+    for p in propuestas:
+        propuesto = p.municipio_propuesto or "— se queda"
+        lineas.append(
+            f"| `{p.nombre}` | {p.municipio_actual} | {p.ciudad_del_cliente or '—'} | "
+            f"**{propuesto}** | {p.motivo} |"
+        )
+    return lineas
+
+
+def _lineas_del_reporte(
+    por_nombre: list[PropuestaZona],
+    por_evidencia: list[PropuestaZona],
+    por_ciudad: Sequence[PropuestaPorCiudad] = (),
+) -> list[str]:
     lineas = [f"# Municipio de las zonas — {date.today()}", ""]
     lineas.append(
         "Criterio: el municipio de una zona define el pool con el que se balancea. "
@@ -222,23 +392,35 @@ def _lineas_del_reporte(por_nombre: list[PropuestaZona], por_evidencia: list[Pro
         lineas.append("")
         for nombre in ZONAS_QUE_SE_QUEDAN_VIAJERAS:
             lineas.append(f"- `{nombre}`: se queda en OTROS; es la zona viajera documentada.")
+    lineas.extend(_lineas_de_ciudad(por_ciudad))
     return lineas
 
 
-def _aplicar(contenedor: Contenedor, propuestas: list[PropuestaZona], activas: dict[str, bool]) -> int:
-    """Upsert por nombre del municipio nuevo, recalculando la regla de Chiquinquirá."""
+def _aplicar(
+    contenedor: Contenedor,
+    cambios: Sequence[tuple[str, str, str]],
+    actuales: Mapping[str, Zona],
+) -> int:
+    """Upsert por nombre del municipio nuevo, recalculando la regla de Chiquinquirá.
+
+    ``cambios`` son tríos (zona, municipio actual, municipio propuesto). Todo lo
+    demás de la zona se conserva leyéndolo de ``actuales``: cambiar el municipio no
+    puede apagar una zona ni desmarcar un cliente especial de rebote.
+    """
     aplicados = 0
-    for propuesta in propuestas:
-        municipio = Municipio(nombre=propuesta.municipio_propuesto)
+    for nombre, antes, propuesto in cambios:
+        municipio = Municipio(nombre=propuesto)
+        actual = actuales.get(nombre)
         contenedor.zonas.actualizar_zona(
             Zona(
-                nombre=propuesta.nombre,
+                nombre=nombre,
                 municipio=municipio,
-                regla_chiquinquira=detectar_regla_chiquinquira(propuesta.nombre, municipio.nombre),
-                activa=activas.get(propuesta.nombre, True),
+                regla_chiquinquira=detectar_regla_chiquinquira(nombre, municipio.nombre),
+                activa=actual.activa if actual else True,
+                especial=actual.especial if actual else False,
             )
         )
-        print(f"  {propuesta.nombre}: {propuesta.municipio_actual} -> {propuesta.municipio_propuesto}")
+        print(f"  {nombre}: {antes} -> {propuesto}")
         aplicados += 1
     return aplicados
 
@@ -267,8 +449,9 @@ def main() -> int:
     zonas = contenedor.zonas.listar()
     carros = contenedor.carros.listar()
     pool_de_ruta = {c.numero: (c.municipio.nombre if c.municipio else MUNICIPIO_OTROS) for c in carros}
+    todos_los_clientes = contenedor.clientes.listar()
     clientes_por_zona: Counter[str] = Counter()
-    for cliente in contenedor.clientes.listar():
+    for cliente in todos_los_clientes:
         if cliente.zona is not None:
             clientes_por_zona[cliente.zona.nombre] += 1
 
@@ -277,7 +460,11 @@ def main() -> int:
 
     por_nombre = proponer_por_el_nombre(zonas)
     por_evidencia = proponer_por_evidencia(zonas, pool_de_ruta, observaciones, clientes_por_zona)
-    reporte = "\n".join(_lineas_del_reporte(por_nombre, por_evidencia))
+    # Las zonas de UN cliente no las alcanza la evidencia por rutas (exige 2
+    # clientes y 3 asignaciones), así que se deciden por la dirección del cliente.
+    de_un_cliente = {zona.nombre for zona in zonas if clientes_por_zona[zona.nombre] == 1 and zona.activa}
+    por_ciudad = proponer_por_la_ciudad_del_cliente(zonas, todos_los_clientes, de_un_cliente)
+    reporte = "\n".join(_lineas_del_reporte(por_nombre, por_evidencia, por_ciudad))
     print()
     print(reporte)
 
@@ -293,8 +480,14 @@ def main() -> int:
     print("\n" + "=" * 78)
     print("APLICANDO")
     print("=" * 78)
-    activas = {zona.nombre: zona.activa for zona in zonas}
-    aplicados = _aplicar(contenedor, por_nombre + por_evidencia, activas)
+    actuales = {zona.nombre: zona for zona in zonas}
+    cambios = [(p.nombre, p.municipio_actual, p.municipio_propuesto) for p in por_nombre + por_evidencia]
+    cambios += [
+        (p.nombre, p.municipio_actual, p.municipio_propuesto)
+        for p in por_ciudad
+        if p.municipio_propuesto is not None
+    ]
+    aplicados = _aplicar(contenedor, cambios, actuales)
     print(f"\n{aplicados} zona(s) actualizada(s).")
 
     pendientes = proponer_por_el_nombre(contenedor.zonas.listar())
