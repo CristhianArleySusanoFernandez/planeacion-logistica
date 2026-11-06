@@ -436,6 +436,31 @@ Un cliente no se borra: se **desactiva** con la casilla `Activo`, para no perder
 La lista se lee una sola vez por sesión y el filtrado ocurre en Python, porque la búsqueda
 sin acentos no se puede hacer en la consulta sin `unaccent`.
 
+### Guía de usuario (PDF): secciones desactualizadas tras el Prompt 23
+
+La guía en PDF se escribió antes del cambio de maestra de octubre de 2026. Estas secciones hay que
+rehacerlas; el resto sigue valiendo:
+
+- **Configuración → Zonas.** Hay una columna nueva, **Especial** (casilla), con su tooltip: "cliente
+  que pide esporádicamente; se despacha con el vehículo que convenga". Hay que explicar qué cambia al
+  marcarla (no usa repertorio, elegible en cualquier ruta de su municipio, no cuenta como zona sin
+  carro, no se siembra ni hereda) y que es la **única** fuente de la marca. Las capturas con 193 zonas
+  ya no corresponden: ahora son 101 activas y 124 inactivas.
+- **Configuración → Zonas por carro.** El contador "Zonas sin asignar" y el filtro "Solo zonas sin
+  carro" ya no cuentan las especiales. Las capturas muestran el repertorio viejo.
+- **Paso 3 — Reparto.** Tres cosas nuevas: la marca «⭐ cliente especial, verifique el vehículo» en la
+  fila de la zona (y que esa zona se puede mover a cualquier ruta de su municipio, aunque en
+  Chiquinquirá tenga lado); la alerta ámbar **"Planillas de X desparejas"** entre las alertas
+  operativas; y la columna **Planillas** (parejas / ⚠ desparejas) en el resumen por conductor. El
+  aviso de "zonas sin asignar" ahora separa las especiales con su propio texto.
+- **Configuración → Parámetros.** Dos filas nuevas desde la 006 y la 007: `umbral_cv_aceptable` /
+  `umbral_cv_atencion` (el semáforo) y `desbalance_planillas`.
+- **Excel de salida, hoja `BASE`.** La columna Alerta ahora también trae "Cliente especial (...):
+  verifique el vehículo" y "planillas desparejas: N %".
+- **Cualquier mención a los números de coincidencia.** El 93 % es de la maestra vieja; la serie
+  comparable empieza el 20 de octubre de 2026 y el validador reporta dos números (por planilla y por
+  camión). Ver «El histórico comparable empieza el 20 de octubre de 2026» más arriba.
+
 ## Exportación a Excel (salida para facturación)
 
 El exportador replica el layout del `.xlsm` de referencia (inspeccionado, no supuesto):

@@ -706,6 +706,48 @@ mueve dentro de su municipio. Es correcto que sea así —el camión de Barbosa 
 un cliente de Tunja— pero con el municipio mal puesto se vuelve un callejón sin salida que solo se
 sale por Configuración.
 
+### Planillas
+
+Varias "rutas" de la flota son **dos planillas del mismo camión**: Fabián 1 y 2 (rutas 1-2),
+Angélica Arias 1 y 2 (3-4), Raúl 1 y 2 (12-13), Javier Reyes (14-15, sin sufijo en el nombre) y
+Carlos 1 y 2 (16-17). Comparten `conductor_clave`, y es esa clave —no el nombre— lo que el sistema
+usa para saber que son el mismo vehículo. Hay además zonas **partidas en dos** justamente para que
+las dos planillas lleguen parejas a bodega: `CHIQUIN NORTE RUTA 3 - 4` / `3 - 44`,
+`CHIQUIN CENTRO RUTA SUR 1 -2` / `1 -22`, `SUSA - SIMIJACA RUTA SUR 1` / `2`, `RUTA OCCIDENTE 1` /
+`2`. Las mitades se intercambian entre planillas según el día y **los nombres se quedan como están**.
+
+Dos consecuencias en el sistema:
+
+- **La coincidencia se mide dos veces.** Si la app pone una zona en la planilla 1 y la hoja la tiene
+  en la 2, la carga va en el camión correcto y cuál de las dos hojas la lleve lo decide bodega. Por
+  eso `planeacion-validar` reporta siempre la coincidencia **por planilla** (estricta) y **por
+  camión** (misma `conductor_clave`), y nunca una sin la otra: el 27 de octubre dieron 87,5 % y
+  96,4 %, porque 5 de las 7 diferencias eran cambio de planilla. Ver `comparador_asignaciones.py`.
+- **La alerta de planillas desparejas.** El balanceador reparte por ruta y no sabe que dos rutas
+  comparten camión, así que puede dejar una planilla con el doble de la otra sin que ninguna métrica
+  lo vea: por municipio el CV no lo nota y por conductor la suma lo esconde. `alertas_de_planillas`
+  compara la mayor contra la menor en clientes, pesos **o** kilos y avisa en ámbar cuando la
+  diferencia supera `desbalance_planillas` (0,35 por defecto), nombrando las **rutas**: "la ruta 14
+  lleva 310 kg y la 15 lleva 160 kg". Se ve con las demás alertas del Paso 3, en la columna
+  *Planillas* del resumen por conductor y en la columna Alerta de `BASE`, en las dos rutas del
+  camión. En el umbral exacto no avisa. **No cambia el reparto**: es una meta, no una regla.
+
+#### Calibración pendiente del umbral de planillas
+
+Medido sobre el **reparto real de Julián** en los 7 días del 20 al 27 de octubre de 2026 (33 pares
+camión-día), el exceso de la planilla mayor sobre la menor supera el 35 % en **27 de 33 (82 %)**. Con
+0,50 avisa en 26; con 0,75 en 19; con 1,00 todavía en 17 (52 %). La variable que dispara es casi
+siempre **kilos**: hay días con 1.595 %, 1.292 % o 1.154 % de diferencia en kilos entre las dos
+planillas de un mismo camión con clientes y pesos parejos, lo que dice más de cómo vienen los kilos
+en ECOM (ver la guarda de kilos, § 5) o de que las mitades se reparten por lo que cabe y no por
+peso, que de un reparto mal hecho.
+
+Es la misma lección del semáforo: un aviso que sale casi todos los días deja de informar. El default
+0,35 es el que pidió la operación y no se tocó; **lo que hay que decidir con Julián** es si el umbral
+sube, si los kilos salen de la comparación (dejando clientes y pesos), o si las tres variables deben
+pasarse a la vez en vez de bastar con una. Las tres cosas son un parámetro o un cambio chico en
+`alertas_de_planillas`, y ninguna toca el reparto.
+
 ### Limitación conocida: zonas que cruzan de pool
 
 El municipio de la zona define el pool con el que se balancea, y hay asignaciones reales que lo
