@@ -35,6 +35,19 @@ class CargaConductor:
 _SIN_CONDUCTOR = "sin conductor"
 
 
+def cargas_por_conductor(cargas: Sequence[CargaCarro]) -> dict[str, list[CargaCarro]]:
+    """Las cargas de cada conductor, SIN sumar: una lista por clave.
+
+    Es lo que necesita quien compara las planillas de un mismo camión entre sí;
+    ``agrupar_por_conductor`` las suma y pierde esa vista.
+    """
+    por_conductor: dict[str, list[CargaCarro]] = {}
+    for carga in cargas:
+        clave = carga.carro.conductor_clave or clave_conductor(carga.carro.conductor) or _SIN_CONDUCTOR
+        por_conductor.setdefault(clave, []).append(carga)
+    return por_conductor
+
+
 def agrupar_por_conductor(cargas: Sequence[CargaCarro]) -> list[CargaConductor]:
     """Las cargas sumadas por conductor, ordenadas por su primera ruta.
 
@@ -43,10 +56,7 @@ def agrupar_por_conductor(cargas: Sequence[CargaCarro]) -> list[CargaConductor]:
     todavía no tiene la columna poblada. Las rutas sin conductor se agrupan
     aparte en vez de desaparecer del resumen.
     """
-    por_conductor: dict[str, list[CargaCarro]] = {}
-    for carga in cargas:
-        clave = carga.carro.conductor_clave or clave_conductor(carga.carro.conductor) or _SIN_CONDUCTOR
-        por_conductor.setdefault(clave, []).append(carga)
+    por_conductor = cargas_por_conductor(cargas)
 
     agrupadas = [
         CargaConductor(

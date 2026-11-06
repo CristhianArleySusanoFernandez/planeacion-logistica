@@ -22,6 +22,7 @@ from planeacion.domain.modelo import (
     clave_orden_carro,
 )
 from planeacion.domain.modelo.parametros import (
+    CLAVE_DESBALANCE_PLANILLAS,
     CLAVE_MAX_FACTURAS_CONDUCTOR,
     CLAVE_MIN_CLIENTES_CONDUCTOR,
     CLAVE_VEHICULOS_REFERENCIA,
@@ -31,6 +32,7 @@ from planeacion.domain.servicios.alertas_operativas import (
     Alerta,
     alerta_de_promedio_por_vehiculo,
     alertas_de_conductores,
+    alertas_de_planillas,
 )
 from planeacion.infraestructura.adaptadores.entrada.web import datos, estado, estilos
 
@@ -85,7 +87,7 @@ def mostrar(contenedor: Contenedor) -> None:
     )
 
     _alertas_operativas(contenedor, resultado.cargas_por_municipio, planeacion.total_facturas)
-    _resumen_por_conductor(resultado.cargas_por_municipio)
+    _resumen_por_conductor(resultado.cargas_por_municipio, parametros)
 
     municipios = sorted(resultado.cargas_por_municipio)
     for tab, municipio in zip(st.tabs(municipios), municipios, strict=True):
@@ -206,12 +208,14 @@ def _alertas_operativas(
     )
     if del_dia is not None:
         alertas.append(del_dia)
+    alertas.extend(alertas_de_planillas(cargas_por_municipio, parametros.numero(CLAVE_DESBALANCE_PLANILLAS)))
 
     estilos.titulo_seccion("Alertas operativas")
     if not alertas:
         st.markdown(
             '<span class="texto-suave">Sin alertas: ningún conductor queda por debajo del '
-            "mínimo de clientes ni por encima del máximo de facturas.</span>",
+            "mínimo de clientes ni por encima del máximo de facturas, y las planillas de un "
+            "mismo camión van parejas.</span>",
             unsafe_allow_html=True,
         )
         return
@@ -227,7 +231,7 @@ def _alertas_operativas(
     )
 
 
-def _resumen_por_conductor(cargas_por_municipio: dict[str, list[CargaCarro]]) -> None:
+def _resumen_por_conductor(cargas_por_municipio: dict[str, list[CargaCarro]], parametros: Parametros) -> None:
     """Lo mismo que el reparto, visto por quien maneja.
 
     El balanceador reparte por ruta, que es la unidad real, pero un conductor con
@@ -238,9 +242,17 @@ def _resumen_por_conductor(cargas_por_municipio: dict[str, list[CargaCarro]]) ->
     agrupadas = agrupar_por_conductor(cargas)
     if len(agrupadas) == len(cargas):
         return  # un conductor por ruta: la tabla no agregaría nada
+    # Quién tiene las planillas desparejas, para marcarlo en su fila: es la vista
+    # donde se ve de un vistazo qué camión hay que reacomodar en bodega.
+    desparejas = {
+        alerta.conductor
+        for alerta in alertas_de_planillas(
+            cargas_por_municipio, parametros.numero(CLAVE_DESBALANCE_PLANILLAS)
+        )
+    }
     with st.expander(f"Resumen por conductor ({len(agrupadas)} conductores, {len(cargas)} rutas)"):
         estilos.tabla_marca(
-            ["Conductor", "Rutas", "Facturas", "Clientes", "Pesos", "Kilos"],
+            ["Conductor", "Rutas", "Facturas", "Clientes", "Pesos", "Kilos", "Planillas"],
             [
                 [
                     grupo.conductor,
@@ -249,11 +261,19 @@ def _resumen_por_conductor(cargas_por_municipio: dict[str, list[CargaCarro]]) ->
                     f"{grupo.clientes:,}",
                     f"${grupo.pesos:,.0f}",
                     f"{grupo.kilos:,.0f}",
+                    estilos.Html(_marca_de_planillas(grupo.conductor in desparejas, len(grupo.rutas))),
                 ]
                 for grupo in agrupadas
             ],
             numericas=("Facturas", "Clientes", "Pesos", "Kilos"),
         )
+
+
+def _marca_de_planillas(desparejas: bool, rutas: int) -> str:
+    """Un conductor de una sola ruta no tiene planillas que comparar."""
+    if rutas < 2:
+        return ""
+    return estilos.badge("⚠ desparejas", "ambar") if desparejas else estilos.badge("parejas", "verde")
 
 
 def _mostrar_municipio(municipio: str, cargas: list[CargaCarro], planeacion: PlaneacionCompleta) -> None:

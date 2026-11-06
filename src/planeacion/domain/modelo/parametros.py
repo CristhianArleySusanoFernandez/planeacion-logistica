@@ -34,6 +34,7 @@ CLAVE_VEHICULOS_REFERENCIA = "vehiculos_referencia"
 CLAVE_KILOS_MAX_POR_UNIDAD = "kilos_max_por_unidad"
 CLAVE_UMBRAL_CV_ACEPTABLE = "umbral_cv_aceptable"
 CLAVE_UMBRAL_CV_ATENCION = "umbral_cv_atencion"
+CLAVE_DESBALANCE_PLANILLAS = "desbalance_planillas"
 
 
 @dataclass(frozen=True)
@@ -95,6 +96,13 @@ CATALOGO: tuple[DefinicionParametro, ...] = (
         Decimal(str(UMBRAL_CV_ATENCION)),
         "Hasta este CV el semáforo va en ámbar; por encima, rojo. Solo cambia el color: el "
         "reparto propuesto es el mismo.",
+    ),
+    DefinicionParametro(
+        CLAVE_DESBALANCE_PLANILLAS,
+        Decimal("0.35"),
+        "Diferencia desde la que dos planillas del mismo camión se consideran desparejas, como "
+        "fracción de la menor (0,35 = 35 %). Se compara en clientes, pesos y kilos. Solo avisa: el "
+        "reparto no cambia.",
     ),
     DefinicionParametro(
         CLAVE_KILOS_MAX_POR_UNIDAD,

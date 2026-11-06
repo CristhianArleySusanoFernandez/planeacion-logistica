@@ -30,6 +30,7 @@ from openpyxl.worksheet.worksheet import Worksheet
 from planeacion.application.dto.planeacion import PlaneacionCompleta
 from planeacion.domain.modelo import CargaCarro, Parametros, clave_orden_carro
 from planeacion.domain.modelo.parametros import (
+    CLAVE_DESBALANCE_PLANILLAS,
     CLAVE_MAX_FACTURAS_CONDUCTOR,
     CLAVE_MIN_CLIENTES_CONDUCTOR,
     CLAVE_VEHICULOS_REFERENCIA,
@@ -37,6 +38,7 @@ from planeacion.domain.modelo.parametros import (
 from planeacion.domain.servicios.alertas_operativas import (
     alerta_de_promedio_por_vehiculo,
     alertas_de_conductores,
+    alertas_de_planillas,
     alertas_por_ruta,
     nota_de_clientes_especiales,
 )
@@ -226,6 +228,9 @@ class ExportadorExcelPlaneacion:
             planeacion.total_facturas,
             vehiculos_referencia=parametros.entero(CLAVE_VEHICULOS_REFERENCIA),
             max_facturas=parametros.entero(CLAVE_MAX_FACTURAS_CONDUCTOR),
+        )
+        alertas.extend(
+            alertas_de_planillas(cargas_por_municipio, parametros.numero(CLAVE_DESBALANCE_PLANILLAS))
         )
         alerta_por_ruta = alertas_por_ruta(alertas, todas)
         cargas: list[CargaCarro] = sorted(

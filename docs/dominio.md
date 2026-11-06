@@ -358,6 +358,7 @@ las filas en vez de reescribirlas, para no tener dos fuentes de verdad.
 | `vehiculos_referencia` | 12 | Divisor del "Promedio Vh". **Fijo a propósito**: es el de la hoja que la operación mira, y usar "los carros con carga" daría otro número. |
 | `umbral_cv_aceptable` | 0,25 | Hasta este CV el semáforo va en verde. Los 0,10 de julio de 2026 eran de otra flota: el reparto **real** mide 25–46 %, así que los cuatro municipios salían en rojo siempre. |
 | `umbral_cv_atencion` | 0,40 | Hasta acá ámbar, por encima rojo. Solo cambia el color: los umbrales no entran en la función de costo. |
+| `desbalance_planillas` | 0,35 | Desde qué diferencia dos planillas del mismo camión se consideran desparejas, como fracción de la menor, en clientes, pesos **o** kilos. Solo avisa. |
 | `kilos_max_por_unidad` | 25 | Techo de la guarda de kilos. Una unidad de venta es una caja o un display; ningún producto sano de 2026 se acerca, y hay fichas con 715,5 kg (ver § 5). |
 
 ## 6.bis.2 Sugerencia de zona para clientes nuevos
