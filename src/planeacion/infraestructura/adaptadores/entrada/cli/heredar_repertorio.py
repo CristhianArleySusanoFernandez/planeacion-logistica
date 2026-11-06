@@ -18,7 +18,6 @@ from pydantic import ValidationError
 
 from planeacion.config.contenedor import Contenedor, crear_contenedor
 from planeacion.config.settings import Settings
-from planeacion.domain.modelo import NOMBRES_ESPECIALES, nombre_sin_prefijo
 from planeacion.infraestructura.adaptadores.entrada.cli.herencia import (
     Herencia,
     heredar,
@@ -49,14 +48,14 @@ def _orden_del_dia(dia: str) -> int:
 
 
 def _nombres_especiales(contenedor: Contenedor) -> list[str]:
-    """Las zonas especiales: la marca de la base si existe, el catálogo si no.
+    """Las zonas especiales, según `zonas.especial`: la única fuente.
 
-    La columna `especial` llega con la migración 007. Mientras no esté aplicada se
-    usan los nombres del dominio, así que la herencia nunca le inventa repertorio
-    a un cliente especial por el orden del despliegue.
+    No hay respaldo en una lista del código a propósito. La marca se edita en
+    Configuración → Zonas, así que una lista en el código sería una segunda
+    verdad que empezaría a discrepar el día que la operación marque o desmarque
+    una zona, y nadie se enteraría.
     """
-    marcadas = [zona.nombre for zona in contenedor.zonas.listar() if zona.especial]
-    return marcadas or list(NOMBRES_ESPECIALES)
+    return [zona.nombre for zona in contenedor.zonas.listar() if zona.especial]
 
 
 def _reportar(herencia: Herencia, especiales: list[str], aplicado: bool) -> None:
@@ -76,11 +75,8 @@ def _reportar(herencia: Herencia, especiales: list[str], aplicado: bool) -> None
     print(f"Zonas especiales ignoradas (no tienen repertorio): {len(herencia.especiales_ignoradas)}")
     for nombre in herencia.especiales_ignoradas:
         print(f"  - {nombre}")
-    if len(especiales) == len(NOMBRES_ESPECIALES) and not any(
-        nombre_sin_prefijo(nombre).upper() in {n.upper() for n in NOMBRES_ESPECIALES}
-        for nombre in herencia.especiales_ignoradas
-    ):
-        print("  (ninguna zona especial estaba en el mapeo)")
+    if not especiales:
+        print("  AVISO: ninguna zona está marcada como especial en la base (¿falta la 007?).")
 
     print(f"\nZonas nuevas que quedan SIN NINGÚN par: {len(herencia.sin_ningun_par)}")
     print("  Sin par no tienen carro elegible: hay que asignarlas a mano en Configuración.")

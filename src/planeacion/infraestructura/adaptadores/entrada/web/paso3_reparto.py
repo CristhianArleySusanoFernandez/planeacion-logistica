@@ -18,6 +18,7 @@ from planeacion.domain.modelo import (
     MetricasDesbalance,
     Parametros,
     UmbralesDesbalance,
+    Zona,
     clave_orden_carro,
 )
 from planeacion.domain.modelo.parametros import (
@@ -52,15 +53,27 @@ def mostrar(contenedor: Contenedor) -> None:
     else:
         st.caption("No hay planeación previa de este día de semana: la app repartió desde cero.")
 
-    if resultado.zonas_sin_carro:
+    # Una zona especial sin carro no es un problema de configuración: es un
+    # cliente que se despacha aparte y que ese día no tiene ninguna ruta activa en
+    # su municipio. Mandarla a "Zonas por carro" sería mandar a configurar algo
+    # que por diseño no se configura.
+    sin_carro = [z for z in resultado.zonas_sin_carro if not z.zona.especial]
+    if sin_carro:
         nombres = "  ·  ".join(
             f"{z.zona.nombre} ({z.clientes} clientes, ${z.pesos:,.0f})"
-            for z in sorted(resultado.zonas_sin_carro, key=lambda z: z.zona.nombre)
+            for z in sorted(sin_carro, key=lambda z: z.zona.nombre)
         )
         st.warning(
             f"⚠ Estas zonas no tienen ningún carro que las pueda atender y quedaron "
             f"**sin asignar**: {nombres}. Para arreglarlo: agrégalas a un carro en "
             "Configuración → Zonas por carro y regenera el reparto."
+        )
+    especiales_sin_carro = [z for z in resultado.zonas_sin_carro if z.zona.especial]
+    if especiales_sin_carro:
+        nombres = "  ·  ".join(sorted(z.zona.nombre for z in especiales_sin_carro))
+        st.warning(
+            f"⚠ Cliente(s) especial(es) con pedido y sin ninguna ruta activa en su municipio: "
+            f"{nombres}. Hay que despacharlos a mano."
         )
 
     parametros = Parametros(valores=datos.parametros(contenedor))
@@ -277,9 +290,7 @@ def _mostrar_carga(
                     zona.clientes,
                     f"${zona.pesos:,.0f}",
                     f"{zona.kilos:,.1f}",
-                    estilos.Html(
-                        estilos.badge("🔒 fija", "neutro") if zona.zona.regla_chiquinquira is not None else ""
-                    ),
+                    estilos.Html(_marca_de_zona(zona.zona)),
                 ]
                 for zona in sorted(carga.zonas, key=lambda z: z.zona.nombre)
             ],
@@ -288,12 +299,38 @@ def _mostrar_carga(
         _controles_mover(municipio, carga, cargas, planeacion)
 
 
+def _marca_de_zona(zona: Zona) -> str:
+    """La etiqueta de la fila: especial, fija, o nada.
+
+    El especial va primero porque una zona especial de Chiquinquirá tiene lado y
+    **no** está fija: la regla de lado es del repertorio y ella no lo usa.
+    """
+    if zona.especial:
+        return estilos.badge("⭐ cliente especial, verifique el vehículo", "ambar")
+    if zona.regla_chiquinquira is not None:
+        return estilos.badge("🔒 fija", "neutro")
+    return ""
+
+
 def _destinos_para(
     nombre_zona: str, origen: CargaCarro, cargas_municipio: list[CargaCarro], planeacion: PlaneacionCompleta
 ) -> list[str]:
-    """Con repertorio configurado, solo los carros (de cualquier pool) que permiten
-    la zona; sin repertorio, los del mismo municipio como siempre."""
+    """A qué carros se puede mover la zona.
+
+    Una zona **especial** se puede mover a cualquier ruta de su municipio: no usa
+    el repertorio, así que no hay por qué limitarla a lo configurado. Con
+    repertorio, las demás van a los carros (de cualquier pool) que las permiten;
+    sin repertorio, a los del mismo municipio, como siempre.
+    """
     resultado = planeacion.resultado
+    especial = any(
+        zona.zona.nombre == nombre_zona and zona.zona.especial
+        for cargas in resultado.cargas_por_municipio.values()
+        for carga in cargas
+        for zona in carga.zonas
+    )
+    if especial:
+        return sorted((c.carro.numero for c in cargas_municipio if c is not origen), key=clave_orden_carro)
     if resultado.repertorio:
         candidatas = [c for cargas in resultado.cargas_por_municipio.values() for c in cargas]
     else:
@@ -309,7 +346,11 @@ def _destinos_para(
 def _controles_mover(
     municipio: str, carga: CargaCarro, cargas: list[CargaCarro], planeacion: PlaneacionCompleta
 ) -> None:
-    movibles = sorted(zona.zona.nombre for zona in carga.zonas if zona.zona.regla_chiquinquira is None)
+    # Las especiales se mueven aunque tengan lado: no están fijas por la regla
+    # dura, que es del repertorio.
+    movibles = sorted(
+        zona.zona.nombre for zona in carga.zonas if zona.zona.especial or zona.zona.regla_chiquinquira is None
+    )
     if not movibles:
         return
     clave = f"{municipio}_{carga.carro.numero}"

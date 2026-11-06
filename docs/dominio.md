@@ -633,6 +633,55 @@ dejarían de ser distinguibles y la usuaria no tendría cómo saber a qué le es
 El reporte de la siembra y el de la herencia sí dan la cuenta separada por día, que es lo que hace
 falta para auditar una corrida.
 
+### Zonas especiales
+
+Trece zonas son **un solo cliente que pide de vez en cuando y en grande**: COMULTRASAN, GAITAN,
+BARBOSA SALIDA PUENTE, VIA CITE R5 y R7, PEÑA BLANCA, MEDELLIN, IMPACTA, PIZZA NOSTRA, DISTRIROSAS,
+DISTRIBUCIONES LEON - CONCEPCION, ESTADIO REMONTA y COMFABOY. La operación los despacha aparte, con
+el vehículo que convenga ese día. **No se fusionan** con las zonas vecinas: el cliente es el reparto.
+
+Eso significa que **no tienen repertorio**, y antes de la migración 007 el sistema lo leía como un
+error de configuración: las trece aparecían todos los días en «zonas sin carro», y el día que
+pedían quedaban sin asignar. El 27 de octubre de 2026, COMFABOY fue la única zona que la app no pudo
+repartir.
+
+Con `zonas.especial` en true, una zona especial:
+
+- es **elegible en cualquier ruta activa de su pool**, sin pasar por el repertorio, y el balanceador
+  la coloca por carga. Eso es la **sugerencia de vehículo** que pidió la operación, y no es una
+  excepción al balanceo: es balanceo sin repertorio (ver `_puede_atender`);
+- **no pasa por la regla de lado de Chiquinquirá**. La regla dice que una zona del sur la hacen las
+  rutas del sur porque ese es su recorrido habitual; una especial no tiene recorrido, así que es
+  elegible en las cuatro;
+- **no cuenta como zona sin carro** ni en el aviso del Paso 3 ni en el contador de la matriz. No
+  tenerlo es su estado normal, y contarlas dejaba el contador en «13 sin asignar» para siempre;
+- **no se siembra ni se hereda**: el carro con que aparece en una hoja PLANEACION lo eligió la
+  operación por la carga de ese día, no como regla, y sembrarlo encerraría al cliente en una ruta;
+- se marca en el Paso 3 con «⭐ cliente especial, verifique el vehículo» y lo mismo en la columna
+  Alerta de la hoja `BASE`, porque quien despacha tiene que confirmar que ese camión le sirve
+  (horario de recepción, tamaño, acceso);
+- **se puede mover a cualquier ruta de su municipio**, no solo a las del repertorio. A otro
+  municipio no: el camión de Barbosa no pasa por la puerta de un cliente de Tunja.
+
+**La única fuente de la marca es `zonas.especial`.** Se edita en Configuración → Zonas y nada del
+sistema consulta una lista de nombres: `NOMBRES_ESPECIALES` existe solo para documentar qué sembró la
+007. Si el balanceador la consultara habría dos verdades, y discreparían el día que la operación
+marque una zona nueva o le ponga ruta fija a una de las trece.
+
+#### Limitación conocida: cinco especiales caen en el pool OTROS
+
+Cinco de los trece nombres no traen prefijo de municipio (`COMFABOY`, `DISTRIROSAS`, `IMPACTA`,
+`MEDELLIN`, `DISTRIBUCIONES LEON - CONCEPCION`), así que `parsear_municipio` los deja en `OTROS`,
+cuyas rutas son las viajeras rurales (Muzo, Florián, Garagoa, Miraflores). Para un cliente que en la
+práctica se despacha desde Tunja, eso hace que la app sugiera un camión que no le sirve: el 27 de
+octubre propuso la ruta 11 (Miraflores) para COMFABOY, que Julián despachó con la 18 (Tunja).
+
+El mecanismo funciona; lo que está mal es el municipio de la zona, que es un dato. La evidencia
+disponible apunta a TUNJA para dos de los cinco —COMFABOY con la ruta 18 dos veces y DISTRIBUCIONES
+LEON con la 20 una vez, más la 23 de refuerzo (Tunja) dos veces—; los otros tres no han pedido desde
+que hay registro, así que no hay con qué decidirlo. Se corrige con `planeacion-municipios-zona` o a
+mano en Configuración → Zonas, no con código.
+
 ### Limitación conocida: zonas que cruzan de pool
 
 El municipio de la zona define el pool con el que se balancea, y hay asignaciones reales que lo

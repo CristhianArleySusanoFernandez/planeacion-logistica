@@ -35,6 +35,7 @@ class TestTraduccionZonas:
             "municipio_id": 7,
             "regla_chiquinquira": "SUR",
             "activa": True,
+            "especial": False,
         }
 
     def test_desde_fila_con_municipio_anidado(self) -> None:
@@ -47,6 +48,30 @@ class TestTraduccionZonas:
             }
         )
         assert zona == Zona(nombre="(TUNJA): PATRIOTAS", municipio=Municipio(nombre="TUNJA"))
+
+    def test_desde_fila_sin_la_columna_especial_da_una_zona_normal(self) -> None:
+        """Tolerancia a la 007 sin aplicar: el comportamiento de siempre."""
+        zona = repositorio_zonas.desde_fila(
+            {
+                "nombre": "(TUNJA): PATRIOTAS",
+                "regla_chiquinquira": None,
+                "activa": True,
+                "municipios": {"nombre": "TUNJA"},
+            }
+        )
+        assert zona.especial is False
+
+    def test_desde_fila_lee_la_marca_de_especial(self) -> None:
+        zona = repositorio_zonas.desde_fila(
+            {
+                "nombre": "COMFABOY",
+                "regla_chiquinquira": None,
+                "activa": True,
+                "especial": True,
+                "municipios": {"nombre": "OTROS"},
+            }
+        )
+        assert zona.especial is True
 
 
 class TestTraduccionCarros:

@@ -37,6 +37,14 @@ par de cada lado. Entre las rutas del lado correcto deciden el repertorio y el
 balance, que es lo que hace el resto del servicio; medido sobre septiembre y
 octubre de 2026, el lado se respeta en 81 de 93 asignaciones pero el reparto
 dentro del lado se mueve todo el tiempo. La regla prevalece sobre el repertorio.
+Las **zonas especiales** (`zona.especial`) son la excepción a las dos cosas: no
+usan repertorio ni regla de lado. Son clientes que piden de vez en cuando y en
+grande, que la operación despacha aparte con el vehículo que convenga ese día,
+así que no tienen carro de costumbre que respetar: son elegibles en cualquier
+ruta de su pool y el reparto lo decide la carga. Eso es la "sugerencia de
+vehículo" que pide la operación, y no es una excepción al balanceo: es balanceo
+sin repertorio. Ver ``_puede_atender``.
+
 Si ninguna ruta del pool trae lado (base sin configurar), no hay regla que
 aplicar y manda el balance, como con el repertorio vacío.
 """
@@ -128,6 +136,20 @@ def calcular_costo(
     return costo
 
 
+def _puede_atender(zona: ZonaAgregada, numero_carro: str, repertorio: Repertorio) -> bool:
+    """Si la zona puede ir en ese carro.
+
+    Es el repertorio, salvo para las **zonas especiales**: un cliente que pide
+    esporádicamente y en grande no tiene carro de costumbre —se despacha con el
+    que convenga ese día—, así que es elegible en cualquier ruta de su pool y el
+    reparto lo decide la carga. Eso es la "sugerencia de vehículo" que pide la
+    operación: no es una excepción al balanceo, es balanceo sin repertorio.
+    """
+    if zona.zona.especial:
+        return True
+    return zona_permitida(repertorio, zona.zona.nombre, numero_carro)
+
+
 def _lado_compatible(zona: ZonaAgregada, carro: Carro) -> bool:
     """¿Puede esta zona caer en esta ruta sin romper la regla de Chiquinquirá?
 
@@ -135,6 +157,12 @@ def _lado_compatible(zona: ZonaAgregada, carro: Carro) -> bool:
     es Chiquinquirá) va a donde sea, y una ruta sin lado configurado acepta todo,
     para que una base a medio configurar no se quede sin reparto.
     """
+    if zona.zona.especial:
+        # La regla de lado es del repertorio: dice que una zona del sur la hacen
+        # las rutas del sur porque es su recorrido habitual. Una especial no tiene
+        # recorrido: es un cliente que se despacha aparte, con cualquiera de las
+        # cuatro rutas.
+        return True
     lado_zona = zona.zona.regla_chiquinquira
     if lado_zona is None or carro.lado_chiquinquira is None:
         return True
@@ -216,6 +244,11 @@ class Balanceador:
         algún carro suyo la permite; si solo la permiten carros de otro municipio, la
         zona "viaja" al pool de esos carros; sin ningún carro elegible → None."""
         propio = zona.zona.municipio.nombre
+        if zona.zona.especial:
+            # No consulta el repertorio: va a su propio pool mientras ese pool
+            # tenga alguna ruta. Así nunca cae en zonas_sin_carro por no estar
+            # configurada, que es su estado normal.
+            return propio if propio in set(municipio_de_carro.values()) else None
         if not repertorio:
             return propio
         municipios_elegibles = [
@@ -250,7 +283,7 @@ class Balanceador:
                 if (
                     numero_previo is not None
                     and numero_previo in por_numero
-                    and zona_permitida(repertorio, zona.zona.nombre, numero_previo)
+                    and _puede_atender(zona, numero_previo, repertorio)
                 ):
                     por_numero[numero_previo].agregar(zona)
                     uso_previa = True
@@ -266,9 +299,7 @@ class Balanceador:
             # garantiza al menos un elegible por zona.
             for zona in nuevas:
                 elegibles = [
-                    carga
-                    for carga in cargas
-                    if zona_permitida(repertorio, zona.zona.nombre, carga.carro.numero)
+                    carga for carga in cargas if _puede_atender(zona, carga.carro.numero, repertorio)
                 ]
                 menos_cargado = min(elegibles, key=lambda c: (c.pesos, c.clientes))
                 menos_cargado.agregar(zona)
@@ -297,9 +328,7 @@ class Balanceador:
                 if not candidatas:
                     continue  # el lado no existe en este pool: mejor dejarla donde está
                 con_repertorio = [
-                    otra
-                    for otra in candidatas
-                    if zona_permitida(repertorio, zona.zona.nombre, otra.carro.numero)
+                    otra for otra in candidatas if _puede_atender(zona, otra.carro.numero, repertorio)
                 ]
                 objetivo = min(con_repertorio or candidatas, key=lambda c: (c.pesos, c.clientes))
                 carga.quitar(zona.zona.nombre)
@@ -337,7 +366,7 @@ class Balanceador:
                 for zona in list(origen.zonas):
                     if not _lado_compatible(zona, destino.carro):
                         continue
-                    permitida_en_destino = zona_permitida(repertorio, zona.zona.nombre, destino.carro.numero)
+                    permitida_en_destino = _puede_atender(zona, destino.carro.numero, repertorio)
                     # Probar mover la zona de A a B (y revertir).
                     if permitida_en_destino:
                         costo = self._costo_si_mueve(cargas, reglas, origen, destino, zona, penalizaciones)
@@ -347,8 +376,8 @@ class Balanceador:
                     # Probar intercambios solo en una dirección (A<B) para no evaluar doble.
                     if indice_a < indice_b and permitida_en_destino:
                         for zona_b in list(destino.zonas):
-                            if not _lado_compatible(zona_b, origen.carro) or not zona_permitida(
-                                repertorio, zona_b.zona.nombre, origen.carro.numero
+                            if not _lado_compatible(zona_b, origen.carro) or not _puede_atender(
+                                zona_b, origen.carro.numero, repertorio
                             ):
                                 continue
                             costo = self._costo_si_intercambia(
@@ -441,7 +470,16 @@ class AjustadorDeAsignacion:
             )
         if destino is origen:
             raise MovimientoInvalido(f"{nombre_zona} ya está en el carro {numero_carro}")
-        if resultado.repertorio:
+        if zona.zona.especial:
+            # No se le exige repertorio —no lo usa— pero sí el pool: el camión de
+            # otro municipio no pasa por la puerta de este cliente.
+            if municipio_destino != municipio_origen:
+                raise MovimientoInvalido(
+                    f"{nombre_zona} es un cliente especial de {municipio_origen}: se puede mover a "
+                    f"cualquier ruta de ese municipio, pero el carro {numero_carro} es de "
+                    f"{municipio_destino}"
+                )
+        elif resultado.repertorio:
             if not resultado.carro_permite(numero_carro, nombre_zona):
                 raise MovimientoInvalido(
                     f"el carro {numero_carro} no tiene permitida la zona {nombre_zona} "

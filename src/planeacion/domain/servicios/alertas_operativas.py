@@ -151,3 +151,17 @@ def _tiene_minimo_de_clientes(grupo: CargaConductor) -> bool:
     """¿Le aplica la meta de clientes? Sí si alguna de sus rutas es de los tres
     municipios urbanos; un conductor que solo hace viajeras queda fuera."""
     return any(municipio in MUNICIPIOS_CON_MINIMO_DE_CLIENTES for municipio in grupo.municipios)
+
+
+def nota_de_clientes_especiales(carga: CargaCarro) -> str | None:
+    """Los clientes especiales que lleva esta ruta, para la columna Alerta.
+
+    No es una alerta de umbral como las demás: es un aviso de composición. La app
+    eligió el vehículo por la carga del día, no por costumbre —un cliente especial
+    no tiene carro habitual—, así que quien despacha tiene que confirmar que ese
+    camión sirve para ese cliente: horario de recepción, tamaño, acceso.
+    """
+    nombres = sorted(zona.zona.nombre for zona in carga.zonas if zona.zona.especial)
+    if not nombres:
+        return None
+    return f"Cliente especial ({', '.join(nombres)}): verifique el vehículo"

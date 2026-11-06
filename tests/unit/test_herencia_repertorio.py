@@ -525,3 +525,38 @@ class TestElOrigenFijoSobreviveALasResiembras:
 
         assert "CHIQUIN RUTA 1 NORTE" not in {par.nombre_zona for par in del_respaldo}
         assert herencia.pares == []
+
+
+class TestLaMarcaDeLaBaseEsLaUnicaFuente:
+    """La herencia recibe los nombres especiales de `zonas.especial`, no de una lista.
+
+    Antes había un respaldo: si la base no traía ninguna marca, se usaban los
+    trece nombres del dominio. Se quitó porque era una segunda verdad: el día que
+    la operación marque una zona nueva en Configuración, la lista del código
+    seguiría diciendo otra cosa y la herencia le inventaría repertorio a un
+    cliente especial.
+    """
+
+    def test_una_zona_marcada_fuera_de_la_constante_no_hereda(self) -> None:
+        from planeacion.domain.modelo import NOMBRES_ESPECIALES
+
+        nombre = "(TUNJA): CLIENTE NUEVO QUE PIDE EN GRANDE"
+        assert nombre not in NOMBRES_ESPECIALES
+        origenes = [_origen(nombre, "NIEVES", 1, 1)]
+
+        herencia = heredar(origenes, _frecuencias(("14", "NIEVES", _LUNES, 12)), especiales=[nombre])
+
+        assert herencia.pares == []
+        assert herencia.especiales_ignoradas == [nombre]
+
+    def test_una_zona_de_la_constante_sin_marca_hereda_normal(self) -> None:
+        """Si la operación le pone ruta fija a COMFABOY, hereda como cualquiera."""
+        from planeacion.domain.modelo import NOMBRES_ESPECIALES
+
+        assert "COMFABOY" in NOMBRES_ESPECIALES
+        origenes = [_origen("COMFABOY", "NIEVES", 1, 1)]
+
+        herencia = heredar(origenes, _frecuencias(("14", "NIEVES", _LUNES, 12)), especiales=[])
+
+        assert herencia.pares == [ParRepertorio("14", "COMFABOY", _LUNES, frecuencia=12)]
+        assert herencia.especiales_ignoradas == []

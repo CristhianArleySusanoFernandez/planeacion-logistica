@@ -390,7 +390,12 @@ def main() -> int:
     carros_base = contenedor.carros.listar()
     numeros_carros = {carro.numero for carro in carros_base if carro.activo}
     inactivos = {carro.numero: carro.conductor for carro in carros_base if not carro.activo}
-    nombres_zonas = {zona.nombre for zona in contenedor.zonas.listar()}
+    zonas_base = contenedor.zonas.listar()
+    # Las zonas especiales no tienen repertorio: son clientes que se despachan con
+    # el vehículo que convenga ese día. Si sembraran, el par quedaría fijando un
+    # carro que la operación no eligió como regla, sino por la carga de ese día.
+    especiales = {zona.nombre for zona in zonas_base if zona.especial}
+    nombres_zonas = {zona.nombre for zona in zonas_base if not zona.especial}
     validos, carros_desconocidos, zonas_desconocidas = cruzar_pares(
         set(frecuencias), numeros_carros, nombres_zonas
     )
@@ -414,6 +419,13 @@ def main() -> int:
             dias_del_carro = ", ".join(sorted(carros_desconocidos[numero]))
             print(f"  - carro {numero}: aparece en {dias_del_carro}")
         print("  Si son refuerzos reales, darlos de alta en Configuración > Carros y re-sembrar.")
+    pares_especiales = {trio for trio in frecuencias if trio[1] in especiales}
+    if pares_especiales:
+        zonas_con_par = sorted({zona for _, zona, _ in pares_especiales})
+        print(f"\nZonas especiales del histórico (se saltan: no usan repertorio): {len(zonas_con_par)}")
+        for zona in zonas_con_par:
+            print(f"  - {zona}")
+    zonas_desconocidas = zonas_desconocidas - especiales
     if zonas_desconocidas:
         print("\nAVISO: zonas del histórico que NO casan con zonas.nombre (se saltan):")
         for zona in sorted(zonas_desconocidas):

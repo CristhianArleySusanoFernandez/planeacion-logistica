@@ -339,6 +339,7 @@ def _zona_desde_fila(fila: Fila, es_nueva: bool) -> Zona:
         municipio=Municipio(fila["municipio"]) if fila.get("municipio") else base.municipio,
         regla_chiquinquira=regla,
         activa=fila.get("activa") is not False if es_nueva else bool(fila.get("activa")),
+        especial=bool(fila.get("especial")),
     )
 
 
@@ -348,7 +349,8 @@ def _tab_zonas(contenedor: Contenedor) -> None:
         "La regla de Chiquinquirá (SUR/NORTE) fija la zona a un carro y el balanceador no "
         "la mueve. La columna «carros» es la vista inversa del repertorio (solo lectura; "
         "se edita en el tab Zonas por carro): filtra por «sin carro» para ver las huérfanas. "
-        "Una zona con clientes no se puede borrar: desactívala."
+        "Una zona con clientes no se puede borrar: desactívala. «Especial» marca al cliente que "
+        "pide esporádicamente: no usa repertorio y la app le sugiere el vehículo por la carga."
     )
     atienden = _carros_que_atienden(contenedor)
     originales: list[Fila] = [
@@ -357,6 +359,7 @@ def _tab_zonas(contenedor: Contenedor) -> None:
             "municipio": z.municipio.nombre,
             "regla_chiquinquira": z.regla_chiquinquira.value if z.regla_chiquinquira else None,
             "activa": z.activa,
+            "especial": z.especial,
             "carros": atienden.get(z.nombre, _SIN_CARRO),
         }
         for z in datos.zonas(contenedor)
@@ -371,6 +374,12 @@ def _tab_zonas(contenedor: Contenedor) -> None:
             ),
             "regla_chiquinquira": st.column_config.SelectboxColumn(
                 "regla_chiquinquira", options=_REGLAS, required=False
+            ),
+            "especial": st.column_config.CheckboxColumn(
+                "especial",
+                help="Cliente que pide esporádicamente; se despacha con el vehículo que convenga. "
+                "No usa el repertorio: es elegible en cualquier ruta de su municipio y no cuenta "
+                "como zona sin carro.",
             ),
             "carros": st.column_config.TextColumn(
                 "carros que la atienden", disabled=True, help="Se edita en «Zonas por carro»"

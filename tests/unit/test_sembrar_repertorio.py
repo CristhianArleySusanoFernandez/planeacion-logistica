@@ -278,3 +278,29 @@ class TestSoloLaFlotaActivaSiembra:
 
         assert len(validos) == 2
         assert desconocidos == {}
+
+
+class TestLaSiembraSaltaLasEspeciales:
+    """Una zona especial no tiene repertorio que sembrar.
+
+    Aparece en las hojas PLANEACION con un carro, pero ese carro lo eligió la
+    operación por la carga de ese día, no como regla. Sembrarlo convertiría una
+    decisión puntual en costumbre y encerraría al cliente en una ruta.
+    """
+
+    _PARES = {("14", "(TUNJA): NIEVES", "lunes"), ("18", "COMFABOY", "lunes")}
+
+    def test_el_par_de_una_especial_no_entra(self) -> None:
+        """Se excluye por no estar entre los nombres sembrables, igual que una zona
+        que no existe; el comando las reporta por separado."""
+        validos, _, fuera = cruzar_pares(self._PARES, {"14", "18"}, {"(TUNJA): NIEVES"})
+
+        assert validos == {("14", "(TUNJA): NIEVES", "lunes")}
+        assert fuera == {"COMFABOY"}
+
+    def test_sin_la_marca_el_par_si_entra(self) -> None:
+        """Lo que cambia es la marca en la base, nada más."""
+        validos, _, fuera = cruzar_pares(self._PARES, {"14", "18"}, {"(TUNJA): NIEVES", "COMFABOY"})
+
+        assert len(validos) == 2
+        assert fuera == set()

@@ -11,7 +11,7 @@ from planeacion.domain.servicios.auditoria_zonas import ReferenciasMovidas
 from planeacion.infraestructura.adaptadores.salida.supabase._filas import como_filas
 
 TABLA = "zonas"
-_COLUMNAS = "id, nombre, regla_chiquinquira, activa, municipios(nombre)"
+_COLUMNAS = "id, nombre, regla_chiquinquira, activa, especial, municipios(nombre)"
 
 
 def a_fila(zona: Zona, ids_municipios: Mapping[str, int]) -> dict[str, Any]:
@@ -20,6 +20,7 @@ def a_fila(zona: Zona, ids_municipios: Mapping[str, int]) -> dict[str, Any]:
         "municipio_id": ids_municipios[zona.municipio.nombre],
         "regla_chiquinquira": zona.regla_chiquinquira.value if zona.regla_chiquinquira else None,
         "activa": zona.activa,
+        "especial": zona.especial,
     }
 
 
@@ -32,6 +33,9 @@ def desde_fila(fila: dict[str, Any]) -> Zona:
         municipio=municipio,
         regla_chiquinquira=ReglaChiquinquira(regla_cruda) if regla_cruda else None,
         activa=fila["activa"],
+        # Tolerante con la 007 sin aplicar: una zona sin la columna es normal, que
+        # es el comportamiento de siempre.
+        especial=bool(fila.get("especial", False)),
     )
 
 

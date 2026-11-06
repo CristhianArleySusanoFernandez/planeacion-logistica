@@ -19,11 +19,18 @@ class ReglaChiquinquira(Enum):
     NORTE = "NORTE"
 
 
-# Los clientes grandes que piden de vez en cuando y en cantidad: cada uno es su
-# propia zona de un solo cliente y se despacha aparte, con el vehículo que
-# convenga ese día. Van por nombre SIN prefijo de municipio porque la maestra los
-# escribe de las dos maneras —`(TUNJA): ESTADIO REMONTA` y `COMFABOY`— y el
-# prefijo no es parte de la identidad del cliente.
+# Las trece zonas especiales que sembró la migración 007, SOLO como documentación
+# de qué se marcó y cuándo.
+#
+# **La única fuente es `zonas.especial`.** Nada del sistema consulta esta lista:
+# ni el balanceador, ni el Paso 3, ni la siembra, ni la herencia. La marca se
+# edita en Configuración → Zonas, así que una lista en el código sería una
+# segunda verdad que empezaría a discrepar el día que la operación marque una
+# zona nueva o le ponga ruta fija a una de estas trece.
+#
+# Van por nombre SIN prefijo de municipio porque la maestra los escribe de las dos
+# maneras —`(TUNJA): ESTADIO REMONTA` y `COMFABOY`— y el prefijo no es parte de la
+# identidad del cliente.
 NOMBRES_ESPECIALES: tuple[str, ...] = (
     "COMULTRASAN LLEVA SEB",
     "GAITAN LLEVA SEB",
@@ -58,5 +65,7 @@ class Zona:
     regla_chiquinquira: ReglaChiquinquira | None = None
     activa: bool = True
     # Cliente que pide esporádicamente y en grande: no pasa por el repertorio y
-    # se despacha con el vehículo que convenga ese día (ver NOMBRES_ESPECIALES).
+    # se despacha con el vehículo que convenga ese día. Es elegible en cualquier
+    # ruta de su municipio y el balanceador lo coloca por carga; tampoco cuenta
+    # como zona sin carro, porque no tenerlo es su estado normal.
     especial: bool = False

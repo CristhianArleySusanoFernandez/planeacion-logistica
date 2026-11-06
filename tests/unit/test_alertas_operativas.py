@@ -14,6 +14,7 @@ from planeacion.domain.servicios.alertas_operativas import (
     alerta_de_promedio_por_vehiculo,
     alertas_de_conductores,
     alertas_por_ruta,
+    nota_de_clientes_especiales,
 )
 
 
@@ -152,3 +153,51 @@ class TestAlertasPorRuta:
         assert del_dia is not None
 
         assert alertas_por_ruta([del_dia], cargas) == {}
+
+
+class TestNotaDeClientesEspeciales:
+    """El aviso de composición de la columna Alerta de BASE.
+
+    No es una alerta de umbral: la app eligió el vehículo por la carga del día y
+    no por costumbre —un cliente especial no tiene carro habitual—, así que quien
+    despacha tiene que confirmar que ese camión le sirve: horario de recepción,
+    tamaño, acceso.
+    """
+
+    def _con_zonas(self, *zonas: ZonaAgregada) -> CargaCarro:
+        return CargaCarro(carro=Carro(numero="18", conductor="JOSE"), zonas=list(zonas))
+
+    def _zona(self, nombre: str, *, especial: bool) -> ZonaAgregada:
+        return ZonaAgregada(
+            zona=Zona(nombre=nombre, municipio=Municipio(nombre="TUNJA"), especial=especial),
+            facturas=1,
+            clientes=1,
+            pesos=Decimal("1000"),
+            kilos=Decimal("10"),
+        )
+
+    def test_nombra_al_cliente_y_pide_verificar(self) -> None:
+        carga = self._con_zonas(self._zona("COMFABOY", especial=True))
+
+        nota = nota_de_clientes_especiales(carga)
+
+        assert nota is not None
+        assert "COMFABOY" in nota
+        assert "verifique el vehículo" in nota
+
+    def test_una_ruta_sin_especiales_no_dice_nada(self) -> None:
+        """La columna queda vacía en un día normal."""
+        carga = self._con_zonas(self._zona("(TUNJA): NIEVES", especial=False))
+
+        assert nota_de_clientes_especiales(carga) is None
+
+    def test_varios_especiales_en_la_misma_ruta_van_juntos_y_ordenados(self) -> None:
+        carga = self._con_zonas(
+            self._zona("IMPACTA", especial=True),
+            self._zona("(TUNJA): NIEVES", especial=False),
+            self._zona("COMFABOY", especial=True),
+        )
+
+        nota = nota_de_clientes_especiales(carga)
+
+        assert nota == "Cliente especial (COMFABOY, IMPACTA): verifique el vehículo"

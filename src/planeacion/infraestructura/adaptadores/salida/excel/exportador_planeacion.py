@@ -38,6 +38,7 @@ from planeacion.domain.servicios.alertas_operativas import (
     alerta_de_promedio_por_vehiculo,
     alertas_de_conductores,
     alertas_por_ruta,
+    nota_de_clientes_especiales,
 )
 from planeacion.instrumentacion import medir
 
@@ -251,7 +252,10 @@ class ExportadorExcelPlaneacion:
             hoja.cell(row=fila, column=8, value=carga.carro.municipio_real or pool)
             zonas = ", ".join(sorted(zona.zona.nombre for zona in carga.zonas))
             hoja.cell(row=fila, column=9, value=zonas)
-            hoja.cell(row=fila, column=10, value=alerta_por_ruta.get(carga.carro.numero))
+            # La columna junta las alertas del conductor y el aviso de cliente
+            # especial: son dos cosas distintas pero van al mismo ojo.
+            notas = [alerta_por_ruta.get(carga.carro.numero), nota_de_clientes_especiales(carga)]
+            hoja.cell(row=fila, column=10, value=" · ".join(n for n in notas if n) or None)
         # La alerta del día entera no cuelga de ninguna ruta: va debajo de la tabla.
         if del_dia is not None:
             hoja.cell(row=len(cargas) + 3, column=1, value=del_dia.texto).font = _NEGRITA

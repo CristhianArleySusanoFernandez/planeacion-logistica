@@ -52,9 +52,17 @@ def contar_carros_de_zona(nombre_zona: str, repertorio: Repertorio) -> int:
 
 
 def contar_sin_carro(zonas: Sequence[Zona], repertorio: Repertorio) -> tuple[int, int]:
-    """(zonas sin ningún carro, total de zonas) — el contador de progreso."""
-    sin_carro = sum(1 for zona in zonas if contar_carros_de_zona(zona.nombre, repertorio) == 0)
-    return sin_carro, len(zonas)
+    """(zonas sin ningún carro, total de zonas) — el contador de progreso.
+
+    Las zonas **especiales** no cuentan en ninguno de los dos números: no tener
+    carro asignado es su estado normal —se despachan con el vehículo que convenga
+    ese día— y contarlas dejaría el contador en "13 sin asignar" para siempre,
+    convirtiendo la vista de trabajo en una lista de pendientes que nadie puede
+    terminar.
+    """
+    comunes = [zona for zona in zonas if not zona.especial]
+    sin_carro = sum(1 for zona in comunes if contar_carros_de_zona(zona.nombre, repertorio) == 0)
+    return sin_carro, len(comunes)
 
 
 def zonas_visibles(zonas: Sequence[Zona], repertorio: Repertorio, filtro: FiltroMatriz) -> list[Zona]:
@@ -62,7 +70,11 @@ def zonas_visibles(zonas: Sequence[Zona], repertorio: Repertorio, filtro: Filtro
     ordenadas alfabéticamente por nombre dentro del municipio."""
     visibles = [z for z in zonas if filtro.municipio in (TODOS, z.municipio.nombre)]
     if filtro.solo_sin_carro:
-        visibles = [z for z in visibles if contar_carros_de_zona(z.nombre, repertorio) == 0]
+        # Las especiales no son trabajo pendiente: quedan fuera de la vista de
+        # trabajo, igual que del contador.
+        visibles = [
+            z for z in visibles if not z.especial and contar_carros_de_zona(z.nombre, repertorio) == 0
+        ]
     clave = normalizar(filtro.texto)
     if clave:
         visibles = [z for z in visibles if clave in normalizar(z.nombre)]

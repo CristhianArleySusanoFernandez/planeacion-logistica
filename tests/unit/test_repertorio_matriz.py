@@ -274,3 +274,46 @@ class TestCopiarDeOtroDia:
 
         assert all(c.marcado for c in cambios)
         assert len(cambios) == 2
+
+
+class TestLasEspecialesNoSonTrabajoPendiente:
+    """Las zonas especiales no cuentan como "sin asignar".
+
+    No tener carro es su estado normal: se despachan con el vehículo que convenga
+    ese día. Contarlas dejaría el contador en "13 sin asignar" para siempre y
+    convertiría la vista de trabajo en una lista de pendientes imposible de
+    terminar; peor, escondería las zonas que sí hay que configurar.
+    """
+
+    _ESPECIAL = Zona(nombre="COMFABOY", municipio=Municipio(nombre="OTROS"), especial=True)
+    _NORMAL = Zona(nombre="RUTA MUZO", municipio=Municipio(nombre="OTROS"))
+
+    def test_no_cuentan_ni_en_el_numerador_ni_en_el_total(self) -> None:
+        sin_carro, total = contar_sin_carro([self._ESPECIAL, self._NORMAL], {})
+
+        assert (sin_carro, total) == (1, 1)
+
+    def test_con_solo_las_especiales_el_contador_queda_en_cero(self) -> None:
+        """El badge verde: no hay nada que configurar."""
+        assert contar_sin_carro([self._ESPECIAL], {}) == (0, 0)
+
+    def test_no_aparecen_en_la_vista_de_solo_sin_carro(self) -> None:
+        filtro = FiltroMatriz(municipio=TODOS, solo_sin_carro=True)
+
+        filas = zonas_visibles([self._ESPECIAL, self._NORMAL], {}, filtro)
+
+        assert [z.nombre for z in filas] == ["RUTA MUZO"]
+
+    def test_si_se_desmarca_vuelve_a_contar(self) -> None:
+        """La marca es lo único que lo decide, no el nombre."""
+        from dataclasses import replace
+
+        normal = replace(self._ESPECIAL, especial=False)
+
+        assert contar_sin_carro([normal], {}) == (1, 1)
+
+    def test_sin_el_filtro_la_especial_se_sigue_viendo(self) -> None:
+        """Queda editable: hay que poder desmarcarla."""
+        filas = zonas_visibles([self._ESPECIAL], {}, FiltroMatriz(municipio=TODOS))
+
+        assert [z.nombre for z in filas] == ["COMFABOY"]
