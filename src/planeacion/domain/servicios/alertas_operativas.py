@@ -36,8 +36,9 @@ MIN_CLIENTES_CONDUCTOR = 50
 MAX_FACTURAS_CONDUCTOR = 110
 VEHICULOS_REFERENCIA = 12
 # Cuánto puede superar la planilla más cargada a la menos cargada del mismo camión
-# antes de avisar, como fracción de la menor: 0,35 = 35 %.
-DESBALANCE_PLANILLAS = Decimal("0.35")
+# antes de avisar, como fracción de la menor: 0,75 = 75 %. Calibrado sobre los 7
+# días reales del 20 al 27 de octubre de 2026 (ver dominio.md, «Planillas»).
+DESBALANCE_PLANILLAS = Decimal("0.75")
 
 # El mínimo de clientes aplica solo a los municipios con reparto urbano. Las
 # rutas viajeras (pool OTROS) hacen pocos clientes y mucho kilómetro por
@@ -108,10 +109,11 @@ def alertas_de_conductores(
     return alertas
 
 
-# Las tres variables en que se comparan las planillas: etiqueta, cómo medirla en
-# una carga y cómo escribir el valor.
+# Las dos variables en que se comparan las planillas: etiqueta, cómo medirla en
+# una carga y cómo escribir el valor. Clientes NO entra: en los 7 días medidos la
+# operación reparte las mitades por carga, no por paradas, y hay planillas con el
+# doble de clientes que su pareja con los pesos parejos.
 _VARIABLES_DE_PLANILLA: tuple[tuple[str, Callable[[CargaCarro], Decimal], str], ...] = (
-    ("clientes", lambda carga: Decimal(carga.clientes), ""),
     ("pesos", lambda carga: carga.pesos, "$"),
     ("kilos", lambda carga: carga.kilos, " kg"),
 )
@@ -130,10 +132,11 @@ def alertas_de_planillas(
     dejar una planilla con 310 kg y la otra con 160 sin que ninguna métrica se
     entere: por municipio el CV no lo ve, y por conductor la suma lo esconde.
 
-    Se compara la mayor contra la menor en clientes, pesos **o** kilos: basta que
-    una se pase. Una planilla vacía frente a otra con carga siempre avisa. Las
-    planillas se nombran por **número de ruta** y no por el sufijo del conductor,
-    porque Javier Reyes lleva la 14 y la 15 sin ningún "1" ni "2" en el nombre.
+    Se compara la mayor contra la menor en pesos **o** kilos: basta que una se
+    pase. Los clientes no se comparan: un cliente es una parada, no una carga. Una
+    planilla vacía frente a otra con carga siempre avisa. Las planillas se nombran
+    por **número de ruta** y no por el sufijo del conductor, porque Javier Reyes
+    lleva la 14 y la 15 sin ningún "1" ni "2" en el nombre.
     Es una meta, no una regla: el reparto no cambia.
     """
     alertas: list[Alerta] = []

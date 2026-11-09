@@ -6,9 +6,10 @@ balanceador reparte por ruta y no sabe que dos rutas comparten camión: puede
 dejar una planilla con 310 kg y la otra con 160 sin que ninguna métrica se
 entere —por municipio el CV no lo ve, por conductor la suma lo esconde.
 
-Lo que se prueba es que **avise bien**: el borde exacto del umbral en cada una
-de las tres variables, que basta con que una se pase, que nombra las planillas
-por número de ruta, y que no inventa alertas donde no hay dos planillas. Que no
+Lo que se prueba es que **avise bien**: el borde exacto del umbral en pesos y en
+kilos, que basta con que una se pase, que los clientes NO se comparan (Julián
+reparte las mitades por carga, no por paradas), que nombra las planillas por
+número de ruta, y que no inventa alertas donde no hay dos planillas. Que no
 cambie el reparto se prueba por construcción: recibe cargas ya repartidas y solo
 devuelve texto.
 """
@@ -22,7 +23,7 @@ from planeacion.domain.servicios.alertas_operativas import (
     alertas_por_ruta,
 )
 
-_UMBRAL = Decimal("0.35")
+_UMBRAL = Decimal("0.75")
 
 
 def _planilla(
@@ -59,12 +60,12 @@ class TestLosTresRangosEnKilos:
     """El caso del enunciado: 310 kg contra 160 kg es un 94 % de más."""
 
     def test_por_debajo_del_umbral_no_avisa(self) -> None:
-        # 130 contra 100 = 30 %, menos del 35 %.
-        assert _alertas(_planilla("1", "FABIAN", kilos="130"), _planilla("2", "FABIAN", kilos="100")) == []
+        # 170 contra 100 = 70 %, menos del 75 %.
+        assert _alertas(_planilla("1", "FABIAN", kilos="170"), _planilla("2", "FABIAN", kilos="100")) == []
 
     def test_exactamente_en_el_umbral_no_avisa(self) -> None:
-        """Tiene que SUPERAR el umbral: 135 contra 100 es justo el 35 %."""
-        assert _alertas(_planilla("1", "FABIAN", kilos="135"), _planilla("2", "FABIAN", kilos="100")) == []
+        """Tiene que SUPERAR el umbral: 175 contra 100 es justo el 75 %."""
+        assert _alertas(_planilla("1", "FABIAN", kilos="175"), _planilla("2", "FABIAN", kilos="100")) == []
 
     def test_por_encima_del_umbral_avisa_nombrando_las_rutas(self) -> None:
         alertas = _alertas(_planilla("1", "FABIAN", kilos="310"), _planilla("2", "FABIAN", kilos="160"))
@@ -76,32 +77,38 @@ class TestLosTresRangosEnKilos:
         assert "Planillas de FABIAN desparejas" in alerta.texto
         assert "la ruta 1 lleva 310 kg y la 2 lleva 160 kg" in alerta.texto
         assert alerta.valor == 93  # (310 - 160) / 160 = 93,75 %, truncado
-        assert alerta.umbral == 35
+        assert alerta.umbral == 75
 
     def test_un_kilo_por_encima_del_umbral_ya_avisa(self) -> None:
-        alertas = _alertas(_planilla("1", "FABIAN", kilos="136"), _planilla("2", "FABIAN", kilos="100"))
+        alertas = _alertas(_planilla("1", "FABIAN", kilos="176"), _planilla("2", "FABIAN", kilos="100"))
 
         assert len(alertas) == 1
 
 
-class TestLasOtrasDosVariables:
-    def test_en_clientes(self) -> None:
-        alertas = _alertas(_planilla("1", "FABIAN", clientes=60), _planilla("2", "FABIAN", clientes=40))
-
-        assert len(alertas) == 1
-        assert "en clientes la ruta 1 lleva 60 y la 2 lleva 40" in alertas[0].texto
-
+class TestPesosYClientes:
     def test_en_pesos(self) -> None:
         alertas = _alertas(
-            _planilla("1", "FABIAN", pesos="3000000"), _planilla("2", "FABIAN", pesos="2000000")
+            _planilla("1", "FABIAN", pesos="4000000"), _planilla("2", "FABIAN", pesos="2000000")
         )
 
         assert len(alertas) == 1
-        assert "en pesos la ruta 1 lleva $3,000,000 y la 2 lleva $2,000,000" in alertas[0].texto
+        assert "en pesos la ruta 1 lleva $4,000,000 y la 2 lleva $2,000,000" in alertas[0].texto
 
-    def test_en_clientes_justo_en_el_umbral_no_avisa(self) -> None:
-        # 54 contra 40 = 35 % exacto.
-        assert _alertas(_planilla("1", "FABIAN", clientes=54), _planilla("2", "FABIAN", clientes=40)) == []
+    def test_en_pesos_justo_en_el_umbral_no_avisa(self) -> None:
+        # 3.500.000 contra 2.000.000 = 75 % exacto.
+        assert (
+            _alertas(_planilla("1", "FABIAN", pesos="3500000"), _planilla("2", "FABIAN", pesos="2000000"))
+            == []
+        )
+
+    def test_los_clientes_no_se_comparan(self) -> None:
+        """En los 7 días medidos Julián deja planillas con 190 % más clientes que su
+        pareja y los pesos parejos: reparte por carga, no por paradas. Un camión con
+        el triple de clientes en una planilla no es un desparejo."""
+        assert _alertas(_planilla("1", "FABIAN", clientes=90), _planilla("2", "FABIAN", clientes=30)) == []
+
+    def test_una_planilla_sin_clientes_tampoco_avisa_por_clientes(self) -> None:
+        assert _alertas(_planilla("1", "FABIAN", clientes=40), _planilla("2", "FABIAN", clientes=0)) == []
 
     def test_basta_con_que_una_variable_se_pase(self) -> None:
         """Clientes y pesos parejos, kilos no: avisa igual, y dice por cuál."""
@@ -113,7 +120,8 @@ class TestLasOtrasDosVariables:
         assert "en pesos" not in alertas[0].texto
 
     def test_si_se_pasan_varias_las_lista_todas_en_una_sola_alerta(self) -> None:
-        """Un camión desparejo es UN problema, no tres."""
+        """Un camión desparejo es UN problema, no dos. Y los clientes, aunque también
+        estén desparejos, no aparecen en el texto."""
         alertas = _alertas(
             _planilla("1", "FABIAN", clientes=80, pesos="4000000", kilos="400"),
             _planilla("2", "FABIAN", clientes=40, pesos="2000000", kilos="200"),
@@ -121,7 +129,8 @@ class TestLasOtrasDosVariables:
 
         assert len(alertas) == 1
         texto = alertas[0].texto
-        assert "en clientes" in texto and "en pesos" in texto and "en kilos" in texto
+        assert "en pesos" in texto and "en kilos" in texto
+        assert "en clientes" not in texto
 
 
 class TestQuienesTienenPlanillas:
@@ -181,14 +190,15 @@ class TestCasosBorde:
         assert _alertas(_planilla("1", "FABIAN", kilos="0"), _planilla("2", "FABIAN", kilos="0")) == []
 
     def test_el_umbral_es_un_parametro(self) -> None:
-        """Con 0,60 el 310 contra 160 (94 %) sigue avisando; el 130 contra 100 ya no, y
-        un umbral más exigente (0,20) atrapa el 130 contra 100."""
+        """Con 1,00 el 310 contra 160 (94 %) ya no avisa; con el default sí, y un
+        umbral más exigente (0,35) atrapa hasta el 150 contra 100."""
         muy_desparejas = (_planilla("1", "F", kilos="310"), _planilla("2", "F", kilos="160"))
-        algo_desparejas = (_planilla("1", "F", kilos="130"), _planilla("2", "F", kilos="100"))
+        algo_desparejas = (_planilla("1", "F", kilos="150"), _planilla("2", "F", kilos="100"))
 
-        assert len(_alertas(*muy_desparejas, umbral=Decimal("0.60"))) == 1
-        assert _alertas(*algo_desparejas, umbral=Decimal("0.60")) == []
-        assert len(_alertas(*algo_desparejas, umbral=Decimal("0.20"))) == 1
+        assert _alertas(*muy_desparejas, umbral=Decimal("1.00")) == []
+        assert len(_alertas(*muy_desparejas)) == 1
+        assert _alertas(*algo_desparejas) == []
+        assert len(_alertas(*algo_desparejas, umbral=Decimal("0.35"))) == 1
 
     def test_el_reparto_no_se_toca(self) -> None:
         """Por construcción: la función recibe las cargas y devuelve texto."""

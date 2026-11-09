@@ -99,10 +99,10 @@ CATALOGO: tuple[DefinicionParametro, ...] = (
     ),
     DefinicionParametro(
         CLAVE_DESBALANCE_PLANILLAS,
-        Decimal("0.35"),
+        Decimal("0.75"),
         "Diferencia desde la que dos planillas del mismo camión se consideran desparejas, como "
-        "fracción de la menor (0,35 = 35 %). Se compara en clientes, pesos y kilos. Solo avisa: el "
-        "reparto no cambia.",
+        "fracción de la menor (0,75 = 75 %). Se compara en pesos y kilos, no en clientes. Solo "
+        "avisa: el reparto no cambia.",
     ),
     DefinicionParametro(
         CLAVE_KILOS_MAX_POR_UNIDAD,

@@ -463,7 +463,8 @@ rehacerlas; el resto sigue valiendo:
   operativas; y la columna **Planillas** (parejas / ⚠ desparejas) en el resumen por conductor. El
   aviso de "zonas sin asignar" ahora separa las especiales con su propio texto.
 - **Configuración → Parámetros.** Dos filas nuevas desde la 006 y la 007: `umbral_cv_aceptable` /
-  `umbral_cv_atencion` (el semáforo) y `desbalance_planillas`.
+  `umbral_cv_atencion` (el semáforo) y `desbalance_planillas` (0,75; compara pesos y kilos, no
+  clientes).
 - **Excel de salida, hoja `BASE`.** La columna Alerta ahora también trae "Cliente especial (...):
   verifique el vehículo" y "planillas desparejas: N %".
 - **Cualquier mención a los números de coincidencia.** El 93 % es de la maestra vieja; la serie

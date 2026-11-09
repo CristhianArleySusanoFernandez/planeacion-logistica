@@ -358,7 +358,7 @@ las filas en vez de reescribirlas, para no tener dos fuentes de verdad.
 | `vehiculos_referencia` | 12 | Divisor del "Promedio Vh". **Fijo a propósito**: es el de la hoja que la operación mira, y usar "los carros con carga" daría otro número. |
 | `umbral_cv_aceptable` | 0,25 | Hasta este CV el semáforo va en verde. Los 0,10 de julio de 2026 eran de otra flota: el reparto **real** mide 25–46 %, así que los cuatro municipios salían en rojo siempre. |
 | `umbral_cv_atencion` | 0,40 | Hasta acá ámbar, por encima rojo. Solo cambia el color: los umbrales no entran en la función de costo. |
-| `desbalance_planillas` | 0,35 | Desde qué diferencia dos planillas del mismo camión se consideran desparejas, como fracción de la menor, en clientes, pesos **o** kilos. Solo avisa. |
+| `desbalance_planillas` | 0,75 | Desde qué diferencia dos planillas del mismo camión se consideran desparejas, como fracción de la menor, en pesos **o** kilos (clientes no: Julián reparte las mitades por carga, no por paradas). Calibrado sobre los 7 días del 20 al 27 de octubre de 2026. Solo avisa. |
 | `kilos_max_por_unidad` | 25 | Techo de la guarda de kilos. Una unidad de venta es una caja o un display; ningún producto sano de 2026 se acerca, y hay fichas con 715,5 kg (ver § 5). |
 
 ## 6.bis.2 Sugerencia de zona para clientes nuevos
@@ -726,13 +726,13 @@ Dos consecuencias en el sistema:
 - **La alerta de planillas desparejas.** El balanceador reparte por ruta y no sabe que dos rutas
   comparten camión, así que puede dejar una planilla con el doble de la otra sin que ninguna métrica
   lo vea: por municipio el CV no lo nota y por conductor la suma lo esconde. `alertas_de_planillas`
-  compara la mayor contra la menor en clientes, pesos **o** kilos y avisa en ámbar cuando la
-  diferencia supera `desbalance_planillas` (0,35 por defecto), nombrando las **rutas**: "la ruta 14
+  compara la mayor contra la menor en pesos **o** kilos y avisa en ámbar cuando la
+  diferencia supera `desbalance_planillas` (0,75 por defecto), nombrando las **rutas**: "la ruta 14
   lleva 310 kg y la 15 lleva 160 kg". Se ve con las demás alertas del Paso 3, en la columna
   *Planillas* del resumen por conductor y en la columna Alerta de `BASE`, en las dos rutas del
   camión. En el umbral exacto no avisa. **No cambia el reparto**: es una meta, no una regla.
 
-#### Calibración pendiente del umbral de planillas
+#### Calibración del umbral de planillas
 
 Medido sobre el **reparto real de Julián** en los 7 días del 20 al 27 de octubre de 2026 (33 pares
 camión-día), con los kilos **después de la guarda** (§ 5), que es lo que la alerta ve en el pivote:
@@ -757,10 +757,13 @@ Dos hallazgos salieron de la medición:
   reparten por lo que hay que entregar, no por cuántas puertas se tocan. **Por eso clientes sale de
   la comparación** y la alerta se decide entre pesos y kilos.
 
-Es la misma lección del semáforo: un aviso que sale casi todos los días deja de informar. El default
-0,35 es el que pidió la operación y sigue sin tocarse hasta que se fije el umbral con la tabla de
-arriba. Cambiar el umbral es un parámetro; quitar una variable es un cambio chico en
-`alertas_de_planillas`. Ninguna de las dos cosas toca el reparto.
+Es la misma lección del semáforo: un aviso que sale casi todos los días deja de informar. Con la
+tabla de arriba la operación fijó el **umbral en 0,75, comparando solo pesos y kilos**: avisa en 6
+de los 33 días medidos (18 %), y los 6 son desparejos de verdad (Raúl 385 % en pesos, Carlos 349 %
+en kilos, Angélica 237 % en kilos, Fabián 196 % en kilos, Javier Reyes 110 % y 100 % en pesos). El
+0,35 inicial avisaba 26 de 33. Queda pendiente confirmar con Julián el **criterio de planillas
+parejas** (si de verdad reparte por carga y no por paradas) y pedir a ECOM la corrección de la
+ficha del TOSH MIEL.
 
 ### Limitación conocida: zonas que cruzan de pool
 
