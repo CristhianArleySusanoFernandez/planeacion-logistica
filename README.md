@@ -30,7 +30,10 @@ SUPABASE_KEY=eyJ...
 Abre el **SQL Editor** del dashboard de Supabase y pega/ejecuta, en orden, el contenido de
 [`migrations/001_esquema_inicial.sql`](migrations/001_esquema_inicial.sql) y
 [`migrations/002_carro_zonas.sql`](migrations/002_carro_zonas.sql) y
-[`migrations/003_carro_zonas_dia.sql`](migrations/003_carro_zonas_dia.sql).
+[`migrations/003_carro_zonas_dia.sql`](migrations/003_carro_zonas_dia.sql), y después las
+004 a 008 en orden (flota por conductor, parámetros, umbrales del semáforo, zonas especiales y
+umbral de planillas). La 008 es la única que pisa un valor a propósito: recalibra
+`desbalance_planillas` de 0,35 a 0,75.
 Los scripts son idempotentes (`create table if not exists`), se pueden correr más de una vez.
 La 003 le agrega al repertorio la dimensión del **día de la semana** y **replica la
 configuración que ya exista a los seis días laborales**, así lo ya cargado a mano sigue
