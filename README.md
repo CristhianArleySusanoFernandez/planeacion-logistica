@@ -112,6 +112,15 @@ pedidos viejos con la fecha dañada (texto tipo `46190`) y esos se reportan, no 
 > reproduce la hoja `PLANEACION` del `.xlsm` del mismo día, zona por zona, leyendo los valores
 > esperados del propio archivo.
 
+### Datos conocidos de los archivos de ECOM
+
+- **Producto 1094106 `CMU. 2 TOSH MIEL GTS FUS`**: en los ECOM del 20 al 23 de octubre de 2026 sigue
+  viniendo con **715,5 kg por unidad** (la ficha trae gramos como si fueran kilos). Con 2 o 3
+  unidades llega a 1.400–2.100 kg en una sola planilla, más que todo el resto del camión. La guarda
+  de kilos (techo de 25 kg por unidad, ver `docs/dominio.md` § 5) lo deja en cero para el reparto y
+  lo lista en el aviso del Paso 1; facturas, clientes y plata sí cuentan. Mientras no corrijan la
+  ficha en ECOM, ese aviso va a salir cada vez que alguien pida el producto.
+
 ## Asistente de clientes nuevos (#N/D)
 
 Cuando el pivote encuentra clientes sin zona (no están en la maestra o están sin RUTA), el asistente

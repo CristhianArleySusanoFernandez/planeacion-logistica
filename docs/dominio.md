@@ -735,18 +735,32 @@ Dos consecuencias en el sistema:
 #### Calibración pendiente del umbral de planillas
 
 Medido sobre el **reparto real de Julián** en los 7 días del 20 al 27 de octubre de 2026 (33 pares
-camión-día), el exceso de la planilla mayor sobre la menor supera el 35 % en **27 de 33 (82 %)**. Con
-0,50 avisa en 26; con 0,75 en 19; con 1,00 todavía en 17 (52 %). La variable que dispara es casi
-siempre **kilos**: hay días con 1.595 %, 1.292 % o 1.154 % de diferencia en kilos entre las dos
-planillas de un mismo camión con clientes y pesos parejos, lo que dice más de cómo vienen los kilos
-en ECOM (ver la guarda de kilos, § 5) o de que las mitades se reparten por lo que cabe y no por
-peso, que de un reparto mal hecho.
+camión-día), con los kilos **después de la guarda** (§ 5), que es lo que la alerta ve en el pivote:
+
+| umbral | clientes + pesos + kilos | pesos + kilos (sin clientes) |
+|---|---|---|
+| 0,35 | 26 de 33 (79 %) | 19 de 33 (58 %) |
+| 0,50 | 21 (64 %) | 12 (36 %) |
+| 0,75 | 13 (39 %) | 6 (18 %) |
+| 1,00 | 10 (30 %) | — |
+
+Dos hallazgos salieron de la medición:
+
+- **Los kilos no eran el problema.** Una primera medición con los kilos crudos del ECOM daba
+  diferencias de 1.595 %, 1.299 % y 1.292 % entre las dos planillas de un camión. Las tres eran el
+  mismo producto, **1094106 TOSH MIEL**, con la ficha en 715,5 kg por unidad (gramos cargados como
+  kilos). La guarda de 25 kg lo atrapa y esas tres diferencias bajan a 9 %, 25 % y 72 %. Con guarda,
+  quitar los kilos de la comparación casi no cambia la cuenta.
+- **Julián no empareja las planillas por clientes.** En 13 de los 33 días la planilla mayor lleva
+  más del 75 % de clientes que la menor (Fabián 190 %, Angélica 168 %, Raúl 155 %, Javier Reyes
+  150 %, Carlos 133 %) con los pesos parejos. Un cliente es una parada, no una carga: las mitades se
+  reparten por lo que hay que entregar, no por cuántas puertas se tocan. **Por eso clientes sale de
+  la comparación** y la alerta se decide entre pesos y kilos.
 
 Es la misma lección del semáforo: un aviso que sale casi todos los días deja de informar. El default
-0,35 es el que pidió la operación y no se tocó; **lo que hay que decidir con Julián** es si el umbral
-sube, si los kilos salen de la comparación (dejando clientes y pesos), o si las tres variables deben
-pasarse a la vez en vez de bastar con una. Las tres cosas son un parámetro o un cambio chico en
-`alertas_de_planillas`, y ninguna toca el reparto.
+0,35 es el que pidió la operación y sigue sin tocarse hasta que se fije el umbral con la tabla de
+arriba. Cambiar el umbral es un parámetro; quitar una variable es un cambio chico en
+`alertas_de_planillas`. Ninguna de las dos cosas toca el reparto.
 
 ### Limitación conocida: zonas que cruzan de pool
 
