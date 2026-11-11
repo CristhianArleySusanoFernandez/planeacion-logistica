@@ -142,7 +142,14 @@ def _reportar_guardado(guardadas: int, eliminadas: int, errores: list[str]) -> N
 # ---------------------------------------------------------------- tab Carros
 
 
-def _carro_desde_fila(fila: Fila) -> Carro:
+def _carro_desde_fila(fila: Fila, actual: Carro | None = None) -> Carro:
+    """La fila del editor convertida en carro.
+
+    ``es_externo`` y ``costo_diario`` no están en la pestaña: son datos de
+    referencia para la recomendación de carro externo, que todavía no existe, y
+    mostrarlos confundía. Se copian del carro ya guardado para que editar una
+    fila no los borre; una ruta nueva nace con los defaults del modelo.
+    """
     conductor = fila.get("conductor") or None
     lado = fila.get("lado_chiquinquira") or None
     return Carro(
@@ -151,8 +158,8 @@ def _carro_desde_fila(fila: Fila) -> Carro:
         placa=fila.get("placa") or None,
         auxiliar=fila.get("auxiliar") or None,
         municipio=Municipio(fila["municipio"]) if fila.get("municipio") else None,
-        es_externo=bool(fila.get("es_externo")),
-        costo_diario=Decimal(str(fila.get("costo_diario") or 0)),
+        es_externo=actual.es_externo if actual else False,
+        costo_diario=actual.costo_diario if actual else Decimal("0"),
         activo=fila.get("activo") is not False,  # una fila nueva sin marcar nace activa
         # Si se deja vacía se deriva del nombre: lo normal es que la clave sea el
         # conductor sin el sufijo, y escribirla a mano en cada fila es pedir erratas.
@@ -174,6 +181,8 @@ def _tab_carros(contenedor: Contenedor) -> None:
         "zona del sur solo cae en una ruta del sur. Un carro con planeaciones guardadas "
         "no se puede borrar: desactívalo."
     )
+    flota = datos.flota(contenedor)
+    actuales = {c.numero: c for c in flota}
     originales: list[Fila] = [
         {
             "numero": c.numero,
@@ -184,11 +193,9 @@ def _tab_carros(contenedor: Contenedor) -> None:
             "municipio": c.municipio.nombre if c.municipio else None,
             "municipio_real": c.municipio_real,
             "lado_chiquinquira": c.lado_chiquinquira.value if c.lado_chiquinquira else None,
-            "es_externo": c.es_externo,
-            "costo_diario": float(c.costo_diario),
             "activo": c.activo,
         }
-        for c in datos.flota(contenedor)
+        for c in flota
     ]
     visibles, editadas = _editor_con_filtro(
         "carros",
@@ -219,7 +226,8 @@ def _tab_carros(contenedor: Contenedor) -> None:
     guardadas = 0
     for fila in diff.nuevas + diff.editadas:
         try:
-            contenedor.carros.actualizar_carro(_carro_desde_fila(fila))
+            carro = _carro_desde_fila(fila, actuales.get(str(fila["numero"]).strip()))
+            contenedor.carros.actualizar_carro(carro)
             guardadas += 1
         except LookupError as error:
             errores.append(str(error))

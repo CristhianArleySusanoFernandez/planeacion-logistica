@@ -799,6 +799,9 @@ Por día el cruce va de 0 % (martes) a 5,4 % (jueves). No se tocó el balanceado
   evaluó un solver como segunda iteración y no fue necesario: los CV alcanzados son buenos donde
   el reparto es estructuralmente mejorable (ver § 9).
 - **Recomendación automática del carro 16**: la flota guarda `es_externo` y `costo_diario`
-  ($160.000/día), y esos datos se muestran en la configuración, pero la app **no** calcula todavía
+  ($160.000/día) como **datos de referencia** para esa función, pero la app **no** calcula todavía
   si conviene no prenderlo y repartir su carga al carro 13. Hoy esa decisión de costo la sigue
-  tomando Rudy mirando el reparto.
+  tomando Rudy mirando el reparto. Ningún servicio lee los dos campos: viven en el modelo, en la
+  base y en la resincronización (que los preserva), y **la pestaña Carros no los muestra** hasta
+  que exista la recomendación; editarlos ahí sin nada que los consumiera solo confundía. Al
+  guardar una fila de la pestaña se copian del carro ya guardado, no se borran.

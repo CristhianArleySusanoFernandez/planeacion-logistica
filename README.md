@@ -474,6 +474,13 @@ rehacerlas; el resto sigue valiendo:
   comparable empieza el 20 de octubre de 2026 y el validador reporta dos números (por planilla y por
   camión). Ver «El histórico comparable empieza el 20 de octubre de 2026» más arriba.
 
+### Guía de usuario (PDF): secciones afectadas por el Prompt 24
+
+- **Configuración → Carros.** La tabla ya no muestra `es_externo` ni `costo_diario`: son datos
+  de referencia para la recomendación de carro externo, que todavía no existe, y ningún servicio
+  los lee. Siguen en la base y la resincronización los preserva. Las capturas con esas dos columnas
+  hay que rehacerlas.
+
 ## Exportación a Excel (salida para facturación)
 
 El exportador replica el layout del `.xlsm` de referencia (inspeccionado, no supuesto):
