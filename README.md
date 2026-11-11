@@ -488,6 +488,9 @@ rehacerlas; el resto sigue valiendo:
 - **Paso 3 — Reparto.** Una especial con una sola casilla marcada muestra «⭐ cliente especial» y
   «🔒 fija» a la vez y no aparece en «Mover la zona». Con varias casillas, los destinos ofrecidos son
   solo esas rutas, aunque sean de otro municipio.
+- **Configuración (índice de pestañas).** La fila principal queda en Carros, Zonas, Zonas por carro,
+  Clientes, Parámetros y **Avanzado**. Correcciones y Overrides viven dentro de Avanzado, con el texto
+  que explica cuándo hacen falta. Sin cambios de lógica ni de datos.
 
 ## Exportación a Excel (salida para facturación)
 

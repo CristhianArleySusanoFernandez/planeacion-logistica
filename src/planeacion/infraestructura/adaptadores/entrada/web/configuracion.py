@@ -67,18 +67,16 @@ def mostrar(contenedor: Contenedor) -> None:
         tab_zonas,
         tab_repertorio,
         tab_clientes,
-        tab_correcciones,
-        tab_overrides,
         tab_parametros,
+        tab_avanzado,
     ) = st.tabs(
         [
             "Carros",
             "Zonas",
             "Zonas por carro",
             "Clientes",
-            "Correcciones",
-            "Overrides",
             "Parámetros",
+            "Avanzado",
         ]
     )
     with tab_carros, st.container(border=True):
@@ -89,12 +87,29 @@ def mostrar(contenedor: Contenedor) -> None:
         _tab_repertorio(contenedor)
     with tab_clientes, st.container(border=True):
         _tab_clientes(contenedor)
+    with tab_parametros, st.container(border=True):
+        _tab_parametros(contenedor)
+    with tab_avanzado:
+        _tab_avanzado(contenedor)
+
+
+def _tab_avanzado(contenedor: Contenedor) -> None:
+    """Correcciones y Overrides, fuera de la fila principal.
+
+    Casi todo lo que hace falta se resuelve en Clientes. Estas dos son para casos
+    que se repiten, y tenerlas al mismo nivel que Carros o Zonas confundía a quien
+    usa la app a diario: parecían un paso más de la configuración normal.
+    """
+    st.caption(
+        "Casi todo se resuelve en **Clientes**. Estas dos pestañas son para casos que se repiten: "
+        "ciudad o barrio que ECOM trae mal (Correcciones) y zona forzada que sobrevive a una "
+        "resincronización (Overrides)."
+    )
+    tab_correcciones, tab_overrides = st.tabs(["Correcciones", "Overrides"])
     with tab_correcciones, st.container(border=True):
         _tab_correcciones(contenedor)
     with tab_overrides, st.container(border=True):
         _tab_overrides(contenedor)
-    with tab_parametros, st.container(border=True):
-        _tab_parametros(contenedor)
 
 
 def _municipios(contenedor: Contenedor) -> list[str]:
