@@ -10,11 +10,14 @@ from decimal import Decimal
 
 from planeacion.domain.modelo import CargaCarro, Carro, Municipio, Zona, ZonaAgregada
 from planeacion.domain.servicios.alertas_operativas import (
+    PromedioPorVehiculo,
     TipoAlerta,
     alerta_de_promedio_por_vehiculo,
     alertas_de_conductores,
     alertas_por_ruta,
+    divisor_de_vehiculos,
     nota_de_clientes_especiales,
+    promedio_por_vehiculo,
 )
 
 
@@ -102,31 +105,73 @@ class TestMaximoDeFacturas:
         assert [a.tipo for a in alertas_de_conductores(cargas)] == [TipoAlerta.MUCHAS_FACTURAS]
 
 
+# La flota de prueba: cinco rutas, cuatro activas, tres camiones (Fabián lleva dos planillas).
+_FLOTA = [
+    Carro(numero="1", conductor="FABIAN 1", conductor_clave="FABIAN"),
+    Carro(numero="2", conductor="FABIAN 2", conductor_clave="FABIAN"),
+    Carro(numero="18", conductor="JOSE YOVANY"),  # sin clave: se deduce del nombre
+    Carro(numero="19", conductor="LUIS"),
+    Carro(numero="23", conductor="KEVIN", activo=False),
+]
+
+
+def _promedio(total_facturas: int, vehiculos_referencia: int = 12) -> PromedioPorVehiculo:
+    return promedio_por_vehiculo(total_facturas, _FLOTA, vehiculos_referencia)
+
+
+class TestDivisorDeVehiculos:
+    def test_automatico_cuenta_camiones_no_rutas(self) -> None:
+        """Cero = automático: tres camiones (Fabián una vez), la 23 inactiva no cuenta."""
+        assert divisor_de_vehiculos(_FLOTA, 0) == 3
+
+    def test_la_anulacion_manual_se_usa_tal_cual(self) -> None:
+        assert divisor_de_vehiculos(_FLOTA, 12) == 12
+        assert divisor_de_vehiculos(_FLOTA, 22) == 22
+
+    def test_sin_flota_el_automatico_es_cero_y_no_divide(self) -> None:
+        promedio = promedio_por_vehiculo(1303, [], 0)
+
+        assert promedio.divisor == 0
+        assert alerta_de_promedio_por_vehiculo(promedio) is None
+
+    def test_el_texto_muestra_el_divisor_usado(self) -> None:
+        """«1.302 facturas / 12 vehículos = 108,5», para que nadie adivine de dónde sale."""
+        assert _promedio(1302).texto == "1.302 facturas / 12 vehículos = 108,5"
+        assert _promedio(1302, 0).texto == "1.302 facturas / 3 camiones activos = 434,0"
+
+
 class TestPromedioPorVehiculo:
     def test_sobre_el_umbral_sugiere_revisar_el_externo(self) -> None:
-        alerta = alerta_de_promedio_por_vehiculo(total_facturas=1400)
+        alerta = alerta_de_promedio_por_vehiculo(_promedio(1400))
 
         assert alerta is not None
         assert alerta.valor == 116  # 1400 / 12
         assert "revisar si hace falta carro externo" in alerta.texto
+        assert "1.400 facturas / 12 vehículos" in alerta.texto
         assert alerta.conductor is None
 
     def test_justo_en_el_umbral_no_avisa(self) -> None:
         """110 × 12 = 1.320 facturas: el promedio da exactamente el umbral."""
-        assert alerta_de_promedio_por_vehiculo(total_facturas=1320) is None
+        assert alerta_de_promedio_por_vehiculo(_promedio(1320)) is None
 
     def test_por_debajo_no_avisa(self) -> None:
-        assert alerta_de_promedio_por_vehiculo(total_facturas=1303) is None
+        assert alerta_de_promedio_por_vehiculo(_promedio(1303)) is None
 
-    def test_el_divisor_es_fijo_y_parametrizable(self) -> None:
-        """Es el divisor de la hoja de Julián, no la cantidad de carros con carga:
-        cambiarlo daría otro número y rompería la comparación con lo que ya miran."""
-        assert alerta_de_promedio_por_vehiculo(1303, vehiculos_referencia=22) is None
-        alerta = alerta_de_promedio_por_vehiculo(1303, vehiculos_referencia=10)
+    def test_el_divisor_manual_se_respeta(self) -> None:
+        assert alerta_de_promedio_por_vehiculo(_promedio(1303, 22)) is None
+        alerta = alerta_de_promedio_por_vehiculo(_promedio(1303, 10))
         assert alerta is not None and alerta.valor == 130
 
-    def test_un_divisor_invalido_no_hace_fallar_la_pantalla(self) -> None:
-        assert alerta_de_promedio_por_vehiculo(1303, vehiculos_referencia=0) is None
+    def test_con_el_divisor_automatico_el_umbral_de_110_no_se_recalibra_solo(self) -> None:
+        """El acoplamiento documentado: con 12 el día de 1.303 facturas no avisa (108);
+        con 17 camiones daría 76 y tampoco. Cambiar el divisor sin tocar el umbral
+        apaga la alerta de carro externo en silencio: por eso el default sigue en 12."""
+        diecisiete = [Carro(numero=str(n), conductor=f"C{n}") for n in range(17)]
+        con_doce = promedio_por_vehiculo(1400, diecisiete, 12)
+        automatico = promedio_por_vehiculo(1400, diecisiete, 0)
+
+        assert alerta_de_promedio_por_vehiculo(con_doce) is not None  # 116 > 110
+        assert automatico.divisor == 17 and alerta_de_promedio_por_vehiculo(automatico) is None  # 82
 
 
 class TestAlertasPorRuta:
@@ -149,7 +194,7 @@ class TestAlertasPorRuta:
     def test_la_alerta_del_dia_no_cuelga_de_ninguna_ruta(self) -> None:
         """El promedio por vehículo es del día entero: no tiene conductor."""
         cargas = [_carga("19", "WILMAR", clientes=80)]
-        del_dia = alerta_de_promedio_por_vehiculo(total_facturas=1400)
+        del_dia = alerta_de_promedio_por_vehiculo(_promedio(1400))
         assert del_dia is not None
 
         assert alertas_por_ruta([del_dia], cargas) == {}

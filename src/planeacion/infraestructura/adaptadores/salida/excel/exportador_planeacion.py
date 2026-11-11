@@ -25,6 +25,7 @@ from pathlib import Path
 
 from openpyxl import Workbook
 from openpyxl.styles import Font, PatternFill
+from openpyxl.utils import get_column_letter
 from openpyxl.worksheet.worksheet import Worksheet
 
 from planeacion.application.dto.planeacion import PlaneacionCompleta
@@ -36,13 +37,28 @@ from planeacion.domain.modelo.parametros import (
     CLAVE_VEHICULOS_REFERENCIA,
 )
 from planeacion.domain.servicios.alertas_operativas import (
+    PromedioPorVehiculo,
     alerta_de_promedio_por_vehiculo,
     alertas_de_conductores,
     alertas_de_planillas,
     alertas_por_ruta,
     nota_de_clientes_especiales,
+    promedio_por_vehiculo,
 )
 from planeacion.instrumentacion import medir
+
+
+def promedio_del_dia(planeacion: PlaneacionCompleta, parametros: Parametros) -> PromedioPorVehiculo:
+    """El mismo promedio que muestra el Paso 3, calculado sobre los carros de la planeación."""
+    carros = [
+        carga.carro
+        for cargas_municipio in planeacion.resultado.cargas_por_municipio.values()
+        for carga in cargas_municipio
+    ]
+    return promedio_por_vehiculo(
+        planeacion.total_facturas, carros, parametros.entero(CLAVE_VEHICULOS_REFERENCIA)
+    )
+
 
 _logger = logging.getLogger(__name__)
 
@@ -126,8 +142,9 @@ class ExportadorExcelPlaneacion:
         assert hoja_ecom is not None  # openpyxl siempre crea la hoja inicial
         hoja_ecom.title = "ECOM"
         self._hoja_ecom(hoja_ecom, planeacion, carro_por_zona)
-        self._hoja_planeacion(libro.create_sheet("PLANEACION"), planeacion, carro_por_zona)
-        self._hoja_base(libro.create_sheet("BASE"), planeacion, parametros or Parametros())
+        parametros = parametros or Parametros()
+        self._hoja_planeacion(libro.create_sheet("PLANEACION"), planeacion, carro_por_zona, parametros)
+        self._hoja_base(libro.create_sheet("BASE"), planeacion, parametros)
         self._hoja_pedidos(libro.create_sheet("PEDIDOS"), planeacion, carro_por_zona)
         with medir("guardado del .xlsx", _logger):
             libro.save(ruta_salida)
@@ -157,21 +174,27 @@ class ExportadorExcelPlaneacion:
         hoja.freeze_panes = "A4"
 
     def _hoja_planeacion(
-        self, hoja: Worksheet, planeacion: PlaneacionCompleta, carro_por_zona: dict[str, str]
+        self,
+        hoja: Worksheet,
+        planeacion: PlaneacionCompleta,
+        carro_por_zona: dict[str, str],
+        parametros: Parametros,
     ) -> None:
+        # La hoja de Julián trae `=+C3/12` en las cuatro celdas de la fila 2: un divisor
+        # fijo escrito en la fórmula. Se conserva la FORMA (fórmula, no valor) para que
+        # facturación vea lo mismo que siempre, y el divisor sale de la misma función
+        # que la alerta del Paso 3: pantalla y Excel dan el mismo número.
         cargas = [
             carga
             for cargas_municipio in planeacion.resultado.cargas_por_municipio.values()
             for carga in cargas_municipio
         ]
-        carros_usados = sum(1 for carga in cargas if carga.zonas)
-
+        divisor = promedio_del_dia(planeacion, parametros).divisor
         hoja.cell(row=2, column=2, value="Promedio Vh").font = _NEGRITA
-        if carros_usados:
-            hoja.cell(row=2, column=3, value=planeacion.total_facturas / carros_usados)
-            hoja.cell(row=2, column=4, value=float(planeacion.total_pesos) / carros_usados)
-            hoja.cell(row=2, column=5, value=float(planeacion.total_kilos) / carros_usados)
-            hoja.cell(row=2, column=6, value=planeacion.total_clientes / carros_usados)
+        if divisor > 0:
+            for columna in (3, 4, 5, 6):
+                letra = get_column_letter(columna)
+                hoja.cell(row=2, column=columna, value=f"=+{letra}3/{divisor}")
 
         hoja.cell(row=3, column=2, value="Ventas Totales").font = _NEGRITA
         hoja.cell(row=3, column=3, value=planeacion.total_facturas)
@@ -225,8 +248,7 @@ class ExportadorExcelPlaneacion:
             )
         )
         del_dia = alerta_de_promedio_por_vehiculo(
-            planeacion.total_facturas,
-            vehiculos_referencia=parametros.entero(CLAVE_VEHICULOS_REFERENCIA),
+            promedio_del_dia(planeacion, parametros),
             max_facturas=parametros.entero(CLAVE_MAX_FACTURAS_CONDUCTOR),
         )
         alertas.extend(

@@ -88,10 +88,24 @@ pueda revisarlo y ajustarlo.
      Jiménez 6, José Yovany Salamanca 3, Luis Eduardo 2, Camilo Pacheco 1 y Jairo Garzón 1;
    - **máximo de 110 facturas por conductor**, que el reparto real pasa **19 veces**, siempre los
      mismos dos: Angélica Arias 10 días y Fabián 9, sin que nunca se llamara un carro externo;
-   - **promedio por vehículo** = facturas del día ÷ `vehiculos_referencia` (12, el divisor **fijo**
-     de la hoja de Julián, no la cantidad de carros con carga: cambiarlo daría otro número y
-     rompería la comparación con lo que la operación ya mira). Osciló entre 91 y 112, con un solo
-     día por encima de 110.
+   - **promedio por vehículo** = facturas del día ÷ `vehiculos_referencia` (12, el divisor de la
+     hoja de Julián: su fila «Promedio Vh» trae literalmente `=+C3/12`, no la cantidad de carros
+     con carga ni los camiones activos). Osciló entre 91 y 112, con un solo día por encima de 110.
+     Desde el Prompt 24 hay **una sola función** (`promedio_por_vehiculo`) para la alerta del Paso 3
+     y para la fila 2 del Excel, que vuelve a ser la fórmula `=+C3/<divisor>`; antes el Excel
+     dividía por las rutas con zonas ese día y daba otro número. El divisor se muestra junto al
+     promedio («1.302 facturas / 12 vehículos = 108,5»). Con el parámetro en **0** el divisor es
+     automático: camiones activos, es decir claves de conductor distintas entre las rutas activas
+     (hoy 17).
+
+     > **El 110 y el 12 son una sola regla.** La regla de la operación es «80–110 pedidos por
+     > vehículo» y está calibrada con 12 vehículos: el 27 de octubre de 2026 da 108,5 y no avisa;
+     > con 17 camiones daría 76,6 y la alerta de carro externo dejaría de activarse sin que nadie lo
+     > decidiera. Por eso el default sigue en 12 y la 009 solo cambia la descripción. **Si se cambia
+     > el divisor hay que recalibrar `max_facturas_conductor` y la regla de externo con Julián.**
+     > Queda pendiente confirmar con él si los 80–110 son **por planilla o por camión**: si son por
+     > planilla, el divisor automático pasa a rutas activas (22) y se cambia en un solo sitio,
+     > `divisor_de_vehiculos`.
 
    Se suman **por conductor y no por ruta**: dos rutas de 30 clientes no son dos problemas, son un
    conductor con 60. Se muestran en el Paso 3 debajo del balance y en la columna *Alerta* de la hoja
@@ -355,7 +369,7 @@ las filas en vez de reescribirlas, para no tener dos fuentes de verdad.
 | `w_frecuencia` | 0,30 | El desempate por costumbre. Bajo a propósito: rompe empates, no sobrecarga. Salió de medir julio 2026 (§ 10.7); subirlo a 0,45 empeora todo levemente. |
 | `min_clientes_conductor` | 50 | Meta de la jefatura para Tunja, Barbosa y Chiquinquirá. **Solo avisa**: el reparto real la incumple 20 veces en 16 días. |
 | `max_facturas_conductor` | 110 | Facturas desde las que conviene revisar el carro externo. **Solo avisa**: Angélica Arias y Fabián lo pasan casi todos los días sin externo. |
-| `vehiculos_referencia` | 12 | Divisor del "Promedio Vh". **Fijo a propósito**: es el de la hoja que la operación mira, y usar "los carros con carga" daría otro número. |
+| `vehiculos_referencia` | 12 | Divisor del "Promedio Vh", el mismo en la alerta del Paso 3 y en la fila 2 del Excel. **0 = automático** (camiones activos, hoy 17); otro valor se usa tal cual. Se queda en 12 porque es el valor con el que está calibrada la regla 80–110: cambiarlo obliga a recalibrar `max_facturas_conductor` con Julián. |
 | `umbral_cv_aceptable` | 0,25 | Hasta este CV el semáforo va en verde. Los 0,10 de julio de 2026 eran de otra flota: el reparto **real** mide 25–46 %, así que los cuatro municipios salían en rojo siempre. |
 | `umbral_cv_atencion` | 0,40 | Hasta acá ámbar, por encima rojo. Solo cambia el color: los umbrales no entran en la función de costo. |
 | `desbalance_planillas` | 0,75 | Desde qué diferencia dos planillas del mismo camión se consideran desparejas, como fracción de la menor, en pesos **o** kilos (clientes no: Julián reparte las mitades por carga, no por paradas). Calibrado sobre los 7 días del 20 al 27 de octubre de 2026. Solo avisa. |

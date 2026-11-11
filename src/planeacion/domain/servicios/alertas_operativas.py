@@ -22,7 +22,7 @@ from dataclasses import dataclass
 from decimal import Decimal
 from enum import Enum
 
-from planeacion.domain.modelo import CargaCarro
+from planeacion.domain.modelo import CargaCarro, Carro, clave_conductor
 from planeacion.domain.modelo.carro import clave_orden_carro
 from planeacion.domain.servicios.agrupacion_por_conductor import (
     CargaConductor,
@@ -189,29 +189,92 @@ def _porcentaje(exceso: Decimal) -> int:
     return int(exceso * 100)
 
 
-def alerta_de_promedio_por_vehiculo(
+def divisor_de_vehiculos(carros: Sequence[Carro], vehiculos_referencia: int = VEHICULOS_REFERENCIA) -> int:
+    """Por cuántos vehículos se divide el "Promedio Vh".
+
+    `vehiculos_referencia` mayor que cero es una anulación manual y se usa tal
+    cual: es el 12 de la hoja de Julián, con el que está calibrada su regla de
+    80–110 pedidos por vehículo. En cero el divisor es **automático**: los camiones
+    activos, o sea las claves de conductor distintas entre las rutas activas (dos
+    planillas del mismo camión cuentan una vez). Hay UN solo divisor para la alerta
+    del Paso 3 y para la fila 2 del Excel: la pantalla y la hoja dan el mismo número.
+    """
+    if vehiculos_referencia > 0:
+        return vehiculos_referencia
+    claves = {
+        carro.conductor_clave or clave_conductor(carro.conductor) or carro.numero
+        for carro in carros
+        if carro.activo
+    }
+    return len(claves)
+
+
+@dataclass(frozen=True)
+class PromedioPorVehiculo:
+    """Facturas del día ÷ divisor, con el divisor a la vista para que nadie tenga
+    que adivinar de dónde sale el número."""
+
+    total_facturas: int
+    divisor: int
+    automatico: bool
+
+    @property
+    def promedio(self) -> Decimal:
+        return Decimal(self.total_facturas) / self.divisor if self.divisor > 0 else Decimal("0")
+
+    @property
+    def entero(self) -> int:
+        """El promedio truncado, que es el que se compara con el umbral (como la hoja)."""
+        return self.total_facturas // self.divisor if self.divisor > 0 else 0
+
+    @property
+    def texto(self) -> str:
+        """«1.302 facturas / 12 vehículos = 108,5»."""
+        origen = "camiones activos" if self.automatico else "vehículos"
+        return f"{_miles(self.total_facturas)} facturas / {self.divisor} {origen} = {_coma(self.promedio)}"
+
+
+def promedio_por_vehiculo(
     total_facturas: int,
+    carros: Sequence[Carro],
     vehiculos_referencia: int = VEHICULOS_REFERENCIA,
+) -> PromedioPorVehiculo:
+    return PromedioPorVehiculo(
+        total_facturas=total_facturas,
+        divisor=divisor_de_vehiculos(carros, vehiculos_referencia),
+        automatico=vehiculos_referencia <= 0,
+    )
+
+
+def alerta_de_promedio_por_vehiculo(
+    promedio: PromedioPorVehiculo,
     max_facturas: int = MAX_FACTURAS_CONDUCTOR,
 ) -> Alerta | None:
-    """El "Promedio Vh" de la hoja de Julián: facturas del día ÷ un divisor FIJO.
+    """El "Promedio Vh" de la hoja de Julián por encima del máximo de facturas.
 
-    El divisor es un parámetro y no la cantidad de carros con carga a propósito:
-    así se calcula en la hoja que la operación mira todos los días, y cambiarlo
-    por "los carros que hoy tienen zonas" daría otro número y rompería la
-    comparación con lo que ellos ya tienen en la cabeza.
+    El umbral (110) y el divisor (12) son UNA sola regla de la operación: con 17
+    camiones activos el mismo día daría 76 y la alerta de carro externo dejaría de
+    sonar sin que nadie lo decidiera. Por eso el default sigue en 12 y cambiar el
+    divisor obliga a recalibrar `max_facturas_conductor` con Julián.
     """
-    if vehiculos_referencia <= 0:
-        return None
-    promedio = total_facturas // vehiculos_referencia
-    if promedio <= max_facturas:
+    if promedio.divisor <= 0 or promedio.entero <= max_facturas:
         return None
     return Alerta(
         tipo=TipoAlerta.PROMEDIO_POR_VEHICULO,
-        texto=f"Promedio por vehículo {promedio}: revisar si hace falta carro externo",
-        valor=promedio,
+        texto=(
+            f"Promedio por vehículo {promedio.entero} ({promedio.texto}): revisar si hace falta carro externo"
+        ),
+        valor=promedio.entero,
         umbral=max_facturas,
     )
+
+
+def _miles(valor: int) -> str:
+    return f"{valor:,}".replace(",", ".")
+
+
+def _coma(valor: Decimal) -> str:
+    return f"{valor:.1f}".replace(".", ",")
 
 
 def alertas_por_ruta(alertas: Sequence[Alerta], cargas: Sequence[CargaCarro]) -> dict[str, str]:

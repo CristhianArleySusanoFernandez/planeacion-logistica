@@ -82,8 +82,11 @@ CATALOGO: tuple[DefinicionParametro, ...] = (
     DefinicionParametro(
         CLAVE_VEHICULOS_REFERENCIA,
         Decimal("12"),
-        'Divisor fijo del "Promedio Vh" de la hoja de la empresa. No es la cantidad de carros con '
-        "carga: se deja fijo para que el número sea comparable con el que ellos ya miran.",
+        'Divisor del "Promedio Vh" (facturas del día ÷ vehículos), el mismo en la alerta del '
+        "Paso 3 y en la fila 2 del Excel. 0 = automático: camiones activos (claves de conductor "
+        "distintas de las rutas activas). 12 es el valor con el que está calibrada la regla de "
+        "80–110 pedidos por vehículo de la operación: si cambia, hay que recalibrar "
+        "max_facturas_conductor con Julián.",
     ),
     DefinicionParametro(
         CLAVE_UMBRAL_CV_ACEPTABLE,

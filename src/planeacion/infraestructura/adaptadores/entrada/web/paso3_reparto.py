@@ -34,6 +34,7 @@ from planeacion.domain.servicios.alertas_operativas import (
     alerta_de_promedio_por_vehiculo,
     alertas_de_conductores,
     alertas_de_planillas,
+    promedio_por_vehiculo,
 )
 from planeacion.infraestructura.adaptadores.entrada.web import datos, estado, estilos
 
@@ -202,16 +203,22 @@ def _alertas_operativas(
             max_facturas=parametros.entero(CLAVE_MAX_FACTURAS_CONDUCTOR),
         )
     )
+    carros = [carga.carro for cargas in cargas_por_municipio.values() for carga in cargas]
+    promedio = promedio_por_vehiculo(total_facturas, carros, parametros.entero(CLAVE_VEHICULOS_REFERENCIA))
     del_dia = alerta_de_promedio_por_vehiculo(
-        total_facturas,
-        vehiculos_referencia=parametros.entero(CLAVE_VEHICULOS_REFERENCIA),
-        max_facturas=parametros.entero(CLAVE_MAX_FACTURAS_CONDUCTOR),
+        promedio, max_facturas=parametros.entero(CLAVE_MAX_FACTURAS_CONDUCTOR)
     )
     if del_dia is not None:
         alertas.append(del_dia)
     alertas.extend(alertas_de_planillas(cargas_por_municipio, parametros.numero(CLAVE_DESBALANCE_PLANILLAS)))
 
     estilos.titulo_seccion("Alertas operativas")
+    # El mismo número y el mismo divisor que la fila «Promedio Vh» del Excel.
+    st.caption(
+        f"Promedio por vehículo: **{promedio.texto}** "
+        f"({'divisor automático' if promedio.automatico else 'divisor fijo de Parámetros'}; "
+        f"avisa por encima de {parametros.entero(CLAVE_MAX_FACTURAS_CONDUCTOR)})."
+    )
     if not alertas:
         st.markdown(
             '<span class="texto-suave">Sin alertas: ningún conductor queda por debajo del '

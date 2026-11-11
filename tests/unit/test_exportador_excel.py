@@ -285,3 +285,43 @@ def test_la_hoja_pedidos_marca_los_kilos_que_quedaron_fuera(tmp_path: Path) -> N
     assert hoja.cell(row=2, column=2).value == "P1"  # la factura con la línea marcada
     assert hoja.cell(row=2, column=columna).value == 715.5
     assert hoja.cell(row=3, column=columna).value is None
+
+
+def test_el_promedio_vh_es_la_formula_de_la_hoja_con_el_divisor_de_la_alerta(tmp_path: Path) -> None:
+    """La hoja de Julián trae `=+C3/12`: se conserva la fórmula y el divisor es el mismo
+    que usa la alerta del Paso 3, así pantalla y Excel dan el mismo número."""
+    from planeacion.domain.modelo import Parametros
+    from planeacion.domain.modelo.parametros import CLAVE_VEHICULOS_REFERENCIA
+    from planeacion.infraestructura.adaptadores.salida.excel.exportador_planeacion import promedio_del_dia
+
+    planeacion = _planeacion_de_ejemplo()
+    parametros = Parametros(valores={CLAVE_VEHICULOS_REFERENCIA: Decimal("12")})
+    ruta = ExportadorExcelPlaneacion().exportar(planeacion, tmp_path / "salida.xlsx", parametros)
+
+    hoja = load_workbook(ruta)["PLANEACION"]
+    assert [hoja.cell(row=2, column=c).value for c in (3, 4, 5, 6)] == [
+        "=+C3/12",
+        "=+D3/12",
+        "=+E3/12",
+        "=+F3/12",
+    ]
+    assert promedio_del_dia(planeacion, parametros).divisor == 12
+
+
+def test_con_el_divisor_automatico_el_excel_divide_por_los_camiones_de_la_planeacion(tmp_path: Path) -> None:
+    from planeacion.domain.modelo import Parametros
+    from planeacion.domain.modelo.parametros import CLAVE_VEHICULOS_REFERENCIA
+
+    planeacion = _planeacion_de_ejemplo()
+    parametros = Parametros(valores={CLAVE_VEHICULOS_REFERENCIA: Decimal("0")})
+    camiones = len(
+        {
+            c.carro.conductor_clave or c.carro.conductor or c.carro.numero
+            for cs in planeacion.resultado.cargas_por_municipio.values()
+            for c in cs
+        }
+    )
+    ruta = ExportadorExcelPlaneacion().exportar(planeacion, tmp_path / "salida.xlsx", parametros)
+
+    hoja = load_workbook(ruta)["PLANEACION"]
+    assert hoja["C2"].value == f"=+C3/{camiones}"

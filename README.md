@@ -31,9 +31,9 @@ Abre el **SQL Editor** del dashboard de Supabase y pega/ejecuta, en orden, el co
 [`migrations/001_esquema_inicial.sql`](migrations/001_esquema_inicial.sql) y
 [`migrations/002_carro_zonas.sql`](migrations/002_carro_zonas.sql) y
 [`migrations/003_carro_zonas_dia.sql`](migrations/003_carro_zonas_dia.sql), y después las
-004 a 008 en orden (flota por conductor, parámetros, umbrales del semáforo, zonas especiales y
-umbral de planillas). La 008 es la única que pisa un valor a propósito: recalibra
-`desbalance_planillas` de 0,35 a 0,75.
+004 a 009 en orden (flota por conductor, parámetros, umbrales del semáforo, zonas especiales,
+umbral de planillas y descripción del divisor del promedio). La 008 es la única que pisa un valor a
+propósito: recalibra `desbalance_planillas` de 0,35 a 0,75; la 009 solo cambia una descripción.
 Los scripts son idempotentes (`create table if not exists`), se pueden correr más de una vez.
 La 003 le agrega al repertorio la dimensión del **día de la semana** y **replica la
 configuración que ya exista a los seis días laborales**, así lo ya cargado a mano sigue
@@ -491,6 +491,10 @@ rehacerlas; el resto sigue valiendo:
 - **Configuración (índice de pestañas).** La fila principal queda en Carros, Zonas, Zonas por carro,
   Clientes, Parámetros y **Avanzado**. Correcciones y Overrides viven dentro de Avanzado, con el texto
   que explica cuándo hacen falta. Sin cambios de lógica ni de datos.
+- **Configuración → Parámetros.** `vehiculos_referencia` cambió de descripción (009): 0 = divisor
+  automático por camiones activos; 12, el default, es el valor calibrado con la regla 80–110. En el
+  Paso 3 el promedio por vehículo ahora muestra el divisor («1.302 facturas / 12 vehículos = 108,5»)
+  y la fila «Promedio Vh» del Excel vuelve a ser la fórmula `=+C3/12` de la hoja original.
 
 ## Exportación a Excel (salida para facturación)
 
