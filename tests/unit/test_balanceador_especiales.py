@@ -7,9 +7,11 @@ así que **no tienen repertorio**, y por eso aparecían todos los días en el av
 de "zonas sin carro" —ruido— o, cuando pedían, quedaban sin asignar: el 27 de
 octubre de 2026 COMFABOY fue la única zona que la app no pudo repartir.
 
-Con la marca puesta son elegibles en **cualquier ruta de su pool** y el
-balanceador las coloca por carga. Eso es la sugerencia de vehículo que pidió la
-operación: no es una excepción al balanceo, es balanceo sin repertorio.
+Con la marca puesta y **sin casillas en Zonas por carro** son elegibles en
+cualquier ruta de su pool y el balanceador las coloca por carga. Eso es la
+sugerencia de vehículo que pidió la operación: no es una excepción al balanceo,
+es balanceo sin repertorio. **Con casillas marcadas** la marca es una decisión
+explícita: solo esas rutas, estén o no en su municipio; una sola = fija.
 
 La fuente de la marca es **`zonas.especial`** y nada más: ni una lista en el
 código, ni el nombre. Se edita en Configuración → Zonas.
@@ -89,18 +91,18 @@ class TestElegibleEnTodoSuPool:
         # 18 lleva 90 millones y 19 lleva 40: la especial va al 20, que va vacío.
         assert _carro_de(resultado, "(TUNJA): IMPACTA") == "20"
 
-    def test_el_repertorio_de_la_especial_no_la_limita(self) -> None:
-        """Puede tener pares viejos de cuando se sembraba; no la encierran."""
+    def test_una_casilla_marcada_la_fija_aunque_esa_ruta_vaya_cargada(self) -> None:
+        """La marca es una decisión explícita de la operación, no una sugerencia."""
         zonas = [
             _zona("(TUNJA): GRANDE", 100, "90000000"),
             _zona("(TUNJA): IMPACTA", 1, "1000000", especial=True),
         ]
-        # El repertorio dice que solo el 18 la atiende, y el 18 va cargadísimo.
+        # Julián marcó la 18 para IMPACTA, y la 18 va cargadísima.
         repertorio = {"18": {"(TUNJA): GRANDE", "(TUNJA): IMPACTA"}}
 
-        resultado = Balanceador().balancear(zonas, self._CARROS, None, SIN_MEJORA, repertorio)
+        resultado = Balanceador().balancear(zonas, self._CARROS, None, ReglasBalanceo(), repertorio)
 
-        assert _carro_de(resultado, "(TUNJA): IMPACTA") != "18"
+        assert _carro_de(resultado, "(TUNJA): IMPACTA") == "18"
 
     def test_sin_ninguna_ruta_en_su_pool_queda_sin_carro(self) -> None:
         """Ser especial no inventa vehículos donde no hay."""
@@ -232,7 +234,10 @@ class TestMoverUnaEspecialAMano:
             _zona("(TUNJA): IMPACTA", 1, "1000000", especial=especial),
             _zona("(BARBOSA): NORMAL", 10, "2000000"),
         ]
-        repertorio = {"18": {"(TUNJA): IMPACTA"}, "5": {"(BARBOSA): NORMAL"}}
+        # Sin casillas para IMPACTA: con una marcada quedaría fija (ver abajo).
+        repertorio = {"18": {"(TUNJA): OTRA"}, "5": {"(BARBOSA): NORMAL"}}
+        if not especial:
+            repertorio["18"].add("(TUNJA): IMPACTA")
         return Balanceador().balancear(zonas, self._CARROS, None, SIN_MEJORA, repertorio)
 
     def test_se_mueve_a_una_ruta_de_su_municipio_que_no_la_tiene_en_el_repertorio(self) -> None:
@@ -255,3 +260,135 @@ class TestMoverUnaEspecialAMano:
 
         with pytest.raises(MovimientoInvalido, match="cliente especial de TUNJA"):
             AjustadorDeAsignacion().mover(resultado, "(TUNJA): IMPACTA", "5")
+
+
+class TestConRutasMarcadas:
+    """Una casilla marcada en Zonas por carro es una decisión explícita.
+
+    Julián sabe que COMFABOY se despacha con la ruta 18 y necesita poder decirlo.
+    Con una ruta marcada la especial queda fija a esa ruta, esté o no en su
+    municipio; con varias, el balanceador elige por carga entre ellas; sin
+    ninguna, sigue como siempre: cualquier ruta de su municipio.
+    """
+
+    _CARROS = {
+        "BARBOSA": [Carro(numero="5"), Carro(numero="7")],
+        "TUNJA": [Carro(numero="18"), Carro(numero="19"), Carro(numero="20")],
+    }
+
+    def test_una_marcada_fuera_de_su_municipio_va_solo_a_esa(self) -> None:
+        """COMFABOY es de BARBOSA en la base y Julián la marcó en la 18 de TUNJA."""
+        zonas = [
+            _zona("(BARBOSA): COMFABOY", 1, "5000000", especial=True),
+            _zona("(TUNJA): GRANDE", 100, "90000000"),
+        ]
+        repertorio = {"18": {"(BARBOSA): COMFABOY", "(TUNJA): GRANDE"}}
+
+        resultado = Balanceador().balancear(zonas, self._CARROS, None, ReglasBalanceo(), repertorio)
+
+        assert _carro_de(resultado, "(BARBOSA): COMFABOY") == "18"
+        assert resultado.zonas_sin_carro == []
+
+    def test_con_dos_marcadas_elige_por_carga_entre_las_dos(self) -> None:
+        zonas = [
+            _zona("(TUNJA): GRANDE", 100, "90000000"),
+            _zona("(TUNJA): MEDIANA", 50, "40000000"),
+            _zona("(TUNJA): IMPACTA", 1, "1000000", especial=True),
+        ]
+        # Marcada en 18 y 19; el 20 va vacío pero NO está marcado.
+        repertorio = {
+            "18": {"(TUNJA): GRANDE", "(TUNJA): IMPACTA"},
+            "19": {"(TUNJA): MEDIANA", "(TUNJA): IMPACTA"},
+        }
+
+        resultado = Balanceador().balancear(zonas, self._CARROS, None, SIN_MEJORA, repertorio)
+
+        assert _carro_de(resultado, "(TUNJA): IMPACTA") == "19"
+
+    def test_sin_marcas_sigue_yendo_a_cualquier_ruta_de_su_municipio(self) -> None:
+        zonas = [
+            _zona("(TUNJA): GRANDE", 100, "90000000"),
+            _zona("(TUNJA): IMPACTA", 1, "1000000", especial=True),
+        ]
+        repertorio = {"18": {"(TUNJA): GRANDE"}}
+
+        resultado = Balanceador().balancear(zonas, self._CARROS, None, SIN_MEJORA, repertorio)
+
+        assert _carro_de(resultado, "(TUNJA): IMPACTA") in {"19", "20"}
+
+    def test_una_zona_normal_con_una_marca_no_cambia(self) -> None:
+        """La regresión: para una normal una marca ya era su repertorio."""
+        zonas = [_zona("(TUNJA): NORMAL", 10, "5000000")]
+        repertorio = {"19": {"(TUNJA): NORMAL"}}
+
+        resultado = Balanceador().balancear(zonas, self._CARROS, None, SIN_MEJORA, repertorio)
+
+        assert _carro_de(resultado, "(TUNJA): NORMAL") == "19"
+
+    def test_una_marca_en_una_ruta_que_hoy_no_esta_activa_no_la_deja_sin_carro(self) -> None:
+        """La 23 está inactiva: la marca no puede cumplirse y la especial vuelve a su pool."""
+        zonas = [_zona("(TUNJA): IMPACTA", 1, "1000000", especial=True)]
+        repertorio = {"23": {"(TUNJA): IMPACTA"}}
+
+        resultado = Balanceador().balancear(zonas, self._CARROS, None, SIN_MEJORA, repertorio)
+
+        assert _carro_de(resultado, "(TUNJA): IMPACTA") in {"18", "19", "20"}
+
+    def test_en_chiquinquira_la_marca_en_una_ruta_del_otro_lado_se_respeta(self) -> None:
+        """La regla de lado no le aplica a una especial, con marca tampoco."""
+        carros = {
+            "CHIQUINQUIRA": [
+                Carro(numero="1", lado_chiquinquira=ReglaChiquinquira.SUR),
+                Carro(numero="2", lado_chiquinquira=ReglaChiquinquira.SUR),
+                Carro(numero="3", lado_chiquinquira=ReglaChiquinquira.NORTE),
+            ]
+        }
+        especial = _zona("(CHIQUINQUIRA): PIZZA NOSTRA RUTA SUR 1", 1, "1000000", especial=True)
+        assert especial.zona.regla_chiquinquira is ReglaChiquinquira.SUR
+        repertorio = {"3": {especial.zona.nombre}}
+
+        resultado = Balanceador().balancear([especial], carros, None, ReglasBalanceo(), repertorio)
+
+        assert _carro_de(resultado, especial.zona.nombre) == "3"
+
+
+class TestMoverUnaEspecialConMarcas:
+    _CARROS = {
+        "BARBOSA": [Carro(numero="5"), Carro(numero="7")],
+        "TUNJA": [Carro(numero="18"), Carro(numero="19"), Carro(numero="20")],
+    }
+
+    def _repartir(self, repertorio: dict[str, set[str]]) -> ResultadoBalanceo:
+        zonas = [
+            _zona("(BARBOSA): COMFABOY", 1, "5000000", especial=True),
+            _zona("(BARBOSA): NORMAL", 10, "2000000"),
+            _zona("(TUNJA): GRANDE", 100, "90000000"),
+        ]
+        repertorio = {**repertorio, "5": {"(BARBOSA): NORMAL"}, "20": {"(TUNJA): GRANDE"}}
+        return Balanceador().balancear(zonas, self._CARROS, None, SIN_MEJORA, repertorio)
+
+    def test_con_una_sola_marca_no_se_mueve_a_ninguna_parte(self) -> None:
+        resultado = self._repartir({"18": {"(BARBOSA): COMFABOY"}})
+
+        with pytest.raises(MovimientoInvalido, match=r"ruta\(s\) marcada\(s\) \(18\)"):
+            AjustadorDeAsignacion().mover(resultado, "(BARBOSA): COMFABOY", "19")
+        with pytest.raises(MovimientoInvalido, match="marcada"):
+            AjustadorDeAsignacion().mover(resultado, "(BARBOSA): COMFABOY", "7")
+        assert resultado.rutas_marcadas("(BARBOSA): COMFABOY") == {"18"}
+
+    def test_con_dos_marcas_se_mueve_entre_ellas_y_a_ninguna_otra(self) -> None:
+        resultado = self._repartir({"18": {"(BARBOSA): COMFABOY"}, "19": {"(BARBOSA): COMFABOY"}})
+        origen = _carro_de(resultado, "(BARBOSA): COMFABOY")
+        destino = "19" if origen == "18" else "18"
+
+        AjustadorDeAsignacion().mover(resultado, "(BARBOSA): COMFABOY", destino)
+        assert _carro_de(resultado, "(BARBOSA): COMFABOY") == destino
+
+        with pytest.raises(MovimientoInvalido, match="18, 19"):
+            AjustadorDeAsignacion().mover(resultado, "(BARBOSA): COMFABOY", "20")
+
+    def test_sin_marcas_sigue_la_regla_del_municipio(self) -> None:
+        resultado = self._repartir({})
+
+        with pytest.raises(MovimientoInvalido, match="cliente especial de BARBOSA"):
+            AjustadorDeAsignacion().mover(resultado, "(BARBOSA): COMFABOY", "18")

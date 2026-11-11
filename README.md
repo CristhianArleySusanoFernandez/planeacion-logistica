@@ -480,6 +480,14 @@ rehacerlas; el resto sigue valiendo:
   de referencia para la recomendación de carro externo, que todavía no existe, y ningún servicio
   los lee. Siguen en la base y la resincronización los preserva. Las capturas con esas dos columnas
   hay que rehacerlas.
+- **Configuración → Zonas por carro.** Las zonas especiales aparecen con la etiqueta «· especial»
+  junto al nombre, hay un filtro nuevo «Solo especiales», y al marcar una casilla de una especial
+  sale un aviso bajo la matriz. Hay que explicar la regla: sin casillas, cualquier ruta de su
+  municipio; con casillas, solo esas; con una sola, fija. Las casillas de especiales se ponen a mano
+  (la siembra no las escribe).
+- **Paso 3 — Reparto.** Una especial con una sola casilla marcada muestra «⭐ cliente especial» y
+  «🔒 fija» a la vez y no aparece en «Mover la zona». Con varias casillas, los destinos ofrecidos son
+  solo esas rutas, aunque sean de otro municipio.
 
 ## Exportación a Excel (salida para facturación)
 

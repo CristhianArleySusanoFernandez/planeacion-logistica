@@ -17,6 +17,7 @@ from planeacion.domain.modelo import (
     CargaCarro,
     MetricasDesbalance,
     Parametros,
+    ResultadoBalanceo,
     UmbralesDesbalance,
     Zona,
     clave_orden_carro,
@@ -310,7 +311,7 @@ def _mostrar_carga(
                     zona.clientes,
                     f"${zona.pesos:,.0f}",
                     f"{zona.kilos:,.1f}",
-                    estilos.Html(_marca_de_zona(zona.zona)),
+                    estilos.Html(_marca_de_zona(zona.zona, planeacion.resultado)),
                 ]
                 for zona in sorted(carga.zonas, key=lambda z: z.zona.nombre)
             ],
@@ -319,17 +320,26 @@ def _mostrar_carga(
         _controles_mover(municipio, carga, cargas, planeacion)
 
 
-def _marca_de_zona(zona: Zona) -> str:
-    """La etiqueta de la fila: especial, fija, o nada.
-
-    El especial va primero porque una zona especial de Chiquinquirá tiene lado y
-    **no** está fija: la regla de lado es del repertorio y ella no lo usa.
-    """
+def _esta_fija(zona: Zona, resultado: ResultadoBalanceo) -> bool:
+    """Una zona no se puede mover si tiene lado en Chiquinquirá (regla dura) o si la
+    operación le marcó una sola ruta en Zonas por carro. Una especial no tiene lado
+    —la regla de lado es del repertorio y ella no lo usa— pero sí puede tener marca."""
     if zona.especial:
-        return estilos.badge("⭐ cliente especial, verifique el vehículo", "ambar")
+        return len(resultado.rutas_marcadas(zona.nombre)) == 1
     if zona.regla_chiquinquira is not None:
-        return estilos.badge("🔒 fija", "neutro")
-    return ""
+        return True
+    return bool(resultado.repertorio) and len(resultado.rutas_marcadas(zona.nombre)) == 1
+
+
+def _marca_de_zona(zona: Zona, resultado: ResultadoBalanceo) -> str:
+    """La etiqueta de la fila: especial (siempre, para que verifiquen el vehículo),
+    más el candado si está fija."""
+    marcas = []
+    if zona.especial:
+        marcas.append(estilos.badge("⭐ cliente especial, verifique el vehículo", "ambar"))
+    if _esta_fija(zona, resultado):
+        marcas.append(estilos.badge("🔒 fija", "neutro"))
+    return " ".join(marcas)
 
 
 def _destinos_para(
@@ -337,10 +347,10 @@ def _destinos_para(
 ) -> list[str]:
     """A qué carros se puede mover la zona.
 
-    Una zona **especial** se puede mover a cualquier ruta de su municipio: no usa
-    el repertorio, así que no hay por qué limitarla a lo configurado. Con
-    repertorio, las demás van a los carros (de cualquier pool) que las permiten;
-    sin repertorio, a los del mismo municipio, como siempre.
+    Una zona **especial** sin casillas marcadas se puede mover a cualquier ruta de
+    su municipio: no usa el repertorio. Con casillas marcadas, solo a esas rutas,
+    estén en el pool que estén. Las demás van a los carros (de cualquier pool) que
+    las permiten; sin repertorio, a los del mismo municipio, como siempre.
     """
     resultado = planeacion.resultado
     especial = any(
@@ -350,6 +360,11 @@ def _destinos_para(
         for zona in carga.zonas
     )
     if especial:
+        marcas = resultado.rutas_marcadas(nombre_zona)
+        if marcas:
+            candidatas = [c for cargas in resultado.cargas_por_municipio.values() for c in cargas]
+            numeros = [c.carro.numero for c in candidatas if c is not origen and c.carro.numero in marcas]
+            return sorted(numeros, key=clave_orden_carro)
         return sorted((c.carro.numero for c in cargas_municipio if c is not origen), key=clave_orden_carro)
     if resultado.repertorio:
         candidatas = [c for cargas in resultado.cargas_por_municipio.values() for c in cargas]
@@ -366,10 +381,9 @@ def _destinos_para(
 def _controles_mover(
     municipio: str, carga: CargaCarro, cargas: list[CargaCarro], planeacion: PlaneacionCompleta
 ) -> None:
-    # Las especiales se mueven aunque tengan lado: no están fijas por la regla
-    # dura, que es del repertorio.
+    # Una zona fija (lado de Chiquinquirá, o una sola ruta marcada) no se ofrece.
     movibles = sorted(
-        zona.zona.nombre for zona in carga.zonas if zona.zona.especial or zona.zona.regla_chiquinquira is None
+        zona.zona.nombre for zona in carga.zonas if not _esta_fija(zona.zona, planeacion.resultado)
     )
     if not movibles:
         return

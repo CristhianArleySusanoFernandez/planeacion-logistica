@@ -37,13 +37,16 @@ par de cada lado. Entre las rutas del lado correcto deciden el repertorio y el
 balance, que es lo que hace el resto del servicio; medido sobre septiembre y
 octubre de 2026, el lado se respeta en 81 de 93 asignaciones pero el reparto
 dentro del lado se mueve todo el tiempo. La regla prevalece sobre el repertorio.
-Las **zonas especiales** (`zona.especial`) son la excepción a las dos cosas: no
-usan repertorio ni regla de lado. Son clientes que piden de vez en cuando y en
-grande, que la operación despacha aparte con el vehículo que convenga ese día,
-así que no tienen carro de costumbre que respetar: son elegibles en cualquier
-ruta de su pool y el reparto lo decide la carga. Eso es la "sugerencia de
-vehículo" que pide la operación, y no es una excepción al balanceo: es balanceo
-sin repertorio. Ver ``_puede_atender``.
+Las **zonas especiales** (`zona.especial`) son la excepción a las dos cosas. Son
+clientes que piden de vez en cuando y en grande, que la operación despacha aparte
+con el vehículo que convenga ese día. **Sin casillas marcadas** en Zonas por carro
+son elegibles en cualquier ruta de su pool y el reparto lo decide la carga: eso es
+la "sugerencia de vehículo" que pide la operación, y no es una excepción al
+balanceo, es balanceo sin repertorio. **Con casillas marcadas** la marca es una
+decisión explícita ("COMFABOY se despacha con la 18"): es elegible solo en esas
+rutas, estén o no en su municipio; con una sola queda fija, con varias elige la
+carga entre ellas. La regla de lado no le aplica en ningún caso. Ver
+``_puede_atender``.
 
 Si ninguna ruta del pool trae lado (base sin configurar), no hay regla que
 aplicar y manda el balance, como con el repertorio vacío.
@@ -61,12 +64,14 @@ from planeacion.domain.modelo import (
     ReglasBalanceo,
     ResultadoBalanceo,
     ZonaAgregada,
+    clave_orden_carro,
 )
 from planeacion.domain.modelo.balanceo import (
     REGLAS_POR_DEFECTO,
     Frecuencias,
     Repertorio,
     penalizaciones_por_frecuencia,
+    rutas_marcadas,
     zona_permitida,
 )
 
@@ -139,14 +144,15 @@ def calcular_costo(
 def _puede_atender(zona: ZonaAgregada, numero_carro: str, repertorio: Repertorio) -> bool:
     """Si la zona puede ir en ese carro.
 
-    Es el repertorio, salvo para las **zonas especiales**: un cliente que pide
-    esporádicamente y en grande no tiene carro de costumbre —se despacha con el
-    que convenga ese día—, así que es elegible en cualquier ruta de su pool y el
-    reparto lo decide la carga. Eso es la "sugerencia de vehículo" que pide la
-    operación: no es una excepción al balanceo, es balanceo sin repertorio.
+    Es el repertorio, salvo para las **zonas especiales** sin casillas marcadas:
+    un cliente que pide esporádicamente y en grande no tiene carro de costumbre
+    —se despacha con el que convenga ese día—, así que es elegible en cualquier
+    ruta de su pool y el reparto lo decide la carga. Si la operación le marcó
+    rutas, esa marca es una decisión explícita y manda igual que un repertorio.
     """
     if zona.zona.especial:
-        return True
+        marcas = rutas_marcadas(repertorio, zona.zona.nombre)
+        return not marcas or numero_carro in marcas
     return zona_permitida(repertorio, zona.zona.nombre, numero_carro)
 
 
@@ -179,12 +185,16 @@ class Balanceador:
         repertorio: Repertorio | None = None,
         frecuencias: Frecuencias | None = None,
     ) -> ResultadoBalanceo:
-        # Un carro con repertorio declarado pero vacío cuenta como no configurado.
-        repertorio_limpio = {n: frozenset(zs) for n, zs in (repertorio or {}).items() if zs}
-        penalizaciones = penalizaciones_por_frecuencia(repertorio_limpio, frecuencias or {})
         municipio_de_carro = {
             carro.numero: municipio for municipio, carros in carros_por_municipio.items() for carro in carros
         }
+        # Un carro con repertorio declarado pero vacío cuenta como no configurado, y
+        # las casillas de una ruta que hoy no está en la planeación (inactiva) no
+        # cuentan: una especial marcada solo en la 23 vuelve a repartirse por carga.
+        repertorio_limpio = {
+            n: frozenset(zs) for n, zs in (repertorio or {}).items() if zs and n in municipio_de_carro
+        }
+        penalizaciones = penalizaciones_por_frecuencia(repertorio_limpio, frecuencias or {})
         zonas_por_municipio, zonas_sin_carro = self._agrupar_zonas(
             zonas_agregadas, municipio_de_carro, repertorio_limpio
         )
@@ -244,18 +254,18 @@ class Balanceador:
         algún carro suyo la permite; si solo la permiten carros de otro municipio, la
         zona "viaja" al pool de esos carros; sin ningún carro elegible → None."""
         propio = zona.zona.municipio.nombre
-        if zona.zona.especial:
-            # No consulta el repertorio: va a su propio pool mientras ese pool
-            # tenga alguna ruta. Así nunca cae en zonas_sin_carro por no estar
-            # configurada, que es su estado normal.
-            return propio if propio in set(municipio_de_carro.values()) else None
-        if not repertorio:
-            return propio
         municipios_elegibles = [
             municipio_de_carro[numero]
             for numero, permitidas in repertorio.items()
             if zona.zona.nombre in permitidas and numero in municipio_de_carro
         ]
+        if zona.zona.especial and not municipios_elegibles:
+            # Sin marcas (o con marcas solo en rutas que hoy no están activas): va
+            # a su propio pool mientras ese pool tenga alguna ruta. Así nunca cae en
+            # zonas_sin_carro por no estar configurada, que es su estado normal.
+            return propio if propio in set(municipio_de_carro.values()) else None
+        if not repertorio:
+            return propio
         if not municipios_elegibles:
             return None
         if propio in municipios_elegibles:
@@ -470,9 +480,18 @@ class AjustadorDeAsignacion:
             )
         if destino is origen:
             raise MovimientoInvalido(f"{nombre_zona} ya está en el carro {numero_carro}")
-        if zona.zona.especial:
-            # No se le exige repertorio —no lo usa— pero sí el pool: el camión de
-            # otro municipio no pasa por la puerta de este cliente.
+        marcas = resultado.rutas_marcadas(nombre_zona) if zona.zona.especial else frozenset()
+        if marcas:
+            # La operación le marcó rutas: solo esas, y con una sola está fija.
+            if numero_carro not in marcas:
+                raise MovimientoInvalido(
+                    f"{nombre_zona} es un cliente especial con ruta(s) marcada(s) "
+                    f"({', '.join(sorted(marcas, key=clave_orden_carro))}): solo se puede "
+                    "mover entre ellas (Configuración → Zonas por carro)"
+                )
+        elif zona.zona.especial:
+            # Sin marcas no se le exige repertorio —no lo usa— pero sí el pool: el
+            # camión de otro municipio no pasa por la puerta de este cliente.
             if municipio_destino != municipio_origen:
                 raise MovimientoInvalido(
                     f"{nombre_zona} es un cliente especial de {municipio_origen}: se puede mover a "

@@ -41,6 +41,8 @@ from planeacion.infraestructura.adaptadores.entrada.web.repertorio_matriz import
     carros_visibles,
     contar_carros_de_zona,
     contar_sin_carro,
+    especiales_con_marcas,
+    etiqueta_de_fila,
     frecuencias_del_dia,
     pares_sospechosos,
     resumen_de_frecuencias,
@@ -547,7 +549,9 @@ def _tab_repertorio(contenedor: Contenedor) -> None:
 
     frecuencias = frecuencias_del_dia(datos.frecuencias(contenedor), dia)
 
-    col_municipio, col_sin_carro, col_buscar = st.columns([2, 2, 3], vertical_alignment="bottom")
+    col_municipio, col_sin_carro, col_especiales, col_buscar = st.columns(
+        [2, 2, 2, 3], vertical_alignment="bottom"
+    )
     municipio = col_municipio.selectbox(
         "Municipio", [*_municipios(contenedor), TODOS], key="matriz_municipio"
     )
@@ -556,6 +560,12 @@ def _tab_repertorio(contenedor: Contenedor) -> None:
         key="matriz_solo_sin_carro",
         help="La vista de trabajo: solo las zonas que ningún carro atiende. "
         "Van desapareciendo de la lista a medida que las asignas.",
+    )
+    solo_especiales = col_especiales.checkbox(
+        "Solo especiales",
+        key="matriz_solo_especiales",
+        help="Los clientes especiales (Configuración → Zonas). Sin casillas van a cualquier "
+        "ruta de su municipio; con casillas, solo a esas.",
     )
     texto = col_buscar.text_input("Buscar zona", key="matriz_buscar", placeholder="Nombre o parte del nombre")
 
@@ -567,7 +577,9 @@ def _tab_repertorio(contenedor: Contenedor) -> None:
     )
     st.markdown(progreso, unsafe_allow_html=True)
 
-    filtro = FiltroMatriz(municipio=municipio, solo_sin_carro=solo_sin_carro, texto=texto)
+    filtro = FiltroMatriz(
+        municipio=municipio, solo_sin_carro=solo_sin_carro, solo_especiales=solo_especiales, texto=texto
+    )
     filas = zonas_visibles(zonas, repertorio, filtro)
     if not filas:
         estilos.estado_vacio(
@@ -583,7 +595,7 @@ def _tab_repertorio(contenedor: Contenedor) -> None:
     numeros = [c.numero for c in columnas]
     filas_matriz: list[Fila] = [
         {
-            "zona": zona.nombre,
+            "zona": etiqueta_de_fila(zona),
             **{numero: zona.nombre in repertorio.get(numero, set()) for numero in numeros},
             "n_carros": contar_carros_de_zona(zona.nombre, repertorio),
             "frecuencias": resumen_de_frecuencias(zona.nombre, repertorio, frecuencias),
@@ -592,7 +604,9 @@ def _tab_repertorio(contenedor: Contenedor) -> None:
     ]
     # El nonce recrea el editor tras cada guardado (ver _guardar_matriz).
     nonce = st.session_state.setdefault("matriz_nonce", 0)
-    clave_editor = f"matriz_{dia}_{municipio}_{int(solo_sin_carro)}_{normalizar(texto)}_{nonce}"
+    clave_editor = (
+        f"matriz_{dia}_{municipio}_{int(solo_sin_carro)}_{int(solo_especiales)}_{normalizar(texto)}_{nonce}"
+    )
     st.data_editor(
         filas_matriz,
         key=clave_editor,
@@ -626,6 +640,11 @@ def _tab_repertorio(contenedor: Contenedor) -> None:
         args=(contenedor, clave_editor, orden_zonas, numeros, dia),
     )
     st.caption(f"{len(filas)} zona(s) y {len(columnas)} carro(s) en la vista.")
+    if especiales_con_marcas(filas, repertorio):
+        st.info(
+            "Las zonas especiales sin casillas marcadas van a cualquier ruta de su municipio; "
+            "con casillas marcadas, solo a esas (con una sola, quedan fijas)."
+        )
     _revisar_sospechosos(filas, repertorio, frecuencias)
 
     with st.expander("Resumen por carro"):

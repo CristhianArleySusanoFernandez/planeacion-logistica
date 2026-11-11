@@ -646,7 +646,7 @@ error de configuración: las trece aparecían todos los días en «zonas sin car
 pedían quedaban sin asignar. El 27 de octubre de 2026, COMFABOY fue la única zona que la app no pudo
 repartir.
 
-Con `zonas.especial` en true, una zona especial:
+Con `zonas.especial` en true, una zona especial **sin casillas marcadas** en Zonas por carro:
 
 - es **elegible en cualquier ruta activa de su pool**, sin pasar por el repertorio, y el balanceador
   la coloca por carga. Eso es la **sugerencia de vehículo** que pidió la operación, y no es una
@@ -663,6 +663,29 @@ Con `zonas.especial` en true, una zona especial:
   (horario de recepción, tamaño, acceso);
 - **se puede mover a cualquier ruta de su municipio**, no solo a las del repertorio. A otro
   municipio no: el camión de Barbosa no pasa por la puerta de un cliente de Tunja.
+
+**Con casillas marcadas** (Prompt 24) la marca es una decisión explícita de la operación: Julián
+sabe que COMFABOY se despacha con la ruta 18 y necesita poder decírselo a la app. Entonces:
+
+- es elegible **solo en las rutas marcadas ese día**, estén o no en su municipio. COMFABOY, que en
+  la base es de BARBOSA, marcada en la 18 va a la 18 de Tunja. La regla de lado de Chiquinquirá
+  tampoco aplica: una especial marcada en una ruta del otro lado se respeta;
+- con **una sola marcada queda fija**: candado en el Paso 3 y sin destinos para mover, igual que una
+  zona normal con una sola casilla. La marca «⭐ cliente especial, verifique el vehículo» se mantiene,
+  porque quien despacha sigue teniendo que confirmar el camión;
+- con **dos o más marcadas**, el balanceador elige por carga entre ellas y en el Paso 3 solo se ofrecen
+  esas como destino;
+- una casilla en una ruta **que hoy no está en la planeación** (inactiva) no cuenta: la especial vuelve
+  a repartirse por carga en su pool, en vez de quedar sin carro por una marca imposible de cumplir;
+- **la siembra y la herencia siguen sin escribir pares de especiales**: las casillas se ponen a mano.
+  Si se sembraran, el carro de un día cualquiera quedaría como regla;
+- en el contador de «Zonas sin asignar» siguen sin contar, con o sin casillas.
+
+En la pestaña Zonas por carro las filas de especiales llevan la etiqueta «· especial» junto al nombre,
+hay un filtro «Solo especiales», y cuando alguna especial de la vista tiene casillas aparece el aviso:
+«Las zonas especiales sin casillas marcadas van a cualquier ruta de su municipio; con casillas
+marcadas, solo a esas». La fuente de las marcas es `carro_zonas`, la misma del repertorio: no hay una
+tabla aparte.
 
 **La única fuente de la marca es `zonas.especial`.** Se edita en Configuración → Zonas y nada del
 sistema consulta una lista de nombres: `NOMBRES_ESPECIALES` existe solo para documentar qué sembró la

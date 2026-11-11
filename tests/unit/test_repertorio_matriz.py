@@ -12,6 +12,8 @@ from planeacion.infraestructura.adaptadores.entrada.web.repertorio_matriz import
     carros_visibles,
     contar_carros_de_zona,
     contar_sin_carro,
+    especiales_con_marcas,
+    etiqueta_de_fila,
     frecuencias_del_dia,
     pares_sospechosos,
     resumen_de_frecuencias,
@@ -317,3 +319,44 @@ class TestLasEspecialesNoSonTrabajoPendiente:
         filas = zonas_visibles([self._ESPECIAL], {}, FiltroMatriz(municipio=TODOS))
 
         assert [z.nombre for z in filas] == ["COMFABOY"]
+
+
+class TestLasEspecialesEnLaMatriz:
+    """Se ven etiquetadas, se filtran solas y, cuando tienen casillas, se avisa."""
+
+    _ESPECIAL = Zona(nombre="(BARBOSA): COMFABOY", municipio=Municipio(nombre="BARBOSA"), especial=True)
+    _OTRA = Zona(nombre="(TUNJA): IMPACTA", municipio=Municipio(nombre="TUNJA"), especial=True)
+    _NORMAL = Zona(nombre="(BARBOSA):  CITE", municipio=Municipio(nombre="BARBOSA"))
+
+    def test_la_fila_lleva_la_etiqueta_y_la_normal_no(self) -> None:
+        assert etiqueta_de_fila(self._ESPECIAL) == "(BARBOSA): COMFABOY  ·  especial"
+        assert etiqueta_de_fila(self._NORMAL) == "(BARBOSA):  CITE"
+
+    def test_solo_especiales_deja_solo_las_especiales(self) -> None:
+        filtro = FiltroMatriz(municipio=TODOS, solo_especiales=True)
+
+        filas = zonas_visibles([self._NORMAL, self._ESPECIAL, self._OTRA], {}, filtro)
+
+        assert [z.nombre for z in filas] == ["(BARBOSA): COMFABOY", "(TUNJA): IMPACTA"]
+
+    def test_solo_especiales_se_combina_con_el_municipio(self) -> None:
+        filtro = FiltroMatriz(municipio="TUNJA", solo_especiales=True)
+
+        filas = zonas_visibles([self._NORMAL, self._ESPECIAL, self._OTRA], {}, filtro)
+
+        assert [z.nombre for z in filas] == ["(TUNJA): IMPACTA"]
+
+    def test_sin_casillas_no_hay_aviso(self) -> None:
+        assert especiales_con_marcas([self._ESPECIAL, self._NORMAL], {"3": {"(BARBOSA):  CITE"}}) == []
+
+    def test_con_una_casilla_marcada_se_avisa_por_esa_especial(self) -> None:
+        repertorio = {"18": {"(BARBOSA): COMFABOY"}, "3": {"(BARBOSA):  CITE"}}
+
+        assert especiales_con_marcas([self._ESPECIAL, self._OTRA, self._NORMAL], repertorio) == [
+            "(BARBOSA): COMFABOY"
+        ]
+
+    def test_la_especial_con_casillas_sigue_sin_contar_como_sin_asignar(self) -> None:
+        sin_carro, total = contar_sin_carro([self._ESPECIAL, self._NORMAL], {"18": {"(BARBOSA): COMFABOY"}})
+
+        assert (sin_carro, total) == (1, 1)

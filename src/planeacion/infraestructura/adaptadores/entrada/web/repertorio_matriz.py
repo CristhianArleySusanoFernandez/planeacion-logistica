@@ -30,10 +30,11 @@ FRECUENCIA_SOSPECHOSA = 1
 
 @dataclass(frozen=True)
 class FiltroMatriz:
-    """Los tres filtros combinables de la matriz."""
+    """Los cuatro filtros combinables de la matriz."""
 
     municipio: str = TODOS
     solo_sin_carro: bool = False
+    solo_especiales: bool = False
     texto: str = ""
 
 
@@ -75,10 +76,28 @@ def zonas_visibles(zonas: Sequence[Zona], repertorio: Repertorio, filtro: Filtro
         visibles = [
             z for z in visibles if not z.especial and contar_carros_de_zona(z.nombre, repertorio) == 0
         ]
+    if filtro.solo_especiales:
+        visibles = [z for z in visibles if z.especial]
     clave = normalizar(filtro.texto)
     if clave:
         visibles = [z for z in visibles if clave in normalizar(z.nombre)]
     return sorted(visibles, key=lambda z: (z.municipio.nombre, z.nombre))
+
+
+ETIQUETA_ESPECIAL = "especial"
+
+
+def etiqueta_de_fila(zona: Zona) -> str:
+    """Lo que se lee en la columna Zona: el nombre, y «· especial» si lo es, para que
+    quien marca una casilla sepa que está fijando un cliente especial, no una zona.
+    El nombre real viaja aparte (``orden_zonas``): la etiqueta es solo para leer."""
+    return f"{zona.nombre}  ·  {ETIQUETA_ESPECIAL}" if zona.especial else zona.nombre
+
+
+def especiales_con_marcas(zonas: Sequence[Zona], repertorio: Repertorio) -> list[str]:
+    """Las especiales que tienen alguna casilla marcada ese día: a esas la marca las
+    fija (una) o las limita (varias), y hay que avisarlo bajo la matriz."""
+    return sorted(z.nombre for z in zonas if z.especial and contar_carros_de_zona(z.nombre, repertorio) > 0)
 
 
 def _orden_carro(carro: Carro) -> tuple[int, int, str]:

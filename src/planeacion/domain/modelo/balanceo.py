@@ -22,6 +22,16 @@ def zona_permitida(repertorio: Repertorio, nombre_zona: str, numero_carro: str) 
     return nombre_zona in repertorio.get(numero_carro, frozenset())
 
 
+def rutas_marcadas(repertorio: Repertorio, nombre_zona: str) -> frozenset[str]:
+    """Los carros que tienen la zona marcada ese día (sus casillas en Zonas por carro).
+
+    Para una zona normal es su repertorio. Para una **especial** es la decisión
+    explícita de la operación: sin marcas va a cualquier ruta de su municipio;
+    con marcas, solo a esas, y con una sola queda fija.
+    """
+    return frozenset(numero for numero, zonas in repertorio.items() if nombre_zona in zonas)
+
+
 # Frecuencias: (número de carro, nombre de zona) → cuántas veces se observó ese
 # par en el histórico DEL DÍA que se está planeando. El día ya viene resuelto de
 # afuera, igual que el repertorio: acá adentro es un mapa plano.
@@ -233,3 +243,6 @@ class ResultadoBalanceo:
 
     def carro_permite(self, numero_carro: str, nombre_zona: str) -> bool:
         return zona_permitida(self.repertorio, nombre_zona, numero_carro)
+
+    def rutas_marcadas(self, nombre_zona: str) -> frozenset[str]:
+        return rutas_marcadas(self.repertorio, nombre_zona)
