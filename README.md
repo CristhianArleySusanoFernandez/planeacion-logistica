@@ -342,6 +342,47 @@ La serie comparable arranca con la semana del 20 de octubre de 2026. Primera med
 con la maestra nueva, martes 27: **87,5 % por planilla** (49 de 56 zonas) y **96,4 % por camión**
 (54 de 56). Repertorio resultante: **381 pares sembrados + 87 heredados = 468**.
 
+### Medición out-of-sample de la maestra nueva (noviembre de 2026)
+
+Seis planeaciones de **Catalina** (la planeadora desde noviembre), medidas el 13 de noviembre de 2026
+**antes** de resembrar, con el repertorio sembrado con la semana del 20 al 27 de octubre (los días de
+Julián) y la maestra del 27-oct. Los días 10 y 12 se midieron con su `.xls` de ECOM (`--ecom`); los
+otros cuatro con el bloque PEDIDOS del `.xlsm`. Los seis cuadran con sus propios totales.
+
+| Día | Zonas comparables | Por planilla | Por camión | CV $ app / real (Tunja) | Sin carro elegible | Zonas que no existen en la base |
+|---|---|---|---|---|---|---|
+| mar 27-oct (Julián) | 56 | 87,5 % | 96,4 % | — | — | — |
+| mar 03-nov | 60 | 90,0 % | 95,0 % | 54 % / 57 % | 4 | 0 |
+| sáb 07-nov | 65 | 64,6 % | 81,5 % | 39 % / 43 % | 0 | 0 |
+| lun 09-nov | 63 | 65,1 % | 73,0 % | 53 % / 52 % | 3 | 1 (`RUTA`, ruta 20) |
+| mar 10-nov | 54 | 68,5 % | 81,5 % | 66 % / 71 % | 1 | 0 |
+| mié 11-nov | 66 | 63,6 % | 74,2 % | 50 % / 51 % | 0 | 0 |
+| jue 12-nov | 58 | 55,2 % | 72,4 % | 34 % / 52 % | 2 | 0 |
+| **Promedio 6 días** | | **67,8 %** | **79,6 %** | | | |
+
+Sobre los cuatro municipios, el CV de pesos de la propuesta queda en 29–37 % y el del reparto real
+en 30–40 %: el desbalance del día es parecido en los dos, con la app igual o mejor casi siempre.
+
+Lo que explica la caída frente al 27-oct, en orden de peso:
+
+- **Barbosa cambió de costumbre.** La flota es la misma (5 Julián Coy, 6 Sebastián, 7 Ángel Bareño),
+  pero Catalina pone `MONIQUIRA` en la 7 y casi todo el resto del municipio en la 6, al revés de lo
+  que el repertorio de Julián tiene sembrado (la 7 con 8–12 zonas por día, la 6 con 2–3). De las 23
+  diferencias del sábado 7, 7 son eso; del jueves 12, 10 de 26. Es un cambio real de operación que la
+  resiembra de la Parte C incorpora; no hay nada que corregir en la app.
+- **Planillas del mismo camión.** Entre 3 y 11 diferencias por día son la otra planilla del mismo
+  vehículo (Chiquinquirá 1/2 y 3/4, Tunja 16/17, Villa de Leyva 12/13, Vuelta al Mundo 14/15). Por
+  eso la coincidencia por camión va 7 a 17 puntos por encima de la de planilla.
+- **Carro `X`.** Las planeaciones del 9 y del 10 traen una zona con carro `X` (sin asignar). El
+  lector de la hoja PLANEACION solo toma carros numéricos, así que esas filas no entran ni a la
+  comparación ni a la siembra, igual que la ruta 23.
+- **Kilos mal cargados.** 202, 2.218, 605 y 1.008 kg excluidos por la guarda el 3, 7, 10 y 11 de
+  noviembre (1, 10, 3 y 5 líneas). Los totales se cotejan sumándolos de vuelta y los seis días cuadran.
+
+Las zonas sin carro elegible de esos días (`GUAVATA`, `PUENTE NACIONAL`, `SUSA - SIMIJACA RUTA SUR 1`,
+`RUTA FLORIAN`, `RUTA MIRAFLORES`, `NUEVO COLON -TURMEQUE`, `SACHICA`, `POPULAR`) son zonas que ese
+día de la semana no tenían par en la semana del 20-oct; la resiembra con los 13 días las cubre.
+
 ### Las dos coincidencias: por planilla y por camión
 
 El validador reporta siempre las dos, y nunca una sin la otra:
