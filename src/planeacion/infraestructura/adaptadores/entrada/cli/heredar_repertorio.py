@@ -1,8 +1,13 @@
 """Comando `planeacion-heredar-repertorio`: tapa los huecos del repertorio nuevo.
 
-Toma el `salidas/mapeo_zonas_<fecha>.csv` que escribe `planeacion-resincronizar` y,
-para cada zona nueva sin repertorio ese día, estima el suyo mezclando el de las
-zonas viejas de las que vinieron sus clientes. Ver `herencia.py` para las reglas.
+Toma el mapeo de clientes zona vieja → zona nueva y, para cada zona nueva sin
+repertorio ese día, estima el suyo mezclando el de las zonas viejas de las que
+vinieron sus clientes. Ver `herencia.py` para las reglas.
+
+Los dos insumos son PERMANENTES y están versionados en `datos_historico/`: el
+mapeo del cambio de maestra del 30 de octubre de 2026 y el repertorio de la
+maestra vieja. No se regeneran: el mapeo que `planeacion-resincronizar` escribe
+en cada corrida compara la maestra nueva consigo misma y no sirve para heredar.
 
 Se corre DESPUÉS de sembrar: lo sembrado con los nombres nuevos manda, y la
 herencia solo rellena los días que la siembra no cubrió.
@@ -34,6 +39,9 @@ from planeacion.infraestructura.adaptadores.entrada.cli.sembrar_repertorio impor
 # siembra escribe solo tiene lo que había justo antes: a partir de la segunda
 # resiembra, eso ya es lo sembrado en la corrida anterior y no la costumbre vieja.
 ORIGEN_DE_LA_HERENCIA = Path("datos_historico/repertorio_maestra_vieja.csv")
+# Y el mapeo del cambio de maestra, por el mismo motivo: es el del 30 de octubre
+# de 2026 (copia de salidas/mapeo_zonas_2026-10-30.csv) y no se regenera.
+MAPEO_DE_LA_HERENCIA = Path("datos_historico/mapeo_maestra_vieja.csv")
 
 _MAX_EJEMPLOS = 10
 # La base los guarda en minúscula; se compara sin tener en cuenta mayúsculas para
@@ -100,7 +108,14 @@ def main() -> int:
         "clientes que escribe planeacion-resincronizar. Corre DESPUÉS de sembrar: "
         "lo sembrado manda y la herencia solo tapa huecos."
     )
-    parser.add_argument("ruta_csv", type=Path, help="el salidas/mapeo_zonas_<fecha>.csv")
+    parser.add_argument(
+        "ruta_csv",
+        type=Path,
+        nargs="?",
+        default=MAPEO_DE_LA_HERENCIA,
+        help=f"el mapeo zona vieja → zona nueva (por defecto {MAPEO_DE_LA_HERENCIA}, el del "
+        "cambio de maestra del 30 de octubre de 2026; lo normal es no pasarlo)",
+    )
     parser.add_argument(
         "--aplicar",
         action="store_true",
@@ -136,6 +151,8 @@ def main() -> int:
     if not origenes:
         print(f"El mapeo {args.ruta_csv} no tiene filas utilizables", file=sys.stderr)
         return 1
+    zonas_nuevas = len({origen.zona_nueva for origen in origenes})
+    print(f"Mapeo de la herencia: {args.ruta_csv} ({len(origenes)} filas, {zonas_nuevas} zonas nuevas)")
 
     especiales = _nombres_especiales(contenedor)
     # Las frecuencias traen el repertorio completo, incluidas las zonas ya

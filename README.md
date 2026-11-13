@@ -226,12 +226,21 @@ que vinieron sus clientes. Es la herramienta para un cambio de maestra: sembrar 
 semana de archivos deja todo en "visto 1 vez" y pierde meses de costumbre.
 
 ```bash
-uv run planeacion-heredar-repertorio salidas/mapeo_zonas_<fecha>.csv --aplicar
+uv run planeacion-heredar-repertorio --aplicar
 ```
 
-El mapeo lo escribe `planeacion-resincronizar` en cada corrida: por cada zona nueva, qué fracción de
-sus clientes venía de cada zona vieja. Si el 60 % venía de A y el 40 % de B, la frecuencia heredada es
-`round(0,6 × frec(A) + 0,4 × frec(B))`, con mínimo 1 donde la suma sea positiva.
+El mapeo dice, por cada zona nueva, qué fracción de sus clientes venía de cada zona vieja. Si el
+60 % venía de A y el 40 % de B, la frecuencia heredada es `round(0,6 × frec(A) + 0,4 × frec(B))`,
+con mínimo 1 donde la suma sea positiva.
+
+> **Los dos insumos de la herencia son permanentes y están versionados en `datos_historico/`:**
+> `mapeo_maestra_vieja.csv` (el mapeo del cambio de maestra, copia del
+> `salidas/mapeo_zonas_2026-10-30.csv` de la resincronización del 30 de octubre de 2026) y
+> `repertorio_maestra_vieja.csv` (el repertorio tal como estaba antes de la primera resiembra). Son
+> los valores por defecto del comando y **no se regeneran**: el `mapeo_zonas_<fecha>.csv` que
+> `planeacion-resincronizar` escribe en cada corrida posterior compara la maestra nueva consigo misma
+> y no sirve para heredar. El comando imprime al arrancar qué mapeo y qué origen leyó, con su número
+> de filas, para poder confirmarlo en cada resiembra.
 
 Tres límites deliberados: **no pisa lo sembrado** (si la zona ya tiene algún par ese día, el día
 entero se respeta), **no inventa pares** (solo propaga los que existen en los orígenes, y un par de
@@ -298,7 +307,7 @@ correspondiente. **El orden importa: primero medir, después sembrar.**
 4. **Heredar el repertorio, inmediatamente después de sembrar y siempre en ese orden:**
 
    ```bash
-   uv run planeacion-heredar-repertorio salidas/mapeo_zonas_<fecha>.csv --aplicar
+   uv run planeacion-heredar-repertorio --aplicar
    ```
 
    > **El orden es obligatorio: siembra `--vaciar` → herencia. Nunca al revés.** La herencia solo

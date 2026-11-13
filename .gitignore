@@ -32,4 +32,5 @@ dist/
 # La carpeta se ignora con /* y no con /, porque git no entra en un directorio
 # excluido y la excepcion nunca se evaluaria.
 !/datos_historico/repertorio_maestra_vieja.csv
+!/datos_historico/mapeo_maestra_vieja.csv
 ~$*

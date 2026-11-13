@@ -608,7 +608,11 @@ reconstruye a mano, así que se **heredó por mapeo de clientes** en vez de rese
    repertorio es justamente el origen de la herencia, y la zona puede volver.
 3. `planeacion-sembrar-repertorio --vaciar` siembra la semana nueva (un archivo por día, lunes a
    sábado).
-4. `planeacion-heredar-repertorio` rellena los huecos que la semana no cubrió.
+4. `planeacion-heredar-repertorio` rellena los huecos que la semana no cubrió. Desde noviembre de
+   2026 lee por defecto `datos_historico/mapeo_maestra_vieja.csv` (copia versionada de ese mapeo
+   del 30 de octubre) junto con `datos_historico/repertorio_maestra_vieja.csv`: los dos insumos son
+   permanentes y no se regeneran, porque el mapeo de una resincronización posterior compara la
+   maestra nueva consigo misma.
 
 Resultado: **381 pares sembrados + 87 heredados = 468**, y una sola zona activa sin ningún par
 (`SAMACA- LA CUMBRE`, una vereda de un cliente que no pidió esa semana). La primera medición
