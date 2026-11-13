@@ -252,7 +252,11 @@ def _reportar_clientes(reporte: _Reporte, plan: PlanClientes) -> None:
     reporte.linea(f"- sin cambios: {plan.sin_cambios}")
     reporte.linea(f"- nuevos: **{len(plan.nuevos)}**")
     reporte.linea(f"- actualizados: **{len(plan.actualizados)}**")
-    reporte.linea(f"- duplicados en el archivo (gana la primera aparición): {plan.duplicados_en_archivo}")
+    reporte.linea(f"- duplicados en el archivo con la misma zona (se toma una): {plan.duplicados_en_archivo}")
+    reporte.lista(
+        plan.duplicados_con_zonas_distintas,
+        "duplicados con zonas DISTINTAS: NO se aplican, lo decide una persona",
+    )
     reporte.linea(
         f"- clientes de la base que no están en la maestra nueva: **{len(plan.solo_en_base)}** (NO se borran)"
     )

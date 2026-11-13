@@ -311,12 +311,30 @@ class PlanClientes:
     rellenados: list[Cambio] = field(default_factory=list)
     solo_en_base: list[str] = field(default_factory=list)
     zonas_no_encontradas: list[Cambio] = field(default_factory=list)
+    # Un código repetido en la hoja con la MISMA ruta es la misma fila dos veces:
+    # se toma una. Con rutas DISTINTAS nadie sabe cuál vale, así que ese cliente
+    # se reporta y no se aplica (ni se crea ni se actualiza).
     duplicados_en_archivo: int = 0
+    duplicados_con_zonas_distintas: list[Cambio] = field(default_factory=list)
     sin_cambios: int = 0
 
     @property
     def a_guardar(self) -> list[Cliente]:
         return self.nuevos + self.actualizados
+
+
+def _duplicados_contradictorios(filas: Sequence[FilaCliente]) -> dict[str, set[str]]:
+    """Códigos repetidos en la hoja cuyas filas traen rutas distintas.
+
+    La misma fila pegada dos veces (misma ruta) no es una contradicción y se
+    resuelve tomando la primera; dos rutas distintas sí lo es, y eso lo decide
+    una persona, no el script.
+    """
+    rutas_por_codigo: dict[str, set[str]] = {}
+    for fila in filas:
+        ruta = normalizar_nombre_zona(fila.ruta) if fila.ruta else ""
+        rutas_por_codigo.setdefault(fila.codigo, set()).add(ruta)
+    return {codigo: rutas for codigo, rutas in rutas_por_codigo.items() if len(rutas) > 1}
 
 
 def planear_clientes(
@@ -334,9 +352,16 @@ def planear_clientes(
     """
     plan = PlanClientes()
     por_codigo = {cliente.codigo: cliente for cliente in clientes_base}
+    contradictorios = _duplicados_contradictorios(filas)
+    for codigo, rutas in sorted(contradictorios.items()):
+        plan.duplicados_con_zonas_distintas.append(
+            Cambio(codigo, "duplicado con zonas distintas", None, " | ".join(sorted(rutas)))
+        )
     vistos: set[str] = set()
 
     for fila in filas:
+        if fila.codigo in contradictorios:
+            continue
         if fila.codigo in vistos:
             plan.duplicados_en_archivo += 1
             continue

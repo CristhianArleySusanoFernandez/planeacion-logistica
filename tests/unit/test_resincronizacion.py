@@ -225,6 +225,30 @@ class TestClientes:
         assert plan.duplicados_en_archivo == 1
         assert [c.ciudad for c in plan.nuevos] == ["PRIMERA"]
 
+    def test_un_codigo_repetido_con_zonas_distintas_se_reporta_y_no_se_aplica(self) -> None:
+        actual = Cliente(codigo="111", zona=Zona(nombre="(TUNJA): VIEJA", municipio=Municipio("TUNJA")))
+        zonas = {
+            "(TUNJA): UNA": Zona(nombre="(TUNJA): UNA", municipio=Municipio("TUNJA")),
+            "(TUNJA): OTRA": Zona(nombre="(TUNJA): OTRA", municipio=Municipio("TUNJA")),
+        }
+        plan = planear_clientes(
+            [
+                FilaCliente(codigo="111", ruta="(TUNJA): UNA"),
+                FilaCliente(codigo="111", ruta="(TUNJA): OTRA"),
+                FilaCliente(codigo="222", ruta="(TUNJA): UNA"),
+                FilaCliente(codigo="222", ruta="(TUNJA):  UNA"),
+            ],
+            {},
+            [actual],
+            zonas,
+        )
+
+        assert [c.clave for c in plan.duplicados_con_zonas_distintas] == ["111"]
+        assert plan.duplicados_con_zonas_distintas[0].despues == "(TUNJA): OTRA | (TUNJA): UNA"
+        assert plan.duplicados_en_archivo == 1  # el 222, misma zona salvo espacios
+        assert [c.codigo for c in plan.a_guardar] == ["222"]
+        assert plan.cambios_de_zona == []  # el 111 conserva (TUNJA): VIEJA
+
 
 class TestCorreccionesYOverrides:
     def test_una_correccion_nueva_se_agrega_y_la_que_solo_esta_en_la_base_se_lista(self) -> None:
