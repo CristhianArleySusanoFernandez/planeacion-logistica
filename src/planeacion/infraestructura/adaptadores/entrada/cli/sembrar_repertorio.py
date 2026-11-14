@@ -40,7 +40,7 @@ import subprocess
 import sys
 from collections import Counter, defaultdict
 from collections.abc import Mapping, Sequence
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
 from datetime import date
 from pathlib import Path
 
@@ -129,6 +129,41 @@ def leer_lectura(ruta_csv: Path) -> LecturaArchivo:
         pares=tuple(sorted(pares)),
         fecha=meta[4] if len(meta) > 4 else "",
     )
+
+
+def atribuir_dia(lecturas: Sequence[LecturaArchivo], atribuciones: Mapping[str, str]) -> list[LecturaArchivo]:
+    """Fuerza el día de los archivos nombrados: ``{"DEL 03-11 PARA EL 05-11.xlsm": "martes"}``.
+
+    Es la excepción para el caso **festivo + día siguiente**: el lunes 2 de noviembre
+    de 2026 fue festivo y los pedidos de ese día se planearon junto con los del
+    martes 3, así que el bloque de ECOM trae dos fechas pero la hoja PLANEACION es
+    UN solo reparto, el del martes. La regla general sigue descartando los archivos
+    de dos jornadas; esto solo aplica a los que se nombran a mano, uno por uno.
+    """
+    resultado = []
+    for lectura in lecturas:
+        dia = atribuciones.get(lectura.archivo)
+        if dia is None:
+            resultado.append(lectura)
+        else:
+            resultado.append(replace(lectura, dias=(dia,)))
+    return resultado
+
+
+def escribir_costumbres(
+    costumbres: Mapping[tuple[str, str], tuple[int, int]],
+    carros: Mapping[str, Carro],
+    corte: str,
+    ruta_csv: Path,
+) -> None:
+    ruta_csv.parent.mkdir(parents=True, exist_ok=True)
+    with ruta_csv.open("w", encoding="utf-8", newline="") as archivo:
+        escritor = csv.writer(archivo)
+        escritor.writerow(["zona", "ruta", "conductor", f"vistos_antes_de_{corte}", f"vistos_desde_{corte}"])
+        for (zona, carro), (antes, despues) in sorted(
+            costumbres.items(), key=lambda p: (p[0][0], clave_orden_carro(p[0][1]))
+        ):
+            escritor.writerow([zona, carro, carros[carro].conductor or "", antes, despues])
 
 
 def leer_archivos(rutas: Sequence[Path], carpeta: Path = CARPETA_LECTURAS) -> list[LecturaArchivo]:
@@ -541,6 +576,20 @@ def main() -> int:
         "--solo-verificar (por defecto 2026-11-01: Julián hasta octubre, Catalina desde noviembre)",
     )
     parser.add_argument(
+        "--atribuir",
+        action="append",
+        default=[],
+        metavar="ARCHIVO:DIA",
+        help="fuerza el día de un archivo cuyo bloque cubre dos jornadas porque la primera fue festivo "
+        '(p. ej. "DEL 03-11 PARA EL 05-11.xlsm:martes"). Sin esto, ese archivo se descarta. Repetible.',
+    )
+    parser.add_argument(
+        "--costumbres-csv",
+        type=Path,
+        default=None,
+        help="además de imprimirla, escribe la tabla de costumbres de Barbosa a este CSV",
+    )
+    parser.add_argument(
         "--vaciar",
         action="store_true",
         help="antes de sembrar, respalda el repertorio a salidas/ y lo BORRA completo. Para cuando "
@@ -587,7 +636,15 @@ def main() -> int:
         f"Leyendo {len(rutas)} archivo(s) (hoja {HOJA_PLANEACION} + bloque de ECOM de PEDIDOS), "
         f"uno por subproceso; los CSV quedan en {args.lecturas}/..."
     )
-    lecturas = leer_archivos(rutas, args.lecturas)
+    atribuciones = dict(_partir_atribucion(texto) for texto in args.atribuir)
+    desconocidas = set(atribuciones) - {ruta.name for ruta in rutas}
+    if desconocidas:
+        print(
+            f"ERROR: --atribuir nombra archivos que no están en la lista: {sorted(desconocidas)}",
+            file=sys.stderr,
+        )
+        return 1
+    lecturas = atribuir_dia(leer_archivos(rutas, args.lecturas), atribuciones)
     for lectura in lecturas:
         dias = "+".join(lectura.dias) or "sin fecha"
         print(
@@ -668,7 +725,9 @@ def main() -> int:
             print(f"  - {zona}")
 
     if args.solo_verificar:
-        return _solo_verificar(usables, validos, frecuencias, zonas_base, carros_base, args.corte_costumbre)
+        return _solo_verificar(
+            usables, validos, frecuencias, zonas_base, carros_base, args.corte_costumbre, args.costumbres_csv
+        )
 
     por_sembrar = {
         ParRepertorio(carro, zona, dia, frecuencias[(carro, zona, dia)]) for carro, zona, dia in validos
@@ -677,6 +736,7 @@ def main() -> int:
     print(f"\nPares sembrados: {len(por_sembrar)} (cada uno con su frecuencia observada).")
 
     _reportar(contenedor, len(por_sembrar))
+    _costumbres_de_barbosa(usables, carros_base, args.corte_costumbre, args.costumbres_csv)
     if args.borrar_frecuencia_cero:
         _borrar_frecuencia_cero(contenedor)
     return 0
@@ -694,6 +754,25 @@ def _extraer(ruta_xlsm: Path, ruta_csv: Path) -> int:
     return 0
 
 
+def _partir_atribucion(texto: str) -> tuple[str, str]:
+    archivo, separador, dia = texto.rpartition(":")
+    if not separador or dia not in DIAS_LABORALES:
+        raise SystemExit(f"--atribuir espera ARCHIVO:DIA con un día laboral; llegó {texto!r}")
+    return archivo, dia
+
+
+def _costumbres_de_barbosa(
+    usables: Sequence[LecturaArchivo], carros_base: Sequence[Carro], corte: str, ruta_csv: Path | None
+) -> None:
+    carros = {carro.numero: carro for carro in carros_base}
+    barbosa = {n for n, c in carros.items() if c.activo and c.municipio and c.municipio.nombre == "BARBOSA"}
+    costumbres = costumbres_por_periodo(usables, corte, barbosa)
+    _imprimir_costumbres(costumbres, carros, corte)
+    if ruta_csv is not None:
+        escribir_costumbres(costumbres, carros, corte, ruta_csv)
+        print(f"  tabla escrita en {ruta_csv}")
+
+
 def _solo_verificar(
     usables: list[LecturaArchivo],
     validos: set[tuple[str, str, str]],
@@ -701,6 +780,7 @@ def _solo_verificar(
     zonas_base: Sequence[Zona],
     carros_base: Sequence[Carro],
     corte: str,
+    ruta_csv: Path | None,
 ) -> int:
     for insumo in (MAPEO_DE_LA_HERENCIA, ORIGEN_DE_LA_HERENCIA):
         if not insumo.exists():
@@ -714,9 +794,7 @@ def _solo_verificar(
     _imprimir_verificacion(
         verificacion, ORIGEN_DE_LA_HERENCIA, MAPEO_DE_LA_HERENCIA, len(origenes), len(frecuencias_origen)
     )
-    carros = {carro.numero: carro for carro in carros_base}
-    barbosa = {n for n, c in carros.items() if c.activo and c.municipio and c.municipio.nombre == "BARBOSA"}
-    _imprimir_costumbres(costumbres_por_periodo(usables, corte, barbosa), carros, corte)
+    _costumbres_de_barbosa(usables, carros_base, corte, ruta_csv)
     return 0
 
 

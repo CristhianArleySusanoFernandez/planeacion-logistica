@@ -200,6 +200,13 @@ uv run planeacion-sembrar-repertorio datos/*.xlsm
 > que una resiembra con todos los archivos no vuelve a abrir ninguno ya extraído. No hay que hacer
 > nada especial: es el modo normal del comando (`--extraer` es la primera pasada, la invoca él solo).
 >
+> **`--atribuir "ARCHIVO.xlsm:dia"`** es la excepción para el caso **festivo + día siguiente**. El
+> lunes 2 de noviembre de 2026 fue festivo y sus pedidos se planearon junto con los del martes 3, así
+> que el bloque de ECOM de `DEL 03-11 PARA EL 05-11.xlsm` trae dos fechas y la regla general lo
+> descartaría (dos jornadas sin saber a cuál pertenece cada zona). Como la hoja PLANEACION es un solo
+> reparto, el del martes, se siembra con `--atribuir "DEL 03-11 PARA EL 05-11.xlsm:martes"`. Solo
+> aplica a los archivos nombrados, uno por uno; los demás archivos de dos jornadas siguen descartados.
+>
 > **`--solo-verificar`** simula la siembra **y** la herencia en memoria sin escribir nada: pares por
 > día (sembrados / heredados / total), zonas activas con pedidos que quedarían sin par ese día,
 > conteo de candados por «visto una vez» y la tabla de costumbres de Barbosa antes y después de
@@ -356,6 +363,32 @@ otra flota. En particular el **93,0 %** que figuraba acá antes (días 8 y 9 de 
 La serie comparable arranca con la semana del 20 de octubre de 2026. Primera medición out-of-sample
 con la maestra nueva, martes 27: **87,5 % por planilla** (49 de 56 zonas) y **96,4 % por camión**
 (54 de 56). Repertorio resultante: **381 pares sembrados + 87 heredados = 468**.
+
+### Última resiembra: 13 de noviembre de 2026
+
+Trece planeaciones con la maestra nueva, todas en `datos/`: `MAESTRA LIMPIA 20-10.xlsm` (martes
+20-oct), `DEL 21-10 PARA EL 23-10`, `DEL 22-10 PARA EL 24-10`, `DEL 23-10 PARA EL 26-10`,
+`DEL 24-10 PARA EL 27-10`, `DEL 26-10 PARA EL 28-10`, `DEL 27-10 PARA EL 29-10`,
+`DEL 03-11 PARA EL 05-11` (sembrado como martes con `--atribuir`: el lunes 2 fue festivo),
+`DEL 07-11 PARA EL 10-11`, `DEL 09-11 PARA EL 11-11`, `DEL 10-11 PARA EL 12-11`,
+`DEL 11-11 PARA EL 13-11` y `DEL 12-11 PARA EL 14-11`. Siembra `--vaciar` (respaldo de los 468
+pares anteriores en `salidas/carro_zonas_respaldo_2026-11-13.csv`) y herencia desde los dos insumos
+fijos (`mapeo_maestra_vieja.csv`, 260 filas; `repertorio_maestra_vieja.csv`, 713 pares).
+
+| Día | Sembrados | Heredados | Total |
+|---|---|---|---|
+| lunes | 89 | 15 | 104 |
+| martes | 92 | 5 | 97 |
+| miércoles | 88 | 3 | 91 |
+| jueves | 89 | 14 | 103 |
+| viernes | 57 | 17 | 74 |
+| sábado | 89 | 8 | 97 |
+| **Total** | **504** | **62** | **566** |
+
+516 tríos distintos en el histórico (307 vistos una vez, 159 dos, 50 tres o más). 158 pares que
+estaban en «visto 1 vez» pasaron a 2 o más. Zonas-día con dos o más rutas posibles: de 21 a 117.
+Única zona activa sin ningún par: `SAMACA- LA CUMBRE`. Se saltaron la ruta 23 (refuerzo), las 6
+zonas especiales del histórico y la zona `RUTA` del 9-nov, que no existe en la base.
 
 ### Medición out-of-sample de la maestra nueva (noviembre de 2026)
 

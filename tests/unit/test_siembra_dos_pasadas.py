@@ -13,11 +13,13 @@ from planeacion.domain.modelo import Municipio, Zona
 from planeacion.infraestructura.adaptadores.entrada.cli.herencia import Origen
 from planeacion.infraestructura.adaptadores.entrada.cli.sembrar_repertorio import (
     LecturaArchivo,
+    atribuir_dia,
     contar_frecuencias,
     costumbres_por_periodo,
     escribir_lectura,
     leer_archivos,
     leer_lectura,
+    motivo_de_descarte,
     verificar_siembra,
 )
 
@@ -105,6 +107,24 @@ class TestVerificarSiembra:
         # lunes: MONIQUIRA y CENTRO tienen 2 rutas; GUEPSA una ruta vista 1 vez.
         # martes: GUEPSA heredada con frecuencia 4, una sola ruta.
         assert (v.con_alternativa, v.candado_una_vez, v.candado_dos_o_mas) == (2, 1, 1)
+
+
+class TestAtribuirDia:
+    """Festivo + día siguiente: el bloque trae dos fechas pero el reparto es uno."""
+
+    def test_el_archivo_nombrado_queda_con_el_dia_forzado_y_pasa_el_descarte(self) -> None:
+        festivo = LecturaArchivo(
+            "DEL 03-11 PARA EL 05-11.xlsm", ("lunes", "martes"), 9, 9, (("1", "A"),), "2026-11-02"
+        )
+
+        [atribuido] = atribuir_dia([festivo], {"DEL 03-11 PARA EL 05-11.xlsm": "martes"})
+
+        assert atribuido.dias == ("martes",)
+        assert atribuido.pares == festivo.pares and atribuido.fecha == "2026-11-02"
+        assert motivo_de_descarte(atribuido, 0) is None
+
+    def test_los_demas_archivos_no_se_tocan(self) -> None:
+        assert atribuir_dia([_LUNES], {"OTRO.xlsm": "martes"}) == [_LUNES]
 
 
 class TestCostumbresPorPeriodo:
