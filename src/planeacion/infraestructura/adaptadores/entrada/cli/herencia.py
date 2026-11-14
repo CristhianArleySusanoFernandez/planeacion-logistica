@@ -24,6 +24,7 @@ Tres cosas que este módulo NO hace, a propósito:
 
 from collections.abc import Collection, Iterable, Mapping, Sequence
 from dataclasses import dataclass, field
+from pathlib import Path
 
 from planeacion.application.puertos.salida.repositorios import ParRepertorio
 from planeacion.domain.modelo import nombre_sin_prefijo
@@ -34,6 +35,14 @@ from planeacion.domain.modelo import nombre_sin_prefijo
 SIN_ORIGEN = "(cliente nuevo)"
 
 ENCABEZADO_MAPEO = ("zona_nueva", "zona_vieja", "clientes", "total_de_la_zona", "fraccion")
+
+# Los dos insumos PERMANENTES de la herencia, versionados en el repo. El repertorio
+# de la maestra vieja tal como estaba antes de la primera resiembra, y el mapeo
+# del cambio de maestra del 30 de octubre de 2026. Ninguno se regenera: cada
+# resiembra con --vaciar deja la tabla en cero, y el mapeo de una resincronización
+# posterior compara la maestra nueva consigo misma.
+ORIGEN_DE_LA_HERENCIA = Path("datos_historico/repertorio_maestra_vieja.csv")
+MAPEO_DE_LA_HERENCIA = Path("datos_historico/mapeo_maestra_vieja.csv")
 # El respaldo que escribe `planeacion-sembrar-repertorio` antes de vaciar.
 ENCABEZADO_RESPALDO = ("numero_carro", "nombre_zona", "dia_semana", "frecuencia")
 

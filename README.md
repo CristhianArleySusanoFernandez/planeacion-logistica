@@ -192,6 +192,20 @@ archivo:
 uv run planeacion-sembrar-repertorio datos/*.xlsm
 ```
 
+> **Lectura en dos pasadas (desde noviembre de 2026).** Cada `.xlsm` pesa ~37 MB y abrirlo cuesta
+> más de 1 GB de memoria; con 13 archivos en un solo proceso un portátil de 8 GB se queda sin aire.
+> Por eso la siembra lee cada archivo en un **subproceso aparte** que deja un CSV liviano en
+> `salidas/lecturas/<nombre>.csv` (los pares carro-zona, los totales y la fecha), y el proceso
+> principal solo lee esos CSV. Si el CSV ya existe y es más nuevo que su `.xlsm`, se reutiliza, así
+> que una resiembra con todos los archivos no vuelve a abrir ninguno ya extraído. No hay que hacer
+> nada especial: es el modo normal del comando (`--extraer` es la primera pasada, la invoca él solo).
+>
+> **`--solo-verificar`** simula la siembra **y** la herencia en memoria sin escribir nada: pares por
+> día (sembrados / heredados / total), zonas activas con pedidos que quedarían sin par ese día,
+> conteo de candados por «visto una vez» y la tabla de costumbres de Barbosa antes y después de
+> `--corte-costumbre` (por defecto 2026-11-01). Es la verificación cruzada que se corre **antes** de
+> un `--vaciar`.
+
 El día **no** sale del nombre del archivo: los nombres tienen erratas (`DEL_24_PAR_EL_26`) y
 además nombran el día de *entrega*, mientras que todo el sistema —el pivote, el warm-start,
 `planeaciones.dia_semana`— se maneja con el día de los *pedidos*. Sembrar por el día de entrega
@@ -291,9 +305,10 @@ correspondiente. **El orden importa: primero medir, después sembrar.**
    comparando contra los mismos días que lo configuraron. Conviene guardar el resultado: la serie de
    mediciones out-of-sample es lo que dice si la app está mejorando o no.
 
-3. **Sembrar el repertorio con TODOS los archivos, no solo los nuevos:**
+3. **Verificar primero, sin escribir, y después sembrar con TODOS los archivos, no solo los nuevos:**
 
    ```bash
+   uv run planeacion-sembrar-repertorio "datos/*.xlsm" "datos_prueba/*.xlsm" --solo-verificar
    uv run planeacion-sembrar-repertorio "datos/*.xlsm" "datos_prueba/*.xlsm" --vaciar
    ```
 

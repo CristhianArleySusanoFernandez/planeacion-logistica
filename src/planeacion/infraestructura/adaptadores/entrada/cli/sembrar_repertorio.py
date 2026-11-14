@@ -20,15 +20,27 @@ conservar lo decide la usuaria en la interfaz, no este script.
 
 Los archivos que no son de fiar se reportan y quedan fuera en vez de contaminar
 el repertorio (ver `motivo_de_descarte`).
+
+LECTURA EN DOS PASADAS. Cada .xlsm pesa ~37 MB y abrirlo cuesta más de 1 GB de
+memoria; con 13 archivos en un solo proceso el portátil de 8 GB se queda sin aire.
+Por eso cada archivo se lee en un SUBPROCESO aparte (`--extraer`) que deja un CSV
+liviano en `salidas/lecturas/` con lo único que la siembra necesita (los pares y
+los totales), y el proceso principal solo lee esos CSV. Si el CSV existe y es más
+nuevo que el .xlsm, se reutiliza: una resiembra con 13 archivos no vuelve a abrir
+ninguno que ya se haya extraído.
+
+`--solo-verificar` simula la siembra Y la herencia en memoria y no escribe nada:
+es la verificación cruzada que se corre antes de un `--vaciar`.
 """
 
 import argparse
 import csv
 import statistics
+import subprocess
 import sys
-from collections import Counter
-from collections.abc import Mapping
-from dataclasses import dataclass
+from collections import Counter, defaultdict
+from collections.abc import Mapping, Sequence
+from dataclasses import dataclass, field
 from datetime import date
 from pathlib import Path
 
@@ -37,8 +49,15 @@ from pydantic import ValidationError
 from planeacion.application.puertos.salida.repositorios import ParRepertorio
 from planeacion.config.contenedor import Contenedor, crear_contenedor
 from planeacion.config.settings import Settings
-from planeacion.domain.modelo import clave_orden_carro, dia_de
+from planeacion.domain.modelo import Carro, Zona, clave_orden_carro, dia_de
 from planeacion.domain.servicios.parseo_zonas import normalizar_nombre_zona
+from planeacion.infraestructura.adaptadores.entrada.cli.herencia import (
+    MAPEO_DE_LA_HERENCIA,
+    ORIGEN_DE_LA_HERENCIA,
+    heredar,
+    leer_mapeo,
+    leer_respaldo,
+)
 from planeacion.infraestructura.adaptadores.salida.excel.lector_ecom_embebido import LectorEcomEmbebido
 from planeacion.infraestructura.adaptadores.salida.excel.lector_referencia import (
     HOJA_PLANEACION,
@@ -49,6 +68,9 @@ from planeacion.infraestructura.adaptadores.salida.excel.lector_referencia impor
 # a medias, no una jornada chica: "DEL 08 PARA EL 12 AGOSTO" tiene 2 zonas contra
 # las ~70 de un día normal, porque ese día se rehízo en otro archivo.
 FRACCION_VOLUMEN_ANOMALO = 0.25
+# Donde quedan los CSV livianos de la primera pasada.
+CARPETA_LECTURAS = Path("salidas/lecturas")
+DIAS_LABORALES = ("lunes", "martes", "miercoles", "jueves", "viernes", "sabado")
 
 
 @dataclass(frozen=True)
@@ -60,10 +82,74 @@ class LecturaArchivo:
     facturas_bloque: int
     facturas_planeacion: int
     pares: tuple[tuple[str, str], ...]  # (carro, zona) de la hoja PLANEACION
+    # La primera fecha de pedidos del bloque (ISO), para poder partir el histórico
+    # en períodos ("costumbre de Julián" contra "costumbre de Catalina").
+    fecha: str = ""
 
     @property
     def zonas(self) -> int:
         return len({zona for _, zona in self.pares})
+
+
+_ENCABEZADO_LECTURA = ("archivo", "dias", "facturas_bloque", "facturas_planeacion", "fecha")
+
+
+def escribir_lectura(lectura: LecturaArchivo, ruta_csv: Path) -> None:
+    """El CSV liviano de la primera pasada: una fila de metadatos y un par por fila."""
+    ruta_csv.parent.mkdir(parents=True, exist_ok=True)
+    with ruta_csv.open("w", encoding="utf-8", newline="") as archivo:
+        escritor = csv.writer(archivo)
+        escritor.writerow(_ENCABEZADO_LECTURA)
+        escritor.writerow(
+            [
+                lectura.archivo,
+                "+".join(lectura.dias),
+                lectura.facturas_bloque,
+                lectura.facturas_planeacion,
+                lectura.fecha,
+            ]
+        )
+        escritor.writerow(["carro", "zona"])
+        for carro, zona in lectura.pares:
+            escritor.writerow([carro, zona])
+
+
+def leer_lectura(ruta_csv: Path) -> LecturaArchivo:
+    with ruta_csv.open(encoding="utf-8", newline="") as archivo:
+        filas = list(csv.reader(archivo))
+    if len(filas) < 3 or tuple(filas[0]) != _ENCABEZADO_LECTURA:
+        raise ValueError(f"{ruta_csv} no es una lectura de planeacion-sembrar-repertorio")
+    meta = filas[1]
+    pares = tuple((carro, zona) for carro, zona in (fila[:2] for fila in filas[3:] if len(fila) >= 2))
+    return LecturaArchivo(
+        archivo=meta[0],
+        dias=tuple(d for d in meta[1].split("+") if d),
+        facturas_bloque=int(meta[2]),
+        facturas_planeacion=int(meta[3]),
+        pares=tuple(sorted(pares)),
+        fecha=meta[4] if len(meta) > 4 else "",
+    )
+
+
+def leer_archivos(rutas: Sequence[Path], carpeta: Path = CARPETA_LECTURAS) -> list[LecturaArchivo]:
+    """Primera pasada: cada .xlsm en su propio subproceso, al CSV; después se leen los CSV.
+
+    El CSV se reutiliza si es más nuevo que el .xlsm. Un archivo que el subproceso
+    no pudo leer se salta con aviso, como hacía `_leer_archivo`.
+    """
+    lecturas: list[LecturaArchivo] = []
+    for ruta in rutas:
+        destino = carpeta / f"{ruta.stem}.csv"
+        if not (destino.exists() and destino.stat().st_mtime >= ruta.stat().st_mtime):
+            resultado = subprocess.run(
+                [sys.executable, "-m", __name__, "--extraer", str(ruta), str(destino)],
+                check=False,
+            )
+            if resultado.returncode != 0 or not destino.exists():
+                print(f"AVISO: no se pudo leer {ruta.name}; se salta.", file=sys.stderr)
+                continue
+        lecturas.append(leer_lectura(destino))
+    return lecturas
 
 
 def minimo_de_zonas(lecturas: list[LecturaArchivo], fraccion: float = FRACCION_VOLUMEN_ANOMALO) -> int:
@@ -197,7 +283,126 @@ def _leer_archivo(ruta: Path) -> LecturaArchivo | None:
         facturas_bloque=len({linea.pedido for linea in lineas}),
         facturas_planeacion=totales.facturas,
         pares=tuple(sorted(pares)),
+        fecha=min(fechas).isoformat() if fechas else "",
     )
+
+
+@dataclass
+class Verificacion:
+    """Lo que la siembra y la herencia escribirían, calculado en memoria."""
+
+    sembrados: dict[ParRepertorio, int]
+    heredados: list[ParRepertorio]
+    # (día, zona, archivo) de zonas activas con pedidos que quedarían sin par ese día.
+    sin_par_con_pedidos: list[tuple[str, str, str]] = field(default_factory=list)
+    sin_ningun_par: list[str] = field(default_factory=list)
+    # Para la pregunta del candado: zonas-día con una sola ruta y frecuencia 1,
+    # con una sola ruta y frecuencia >= 2, y con dos o más rutas.
+    candado_una_vez: int = 0
+    candado_dos_o_mas: int = 0
+    con_alternativa: int = 0
+
+    def por_dia(self) -> list[tuple[str, int, int]]:
+        sembrados = Counter(par.dia_semana for par in self.sembrados)
+        heredados = Counter(par.dia_semana for par in self.heredados)
+        return [(dia, sembrados.get(dia, 0), heredados.get(dia, 0)) for dia in DIAS_LABORALES]
+
+
+def verificar_siembra(
+    usables: Sequence[LecturaArchivo],
+    validos: set[tuple[str, str, str]],
+    frecuencias: Mapping[tuple[str, str, str], int],
+    zonas: Sequence[Zona],
+    origenes: Sequence[object],
+    frecuencias_origen: Mapping[ParRepertorio, int],
+) -> Verificacion:
+    """Simula siembra + herencia sin tocar la base."""
+    sembrados = {
+        ParRepertorio(c, z, d, frecuencias[(c, z, d)]): frecuencias[(c, z, d)] for c, z, d in validos
+    }
+    especiales = {zona.nombre for zona in zonas if zona.especial}
+    activas = {zona.nombre for zona in zonas if zona.activa and not zona.especial}
+    herencia = heredar(origenes, sembrados, especiales, frecuencias_origen=frecuencias_origen)  # type: ignore[arg-type]
+    verificacion = Verificacion(sembrados=sembrados, heredados=herencia.pares)
+
+    rutas_por_zona_dia: dict[tuple[str, str], dict[str, int]] = defaultdict(dict)
+    for par in [*sembrados, *herencia.pares]:
+        rutas_por_zona_dia[(par.nombre_zona, par.dia_semana)][par.numero_carro] = par.frecuencia
+    cubiertas = {zona for zona, _ in rutas_por_zona_dia}
+    for lectura in usables:
+        dia = lectura.dias[0]
+        for _, zona in lectura.pares:
+            if zona in activas and (zona, dia) not in rutas_por_zona_dia:
+                verificacion.sin_par_con_pedidos.append((dia, zona, lectura.archivo))
+    verificacion.sin_par_con_pedidos = sorted(set(verificacion.sin_par_con_pedidos))
+    verificacion.sin_ningun_par = sorted(activas - cubiertas)
+    for rutas in rutas_por_zona_dia.values():
+        if len(rutas) >= 2:
+            verificacion.con_alternativa += 1
+        elif next(iter(rutas.values())) >= 2:
+            verificacion.candado_dos_o_mas += 1
+        else:
+            verificacion.candado_una_vez += 1
+    return verificacion
+
+
+def costumbres_por_periodo(
+    usables: Sequence[LecturaArchivo],
+    corte: str,
+    numeros: set[str],
+) -> dict[tuple[str, str], tuple[int, int]]:
+    """(zona, ruta) -> (veces antes del corte, veces desde el corte), para las rutas dadas.
+
+    Sumado sobre los días de la semana: la pregunta es dónde chocan dos costumbres
+    (la de Julián y la de Catalina), no en qué día.
+    """
+    conteo: dict[tuple[str, str], list[int]] = defaultdict(lambda: [0, 0])
+    for lectura in usables:
+        indice = 1 if lectura.fecha >= corte else 0
+        for carro, zona in set(lectura.pares):
+            if carro in numeros:
+                conteo[(zona, carro)][indice] += 1
+    return {clave: (antes, despues) for clave, (antes, despues) in conteo.items()}
+
+
+def _imprimir_verificacion(
+    verificacion: Verificacion, origen: Path, mapeo: Path, filas_mapeo: int, pares_origen: int
+) -> None:
+    print("\nVERIFICACIÓN (nada se escribió):")
+    print(f"  mapeo de la herencia: {mapeo} ({filas_mapeo} filas)")
+    print(f"  origen de la herencia: {origen} ({pares_origen} pares)")
+    print(f"  {'día':<10} {'sembrados':>9} {'heredados':>9} {'total':>6}")
+    for dia, sembrados, heredados in verificacion.por_dia():
+        print(f"  {dia:<10} {sembrados:>9} {heredados:>9} {sembrados + heredados:>6}")
+    total = len(verificacion.sembrados) + len(verificacion.heredados)
+    print(
+        f"  TOTAL: {len(verificacion.sembrados)} sembrados + {len(verificacion.heredados)} heredados "
+        f"= {total}"
+    )
+    print(
+        f"\n  Zonas activas con pedidos en estos archivos que quedarían SIN par ese día: "
+        f"{len(verificacion.sin_par_con_pedidos)}"
+    )
+    for dia, zona, archivo in verificacion.sin_par_con_pedidos:
+        print(f"    {dia:<10} {zona}  ({archivo})")
+    print(f"  Zonas activas sin ningún par en ningún día: {verificacion.sin_ningun_par or 'ninguna'}")
+    print(
+        f"\n  Zonas-día con UNA sola ruta y frecuencia 1 (candado por «visto una vez»): "
+        f"{verificacion.candado_una_vez}; con una sola ruta y frecuencia >= 2: "
+        f"{verificacion.candado_dos_o_mas}; con 2 o más rutas: {verificacion.con_alternativa}"
+    )
+
+
+def _imprimir_costumbres(
+    costumbres: Mapping[tuple[str, str], tuple[int, int]], carros: Mapping[str, Carro], corte: str
+) -> None:
+    print(f"\n  Barbosa: pares (zona, ruta) vistos antes y desde el {corte}:")
+    print(f"  {'zona':<48} {'ruta':<22} {'antes':>5} {'desde':>5}")
+    for (zona, carro), (antes, despues) in sorted(
+        costumbres.items(), key=lambda p: (p[0][0], clave_orden_carro(p[0][1]))
+    ):
+        conductor = carros[carro].conductor or ""
+        print(f"  {zona:<48} {carro + ' ' + conductor:<22} {antes:>5} {despues:>5}")
 
 
 def _imprimir_descartes(descartes: list[tuple[str, str]]) -> None:
@@ -308,7 +513,33 @@ def main() -> int:
     parser = argparse.ArgumentParser(
         description="Siembra la tabla carro_zonas desde las hojas PLANEACION de .xlsm históricos."
     )
-    parser.add_argument("rutas", nargs="+", help="rutas (o globs) de los .xlsm de planeación")
+    parser.add_argument("rutas", nargs="*", help="rutas (o globs) de los .xlsm de planeación")
+    parser.add_argument(
+        "--extraer",
+        nargs=2,
+        metavar=("XLSM", "CSV"),
+        help="primera pasada, un archivo: lee el .xlsm y deja su CSV liviano. Lo invoca la propia "
+        "siembra en un subproceso por archivo; no hace falta llamarlo a mano.",
+    )
+    parser.add_argument(
+        "--lecturas",
+        type=Path,
+        default=CARPETA_LECTURAS,
+        help=f"carpeta de los CSV livianos (por defecto {CARPETA_LECTURAS}); se reutilizan si son "
+        "más nuevos que su .xlsm",
+    )
+    parser.add_argument(
+        "--solo-verificar",
+        action="store_true",
+        help="simula la siembra y la herencia en memoria y NO escribe nada: pares por día, zonas con "
+        "pedidos que quedarían sin par y conteo de candados. Para correr antes de --vaciar.",
+    )
+    parser.add_argument(
+        "--corte-costumbre",
+        default="2026-11-01",
+        help="fecha ISO que parte el histórico en dos períodos para la tabla de Barbosa de "
+        "--solo-verificar (por defecto 2026-11-01: Julián hasta octubre, Catalina desde noviembre)",
+    )
     parser.add_argument(
         "--vaciar",
         action="store_true",
@@ -330,6 +561,9 @@ def main() -> int:
     )
     args = parser.parse_args()
 
+    if args.extraer:
+        return _extraer(Path(args.extraer[0]), Path(args.extraer[1]))
+
     rutas = _expandir_rutas(args.rutas)
     faltantes = [ruta for ruta in rutas if not ruta.exists()]
     if faltantes:
@@ -349,15 +583,17 @@ def main() -> int:
         )
         return 1
 
-    print(f"Leyendo {len(rutas)} archivo(s) (hoja {HOJA_PLANEACION} + bloque de ECOM de PEDIDOS)...")
-    lecturas = []
-    for ruta in rutas:
-        lectura = _leer_archivo(ruta)
-        if lectura is None:
-            continue
+    print(
+        f"Leyendo {len(rutas)} archivo(s) (hoja {HOJA_PLANEACION} + bloque de ECOM de PEDIDOS), "
+        f"uno por subproceso; los CSV quedan en {args.lecturas}/..."
+    )
+    lecturas = leer_archivos(rutas, args.lecturas)
+    for lectura in lecturas:
         dias = "+".join(lectura.dias) or "sin fecha"
-        print(f"  {lectura.archivo}: {len(lectura.pares)} pares, {lectura.zonas} zonas, {dias}")
-        lecturas.append(lectura)
+        print(
+            f"  {lectura.archivo}: {len(lectura.pares)} pares, {lectura.zonas} zonas, {dias} "
+            f"({lectura.fecha})"
+        )
 
     if not lecturas:
         print("ERROR: no se pudo leer ningún archivo.", file=sys.stderr)
@@ -381,7 +617,7 @@ def main() -> int:
 
     frecuencias = contar_frecuencias(usables)
     contenedor = crear_contenedor(settings)
-    if args.vaciar:
+    if args.vaciar and not args.solo_verificar:
         _vaciar(contenedor, args.salidas)
     # Solo la flota ACTIVA siembra repertorio. Las rutas de refuerzo —la 23 de
     # octubre, que cambia de conductor según el día— aparecen en algunas hojas,
@@ -431,6 +667,9 @@ def main() -> int:
         for zona in sorted(zonas_desconocidas):
             print(f"  - {zona}")
 
+    if args.solo_verificar:
+        return _solo_verificar(usables, validos, frecuencias, zonas_base, carros_base, args.corte_costumbre)
+
     por_sembrar = {
         ParRepertorio(carro, zona, dia, frecuencias[(carro, zona, dia)]) for carro, zona, dia in validos
     }
@@ -440,6 +679,44 @@ def main() -> int:
     _reportar(contenedor, len(por_sembrar))
     if args.borrar_frecuencia_cero:
         _borrar_frecuencia_cero(contenedor)
+    return 0
+
+
+def _extraer(ruta_xlsm: Path, ruta_csv: Path) -> int:
+    """Primera pasada: un solo .xlsm, en este proceso, al CSV liviano."""
+    if not ruta_xlsm.exists():
+        print(f"ERROR: no existe {ruta_xlsm}", file=sys.stderr)
+        return 1
+    lectura = _leer_archivo(ruta_xlsm)
+    if lectura is None:
+        return 1
+    escribir_lectura(lectura, ruta_csv)
+    return 0
+
+
+def _solo_verificar(
+    usables: list[LecturaArchivo],
+    validos: set[tuple[str, str, str]],
+    frecuencias: Mapping[tuple[str, str, str], int],
+    zonas_base: Sequence[Zona],
+    carros_base: Sequence[Carro],
+    corte: str,
+) -> int:
+    for insumo in (MAPEO_DE_LA_HERENCIA, ORIGEN_DE_LA_HERENCIA):
+        if not insumo.exists():
+            print(f"ERROR: falta {insumo}, insumo permanente de la herencia.", file=sys.stderr)
+            return 1
+    with MAPEO_DE_LA_HERENCIA.open(encoding="utf-8", newline="") as archivo:
+        origenes = leer_mapeo(csv.reader(archivo))
+    with ORIGEN_DE_LA_HERENCIA.open(encoding="utf-8", newline="") as archivo:
+        frecuencias_origen = leer_respaldo(csv.reader(archivo))
+    verificacion = verificar_siembra(usables, validos, frecuencias, zonas_base, origenes, frecuencias_origen)
+    _imprimir_verificacion(
+        verificacion, ORIGEN_DE_LA_HERENCIA, MAPEO_DE_LA_HERENCIA, len(origenes), len(frecuencias_origen)
+    )
+    carros = {carro.numero: carro for carro in carros_base}
+    barbosa = {n for n, c in carros.items() if c.activo and c.municipio and c.municipio.nombre == "BARBOSA"}
+    _imprimir_costumbres(costumbres_por_periodo(usables, corte, barbosa), carros, corte)
     return 0
 
 

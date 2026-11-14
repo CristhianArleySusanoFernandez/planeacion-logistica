@@ -24,6 +24,8 @@ from pydantic import ValidationError
 from planeacion.config.contenedor import Contenedor, crear_contenedor
 from planeacion.config.settings import Settings
 from planeacion.infraestructura.adaptadores.entrada.cli.herencia import (
+    MAPEO_DE_LA_HERENCIA,
+    ORIGEN_DE_LA_HERENCIA,
     Herencia,
     heredar,
     leer_mapeo,
@@ -33,15 +35,8 @@ from planeacion.infraestructura.adaptadores.entrada.cli.sembrar_repertorio impor
     respaldar_repertorio,
 )
 
-# El origen PERMANENTE de la herencia: el repertorio de la maestra vieja, tal como
-# estaba antes de la primera resiembra. Va versionado y de nombre fijo porque cada
-# resiembra con --vaciar deja la tabla en cero, y el respaldo con fecha que la
-# siembra escribe solo tiene lo que había justo antes: a partir de la segunda
-# resiembra, eso ya es lo sembrado en la corrida anterior y no la costumbre vieja.
-ORIGEN_DE_LA_HERENCIA = Path("datos_historico/repertorio_maestra_vieja.csv")
-# Y el mapeo del cambio de maestra, por el mismo motivo: es el del 30 de octubre
-# de 2026 (copia de salidas/mapeo_zonas_2026-10-30.csv) y no se regenera.
-MAPEO_DE_LA_HERENCIA = Path("datos_historico/mapeo_maestra_vieja.csv")
+# Los dos insumos permanentes (ORIGEN_DE_LA_HERENCIA y MAPEO_DE_LA_HERENCIA) están
+# definidos en herencia.py, porque la siembra también los lee para --solo-verificar.
 
 _MAX_EJEMPLOS = 10
 # La base los guarda en minúscula; se compara sin tener en cuenta mayúsculas para
