@@ -115,7 +115,9 @@ pueda revisarlo y ajustarlo.
    puede atender las zonas de su repertorio y el balanceador elige únicamente entre carros elegibles.
    El repertorio **depende del día de la semana**: `(TUNJA): ASIS` va en el carro 13 casi toda la semana
    pero en el 12 los jueves; `(BARBOSA): MUNICIPIO CITE` va en el 5 salvo los sábados, que va en el 3.
-   Una zona-día con **un solo** carro habilitado queda fijada; con **varios**, el balanceador elige.
+   Una zona-día con **un solo** carro habilitado va a ese carro; con **varios**, el balanceador elige.
+   Que además salga **fija** (candado, sin destinos para mover) depende de cuántas veces se vio ese
+   par: ver «Candado por evidencia» más abajo.
    Una zona viajera cuyo único carro elegible es de otro municipio se balancea en el pool de ese carro
    (ej. RAQUIRA → carro 2 de Chiquinquirá); sin ningún carro elegible **ese día** queda en
    `zonas_sin_carro` (aviso en la UI). Repertorio vacío = comportamiento clásico. Se siembra del
@@ -372,6 +374,7 @@ las filas en vez de reescribirlas, para no tener dos fuentes de verdad.
 | `vehiculos_referencia` | 12 | Divisor del "Promedio Vh", el mismo en la alerta del Paso 3 y en la fila 2 del Excel. **0 = automático** (camiones activos, hoy 17); otro valor se usa tal cual. Se queda en 12 porque es el valor con el que está calibrada la regla 80–110: cambiarlo obliga a recalibrar `max_facturas_conductor` con Julián. |
 | `umbral_cv_aceptable` | 0,25 | Hasta este CV el semáforo va en verde. Los 0,10 de julio de 2026 eran de otra flota: el reparto **real** mide 25–46 %, así que los cuatro municipios salían en rojo siempre. |
 | `umbral_cv_atencion` | 0,40 | Hasta acá ámbar, por encima rojo. Solo cambia el color: los umbrales no entran en la función de costo. |
+| `observaciones_para_fijar` | 2 | Cuántas veces hay que haber visto a la única ruta de una zona ese día para que salga fija (candado) en el Paso 3. Por debajo sale «sugerida» y se puede mover a cualquier ruta del municipio. Frecuencia 0 fija siempre. Con 1, el comportamiento anterior al Prompt 26. No cambia el reparto automático. |
 | `desbalance_planillas` | 0,75 | Desde qué diferencia dos planillas del mismo camión se consideran desparejas, como fracción de la menor, en pesos **o** kilos (clientes no: Julián reparte las mitades por carga, no por paradas). Calibrado sobre los 7 días del 20 al 27 de octubre de 2026. Solo avisa. |
 | `kilos_max_por_unidad` | 25 | Techo de la guarda de kilos. Una unidad de venta es una caja o un display; ningún producto sano de 2026 se acerca, y hay fichas con 715,5 kg (ver § 5). |
 
@@ -746,6 +749,56 @@ viajera rural y **no se podrá mover a una ruta de Tunja desde el Paso 3**, porq
 mueve dentro de su municipio. Es correcto que sea así —el camión de Barbosa no pasa por la puerta de
 un cliente de Tunja— pero con el municipio mal puesto se vuelve un callejón sin salida que solo se
 sale por Configuración.
+
+### Aprendizaje desde la app
+
+Mientras la operación planeó en Excel, el repertorio se sembró desde las hojas `PLANEACION` de los
+`.xlsm`. Cuando deje el Excel, lo único que queda es lo que la app guarda en el **Paso 4**:
+
+- **Qué se guarda.** `planeaciones` (fecha de los pedidos, día de la semana, momento de creación) y
+  `planeacion_asignaciones` (una fila por zona con el carro **final**, tras los movimientos a mano, y
+  sus facturas, clientes, pesos y kilos). Solo se escribe al pulsar «Guardar planeación». Por eso el
+  Paso 4 pide guardar siempre, aunque no se haya movido nada: sin guardar, ese reparto no existe para
+  la app.
+- **Cómo se siembra.** `planeacion-sembrar-repertorio --desde-guardadas` convierte cada planeación
+  guardada en una lectura más (`guardada:<fecha>`, con los pares zona → carro con carro no nulo) y la
+  suma al mismo conteo de frecuencias que los `.xlsm`. Las zonas especiales se saltan como siempre.
+- **Deduplicación por fecha de pedidos.** Si hay un `.xlsm` con la misma fecha, gana el `.xlsm`: es lo
+  que salió a bodega y la guardada pudo quedarse a medias. Entre dos guardadas de la misma fecha gana
+  la de `creada_en` más reciente. Las anteriores al 20 de octubre de 2026 se descartan: son de la
+  maestra vieja. El reporte de la siembra dice cuántas se usaron y por qué se descartó cada una.
+- **Rutina.** Igual que antes, con la bandera: `"datos/*.xlsm" --desde-guardadas --solo-verificar` y
+  después `--vaciar`. Sin Excel, solo `--desde-guardadas --vaciar`.
+
+### Candado por evidencia
+
+En el Paso 3 una zona puede no ofrecerse en «Mover la zona» por dos motivos distintos, y el nombre
+del nivel (`NivelDeFijacion`, en `domain/modelo/balanceo.py`) los separa a propósito para que «fija»
+no signifique dos cosas:
+
+- **Restricciones de elegibilidad**: `RESTRINGIDA_POR_LADO` (zona normal con lado de Chiquinquirá,
+  regla dura) y `RESTRINGIDA_POR_MARCA` (especial con exactamente una casilla marcada). No hay otra
+  ruta a la que pueda ir, por regla o por decisión explícita.
+- **Evidencia del repertorio del día**, solo para zonas con **una sola** ruta posible:
+  - `FIJA` si esa ruta se vio `observaciones_para_fijar` veces o más (default 2), **o** si tiene
+    frecuencia 0: un «este carro no» heredado o puesto a mano es una decisión, no falta de evidencia,
+    y fija siempre sin importar el parámetro.
+  - `SUGERIDA` si se vio entre 1 y `observaciones_para_fijar − 1` veces. El balanceador la deja en
+    esa ruta (no hay otra información), pero la etiqueta es «💡 sugerida · vista 1 vez» en vez de
+    candado y se puede mover a **cualquier ruta activa de su municipio**, respetando el lado de
+    Chiquinquirá. La regla salió de la medición del 13 de noviembre de 2026: 131 de 446 zonas-día
+    (29 %) estaban fijas por una sola observación, la mitad del planeador anterior.
+  - `LIBRE` con dos o más rutas posibles, o sin repertorio.
+
+**Consecuencia al mover una sugerida.** El Paso 3 muestra «Movida por hoy. Si esta zona no debe
+volver a la ruta anterior, desmarque esa casilla en Zonas por carro». Al guardar la planeación, la
+ruta elegida entra al conteo por `--desde-guardadas`: la zona queda con dos rutas en el repertorio
+(la anterior, vista 1 vez, y la elegida, vista 1 vez), en adelante sale `LIBRE` y decide el balance
+por carga. Si la ruta anterior no debe volver a ofrecerse, hay que desmarcar su casilla; la app no la
+borra sola.
+
+El reparto automático **no cambia** con nada de esto: solo qué se puede mover a mano y cómo se
+muestra.
 
 ### Planillas
 

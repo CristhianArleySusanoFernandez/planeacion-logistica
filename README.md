@@ -31,9 +31,10 @@ Abre el **SQL Editor** del dashboard de Supabase y pega/ejecuta, en orden, el co
 [`migrations/001_esquema_inicial.sql`](migrations/001_esquema_inicial.sql) y
 [`migrations/002_carro_zonas.sql`](migrations/002_carro_zonas.sql) y
 [`migrations/003_carro_zonas_dia.sql`](migrations/003_carro_zonas_dia.sql), y después las
-004 a 009 en orden (flota por conductor, parámetros, umbrales del semáforo, zonas especiales,
-umbral de planillas y descripción del divisor del promedio). La 008 es la única que pisa un valor a
-propósito: recalibra `desbalance_planillas` de 0,35 a 0,75; la 009 solo cambia una descripción.
+004 a 010 en orden (flota por conductor, parámetros, umbrales del semáforo, zonas especiales,
+umbral de planillas, descripción del divisor del promedio y `observaciones_para_fijar`). La 008 es
+la única que pisa un valor a propósito: recalibra `desbalance_planillas` de 0,35 a 0,75; la 009 solo
+cambia una descripción; la 010 inserta el parámetro del candado (2) sin tocar nada existente.
 Los scripts son idempotentes (`create table if not exists`), se pueden correr más de una vez.
 La 003 le agrega al repertorio la dimensión del **día de la semana** y **replica la
 configuración que ya exista a los seis días laborales**, así lo ya cargado a mano sigue
@@ -604,6 +605,25 @@ rehacerlas; el resto sigue valiendo:
   automático por camiones activos; 12, el default, es el valor calibrado con la regla 80–110. En el
   Paso 3 el promedio por vehículo ahora muestra el divisor («1.302 facturas / 12 vehículos = 108,5»)
   y la fila «Promedio Vh» del Excel vuelve a ser la fórmula `=+C3/12` de la hoja original.
+
+### Guía de usuario (PDF): secciones afectadas por el Prompt 26
+
+- **Paso 3 — Reparto.** La etiqueta de la fila distingue por qué una zona no se mueve: «🔒 lado de
+  Chiquinquirá» y «🔒 ruta marcada» son restricciones de elegibilidad; «🔒 fija · vista N veces» es
+  evidencia del repertorio. Novedad: «💡 sugerida · vista 1 vez» para la zona con una sola ruta vista
+  menos de `observaciones_para_fijar` veces: el reparto la deja ahí, pero aparece en «Mover la zona»
+  y se puede llevar a cualquier ruta activa de su municipio. Al moverla sale la línea «Movida por
+  hoy. Si esta zona no debe volver a la ruta anterior, desmarque esa casilla en Zonas por carro».
+- **Paso 4 — Exportar y guardar.** «Guardar planeación» pasa a la primera columna, como botón
+  principal, con el texto «Guardar es lo que permite que la aplicación aprenda qué ruta atiende cada
+  zona. Guarde siempre, aunque no cambie nada». Si se genera el Excel sin haber guardado, aparece un
+  aviso ámbar no bloqueante.
+- **Configuración → Parámetros.** Fila nueva `observaciones_para_fijar` (default 2, migración 010).
+  Con 1 vuelve el comportamiento anterior.
+- **Configuración → Zonas por carro.** Hay que explicar que la siembra ahora también aprende de las
+  planeaciones guardadas (`--desde-guardadas`): una zona «sugerida» que se movió y se guardó queda
+  con dos casillas (la ruta anterior y la elegida) y en adelante decide el balance. Para que no
+  vuelva a la anterior hay que desmarcar esa casilla.
 
 ## Exportación a Excel (salida para facturación)
 
