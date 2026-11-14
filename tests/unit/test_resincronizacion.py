@@ -257,6 +257,14 @@ class TestClientes:
             ("111", "15176 - Chiquinquirá")
         ]
 
+    def test_si_la_base_ya_tiene_la_ciudad_como_direccion_no_es_sospechosa(self) -> None:
+        actual = Cliente(codigo="111", direccion="15001 - TUNJA", ciudad="15001 - TUNJA")
+        fila = FilaCliente(codigo="111", direccion="15001 - TUNJA", ciudad="15001 - TUNJA")
+
+        plan = planear_clientes([fila], {}, [actual], {})
+
+        assert plan.direcciones_sospechosas == [] and plan.sin_cambios == 1
+
     def test_una_direccion_distinta_de_la_ciudad_si_se_actualiza(self) -> None:
         actual = Cliente(codigo="111", direccion="CR 10 10 45", ciudad="CHIQUINQUIRA")
         fila = FilaCliente(codigo="111", direccion="CL 5 6 7", ciudad="15176 - CHIQUINQUIRA")

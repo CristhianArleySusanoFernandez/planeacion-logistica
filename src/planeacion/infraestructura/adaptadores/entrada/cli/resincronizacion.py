@@ -407,8 +407,11 @@ def planear_clientes(
         zona = zonas_por_nombre.get(nombre_zona)
         actual = por_codigo.get(fila.codigo)
         direccion = fila.direccion
-        if _direccion_sospechosa(fila):
-            direccion = actual.direccion if actual else None
+        # Solo cuenta si de verdad pisaría otra cosa: cuando la base ya tiene ese
+        # mismo texto no hay nada que conservar y reportarlo sería ruido (526 filas).
+        direccion_base = actual.direccion if actual else None
+        if _direccion_sospechosa(fila) and _texto(fila.direccion) != _texto(direccion_base):
+            direccion = direccion_base
             plan.direcciones_sospechosas.append(
                 Cambio(fila.codigo, "dirección sospechosa (es la ciudad)", direccion, fila.direccion)
             )
