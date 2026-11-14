@@ -17,6 +17,7 @@ from decimal import Decimal
 from types import MappingProxyType
 
 from planeacion.domain.modelo.balanceo import (
+    OBSERVACIONES_PARA_FIJAR,
     REGLAS_POR_DEFECTO,
     UMBRAL_CV_ACEPTABLE,
     UMBRAL_CV_ATENCION,
@@ -35,6 +36,7 @@ CLAVE_KILOS_MAX_POR_UNIDAD = "kilos_max_por_unidad"
 CLAVE_UMBRAL_CV_ACEPTABLE = "umbral_cv_aceptable"
 CLAVE_UMBRAL_CV_ATENCION = "umbral_cv_atencion"
 CLAVE_DESBALANCE_PLANILLAS = "desbalance_planillas"
+CLAVE_OBSERVACIONES_PARA_FIJAR = "observaciones_para_fijar"
 
 
 @dataclass(frozen=True)
@@ -106,6 +108,14 @@ CATALOGO: tuple[DefinicionParametro, ...] = (
         "Diferencia desde la que dos planillas del mismo camión se consideran desparejas, como "
         "fracción de la menor (0,75 = 75 %). Se compara en pesos y kilos, no en clientes. Solo "
         "avisa: el reparto no cambia.",
+    ),
+    DefinicionParametro(
+        CLAVE_OBSERVACIONES_PARA_FIJAR,
+        Decimal(str(OBSERVACIONES_PARA_FIJAR)),
+        "Cuántas veces hay que haber visto a la única ruta de una zona ese día para que salga "
+        "fija (candado) en el Paso 3. Por debajo sale «sugerida» y se puede mover a cualquier ruta "
+        "del municipio. Con 1 vuelve al comportamiento anterior. Frecuencia 0 («este carro no») "
+        "fija siempre. No cambia el reparto automático.",
     ),
     DefinicionParametro(
         CLAVE_KILOS_MAX_POR_UNIDAD,

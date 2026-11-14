@@ -1,6 +1,7 @@
 """Caso de uso: el override manual de Rudy (mover una zona a otro carro)."""
 
 from planeacion.domain.modelo import ResultadoBalanceo
+from planeacion.domain.modelo.balanceo import OBSERVACIONES_PARA_FIJAR
 from planeacion.domain.servicios.balanceador import AjustadorDeAsignacion
 
 
@@ -11,6 +12,10 @@ class CasoDeUsoAjustarAsignacion:
         self._ajustador = AjustadorDeAsignacion()
 
     def ejecutar(
-        self, resultado: ResultadoBalanceo, nombre_zona: str, numero_carro: str
+        self,
+        resultado: ResultadoBalanceo,
+        nombre_zona: str,
+        numero_carro: str,
+        observaciones_para_fijar: int = OBSERVACIONES_PARA_FIJAR,
     ) -> ResultadoBalanceo:
-        return self._ajustador.mover(resultado, nombre_zona, numero_carro)
+        return self._ajustador.mover(resultado, nombre_zona, numero_carro, observaciones_para_fijar)

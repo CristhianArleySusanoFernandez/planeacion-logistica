@@ -21,6 +21,7 @@ CLAVE_PLANEACION = "planeacion"  # PlaneacionCompleta (dominio vivo: se muta al 
 CLAVE_PENDIENTES = "pendientes"  # list[ClientePendiente] del paso 2
 CLAVE_ID_GUARDADA = "id_guardada"  # id en Supabase si ya se guardó
 CLAVE_EXCEL_EXPORTADO = "excel_exportado"  # bytes del .xlsx generado
+CLAVE_SUGERIDAS_MOVIDAS = "sugeridas_movidas"  # zonas «sugeridas» movidas a mano en esta planeación
 CLAVE_CONFIRMA_REGENERAR = "confirma_regenerar"
 
 
@@ -37,6 +38,7 @@ def limpiar_resultados_posteriores() -> None:
         CLAVE_PENDIENTES,
         CLAVE_ID_GUARDADA,
         CLAVE_EXCEL_EXPORTADO,
+        CLAVE_SUGERIDAS_MOVIDAS,
         CLAVE_CONFIRMA_REGENERAR,
     ):
         st.session_state.pop(clave, None)

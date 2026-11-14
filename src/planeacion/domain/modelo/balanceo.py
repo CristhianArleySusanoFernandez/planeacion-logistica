@@ -37,6 +37,38 @@ def rutas_marcadas(repertorio: Repertorio, nombre_zona: str) -> frozenset[str]:
 # afuera, igual que el repertorio: acá adentro es un mapa plano.
 Frecuencias = Mapping[tuple[str, str], int]
 
+# Cuántas veces hay que haber visto a la ÚNICA ruta de una zona-día para que la
+# zona salga fija (candado) en vez de sugerida. Con 1 es el comportamiento de
+# antes del Prompt 26: una sola observación ya fijaba. Medido el 13-nov-2026: 131
+# de 446 zonas-día (29 %) estaban fijas por una sola observación, la mitad de
+# ellas del planeador anterior.
+OBSERVACIONES_PARA_FIJAR = 2
+
+
+class NivelDeFijacion(Enum):
+    """Qué tan movible es una zona en el Paso 3, y por qué.
+
+    Las dos primeras son **restricciones de elegibilidad**: no hay otra ruta a la
+    que pueda ir, por regla (lado de Chiquinquirá) o por decisión explícita (una
+    sola casilla marcada a una especial). Las otras tres son **evidencia**: lo que
+    el repertorio del día dice de esa zona. Se distinguen a propósito para que
+    "fija" no signifique dos cosas.
+    """
+
+    RESTRINGIDA_POR_LADO = "lado"  # zona normal con lado de Chiquinquirá
+    RESTRINGIDA_POR_MARCA = "marca"  # especial con exactamente una casilla marcada
+    FIJA = "fija"  # una sola ruta, vista >= OBSERVACIONES veces (o frecuencia 0: "este carro no")
+    SUGERIDA = "sugerida"  # una sola ruta, vista entre 1 y OBSERVACIONES - 1 veces
+    LIBRE = "libre"  # dos o más rutas posibles, o sin repertorio
+
+    @property
+    def inmovible(self) -> bool:
+        return self in (
+            NivelDeFijacion.RESTRINGIDA_POR_LADO,
+            NivelDeFijacion.RESTRINGIDA_POR_MARCA,
+            NivelDeFijacion.FIJA,
+        )
+
 
 def penalizaciones_por_frecuencia(
     repertorio: Repertorio, frecuencias: Frecuencias
@@ -240,9 +272,34 @@ class ResultadoBalanceo:
     desde_historico: bool
     zonas_sin_carro: list[ZonaAgregada] = field(default_factory=list)
     repertorio: dict[str, frozenset[str]] = field(default_factory=dict)
+    # (carro, zona) → veces observado ese día. Viaja para que la UI y el ajuste
+    # manual sepan si una ruta única está respaldada o es "vista una vez".
+    frecuencias: dict[tuple[str, str], int] = field(default_factory=dict)
 
     def carro_permite(self, numero_carro: str, nombre_zona: str) -> bool:
         return zona_permitida(self.repertorio, nombre_zona, numero_carro)
 
     def rutas_marcadas(self, nombre_zona: str) -> frozenset[str]:
         return rutas_marcadas(self.repertorio, nombre_zona)
+
+    def veces_observada(self, nombre_zona: str, numero_carro: str) -> int:
+        return self.frecuencias.get((numero_carro, nombre_zona), 0)
+
+    def nivel_de_fijacion(
+        self, zona: Zona, observaciones_para_fijar: int = OBSERVACIONES_PARA_FIJAR
+    ) -> NivelDeFijacion:
+        """Ver ``NivelDeFijacion``. Sin repertorio, todo es libre (balanceo por municipio)."""
+        marcas = self.rutas_marcadas(zona.nombre)
+        if zona.especial:
+            return NivelDeFijacion.RESTRINGIDA_POR_MARCA if len(marcas) == 1 else NivelDeFijacion.LIBRE
+        if zona.regla_chiquinquira is not None:
+            return NivelDeFijacion.RESTRINGIDA_POR_LADO
+        if not self.repertorio or len(marcas) != 1:
+            return NivelDeFijacion.LIBRE
+        (unica,) = marcas
+        veces = self.veces_observada(zona.nombre, unica)
+        # Frecuencia 0 es un "este carro no" heredado o puesto a mano: una decisión,
+        # no falta de evidencia. Fija siempre, sin importar el parámetro.
+        if veces == 0 or veces >= observaciones_para_fijar:
+            return NivelDeFijacion.FIJA
+        return NivelDeFijacion.SUGERIDA

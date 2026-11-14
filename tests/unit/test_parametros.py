@@ -22,7 +22,7 @@ from planeacion.infraestructura.adaptadores.salida.supabase import repositorio_p
 
 class TestCatalogo:
     def test_todas_las_claves_tienen_default_y_descripcion(self) -> None:
-        assert len(CATALOGO) == len(DEFECTOS) == 11
+        assert len(CATALOGO) == len(DEFECTOS) == 12
         for definicion in CATALOGO:
             assert definicion.descripcion.strip(), definicion.clave
             assert definicion.valor_por_defecto >= 0

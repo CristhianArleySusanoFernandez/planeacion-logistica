@@ -67,8 +67,10 @@ from planeacion.domain.modelo import (
     clave_orden_carro,
 )
 from planeacion.domain.modelo.balanceo import (
+    OBSERVACIONES_PARA_FIJAR,
     REGLAS_POR_DEFECTO,
     Frecuencias,
+    NivelDeFijacion,
     Repertorio,
     penalizaciones_por_frecuencia,
     rutas_marcadas,
@@ -225,6 +227,7 @@ class Balanceador:
             desde_historico=desde_historico,
             zonas_sin_carro=zonas_sin_carro,
             repertorio=repertorio_limpio,
+            frecuencias=dict(frecuencias or {}),
         )
 
     def _agrupar_zonas(
@@ -465,8 +468,21 @@ class AjustadorDeAsignacion:
     Una zona de Chiquinquirá sí se puede mover, pero solo entre rutas de su lado.
     """
 
-    def mover(self, resultado: ResultadoBalanceo, nombre_zona: str, numero_carro: str) -> ResultadoBalanceo:
-        """Muta el resultado (mueve la zona y recalcula las métricas afectadas)."""
+    def mover(
+        self,
+        resultado: ResultadoBalanceo,
+        nombre_zona: str,
+        numero_carro: str,
+        observaciones_para_fijar: int = OBSERVACIONES_PARA_FIJAR,
+    ) -> ResultadoBalanceo:
+        """Muta el resultado (mueve la zona y recalcula las métricas afectadas).
+
+        Una zona **sugerida** (una sola ruta en el repertorio del día, vista menos
+        de ``observaciones_para_fijar`` veces) se puede mover a cualquier ruta
+        activa de su municipio, aunque esa ruta no la tenga en el repertorio: la
+        única observación no alcanza para prohibir las demás. Al guardar la
+        planeación, la ruta elegida entra al conteo y la zona deja de ser sugerida.
+        """
         municipio_origen, origen, zona = self._buscar_zona(resultado, nombre_zona)
         encontrado = self._buscar_carro(resultado, numero_carro)
         if encontrado is None:
@@ -497,6 +513,12 @@ class AjustadorDeAsignacion:
                     f"{nombre_zona} es un cliente especial de {municipio_origen}: se puede mover a "
                     f"cualquier ruta de ese municipio, pero el carro {numero_carro} es de "
                     f"{municipio_destino}"
+                )
+        elif resultado.nivel_de_fijacion(zona.zona, observaciones_para_fijar) is NivelDeFijacion.SUGERIDA:
+            if municipio_destino != municipio_origen:
+                raise MovimientoInvalido(
+                    f"{nombre_zona} se vio una sola vez en su ruta: se puede mover a cualquier ruta de "
+                    f"{municipio_origen}, pero el carro {numero_carro} es de {municipio_destino}"
                 )
         elif resultado.repertorio:
             if not resultado.carro_permite(numero_carro, nombre_zona):

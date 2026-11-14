@@ -16,6 +16,7 @@ from planeacion.domain.errores import ErrorDeDominio, MovimientoInvalido
 from planeacion.domain.modelo import (
     CargaCarro,
     MetricasDesbalance,
+    NivelDeFijacion,
     Parametros,
     ResultadoBalanceo,
     UmbralesDesbalance,
@@ -26,6 +27,7 @@ from planeacion.domain.modelo.parametros import (
     CLAVE_DESBALANCE_PLANILLAS,
     CLAVE_MAX_FACTURAS_CONDUCTOR,
     CLAVE_MIN_CLIENTES_CONDUCTOR,
+    CLAVE_OBSERVACIONES_PARA_FIJAR,
     CLAVE_VEHICULOS_REFERENCIA,
 )
 from planeacion.domain.servicios.agrupacion_por_conductor import agrupar_por_conductor
@@ -91,10 +93,19 @@ def mostrar(contenedor: Contenedor) -> None:
     _alertas_operativas(contenedor, resultado.cargas_por_municipio, planeacion.total_facturas)
     _resumen_por_conductor(resultado.cargas_por_municipio, parametros)
 
+    observaciones = parametros.entero(CLAVE_OBSERVACIONES_PARA_FIJAR)
+    movidas: list[str] = st.session_state.get(estado.CLAVE_SUGERIDAS_MOVIDAS, [])
+    if movidas:
+        st.info(
+            f"Movida por hoy: {', '.join(movidas)}. Si esta zona no debe volver a la ruta anterior, "
+            "desmarque esa casilla en Zonas por carro."
+        )
     municipios = sorted(resultado.cargas_por_municipio)
     for tab, municipio in zip(st.tabs(municipios), municipios, strict=True):
         with tab:
-            _mostrar_municipio(municipio, resultado.cargas_por_municipio[municipio], planeacion)
+            _mostrar_municipio(
+                municipio, resultado.cargas_por_municipio[municipio], planeacion, observaciones
+            )
 
     st.divider()
     col1, col2 = st.columns(2)
@@ -284,9 +295,11 @@ def _marca_de_planillas(desparejas: bool, rutas: int) -> str:
     return estilos.badge("⚠ desparejas", "ambar") if desparejas else estilos.badge("parejas", "verde")
 
 
-def _mostrar_municipio(municipio: str, cargas: list[CargaCarro], planeacion: PlaneacionCompleta) -> None:
+def _mostrar_municipio(
+    municipio: str, cargas: list[CargaCarro], planeacion: PlaneacionCompleta, observaciones: int
+) -> None:
     for carga in cargas:
-        _mostrar_carga(municipio, carga, cargas, planeacion)
+        _mostrar_carga(municipio, carga, cargas, planeacion, observaciones)
 
 
 def _encabezado_carro(carga: CargaCarro) -> str:
@@ -303,7 +316,11 @@ def _encabezado_carro(carga: CargaCarro) -> str:
 
 
 def _mostrar_carga(
-    municipio: str, carga: CargaCarro, cargas: list[CargaCarro], planeacion: PlaneacionCompleta
+    municipio: str,
+    carga: CargaCarro,
+    cargas: list[CargaCarro],
+    planeacion: PlaneacionCompleta,
+    observaciones: int,
 ) -> None:
     with st.container(border=True):
         st.markdown(_encabezado_carro(carga), unsafe_allow_html=True)
@@ -318,39 +335,46 @@ def _mostrar_carga(
                     zona.clientes,
                     f"${zona.pesos:,.0f}",
                     f"{zona.kilos:,.1f}",
-                    estilos.Html(_marca_de_zona(zona.zona, planeacion.resultado)),
+                    estilos.Html(_marca_de_zona(zona.zona, planeacion.resultado, observaciones)),
                 ]
                 for zona in sorted(carga.zonas, key=lambda z: z.zona.nombre)
             ],
             numericas=("Clientes", "Pesos", "Kilos"),
         )
-        _controles_mover(municipio, carga, cargas, planeacion)
+        _controles_mover(municipio, carga, cargas, planeacion, observaciones)
 
 
-def _esta_fija(zona: Zona, resultado: ResultadoBalanceo) -> bool:
-    """Una zona no se puede mover si tiene lado en Chiquinquirá (regla dura) o si la
-    operación le marcó una sola ruta en Zonas por carro. Una especial no tiene lado
-    —la regla de lado es del repertorio y ella no lo usa— pero sí puede tener marca."""
-    if zona.especial:
-        return len(resultado.rutas_marcadas(zona.nombre)) == 1
-    if zona.regla_chiquinquira is not None:
-        return True
-    return bool(resultado.repertorio) and len(resultado.rutas_marcadas(zona.nombre)) == 1
-
-
-def _marca_de_zona(zona: Zona, resultado: ResultadoBalanceo) -> str:
+def _marca_de_zona(zona: Zona, resultado: ResultadoBalanceo, observaciones: int) -> str:
     """La etiqueta de la fila: especial (siempre, para que verifiquen el vehículo),
-    más el candado si está fija."""
+    más el nivel de fijación. Se distingue la restricción de elegibilidad (lado,
+    marca) de la fijación por evidencia (fija, sugerida): "fija" no significa dos cosas."""
     marcas = []
     if zona.especial:
         marcas.append(estilos.badge("⭐ cliente especial, verifique el vehículo", "ambar"))
-    if _esta_fija(zona, resultado):
-        marcas.append(estilos.badge("🔒 fija", "neutro"))
+    nivel = resultado.nivel_de_fijacion(zona, observaciones)
+    if nivel is NivelDeFijacion.RESTRINGIDA_POR_LADO:
+        marcas.append(estilos.badge("🔒 lado de Chiquinquirá", "neutro"))
+    elif nivel is NivelDeFijacion.RESTRINGIDA_POR_MARCA:
+        marcas.append(estilos.badge("🔒 ruta marcada", "neutro"))
+    elif nivel is NivelDeFijacion.FIJA:
+        (ruta,) = resultado.rutas_marcadas(zona.nombre)
+        veces = resultado.veces_observada(zona.nombre, ruta)
+        detalle = "«este carro no»" if veces == 0 else f"vista {veces} veces"
+        marcas.append(estilos.badge(f"🔒 fija · {detalle}", "neutro"))
+    elif nivel is NivelDeFijacion.SUGERIDA:
+        (ruta,) = resultado.rutas_marcadas(zona.nombre)
+        veces = resultado.veces_observada(zona.nombre, ruta)
+        texto = "vista 1 vez" if veces == 1 else f"vista {veces} veces"
+        marcas.append(estilos.badge(f"💡 sugerida · {texto}", "ambar"))
     return " ".join(marcas)
 
 
 def _destinos_para(
-    nombre_zona: str, origen: CargaCarro, cargas_municipio: list[CargaCarro], planeacion: PlaneacionCompleta
+    nombre_zona: str,
+    origen: CargaCarro,
+    cargas_municipio: list[CargaCarro],
+    planeacion: PlaneacionCompleta,
+    observaciones: int,
 ) -> list[str]:
     """A qué carros se puede mover la zona.
 
@@ -373,6 +397,16 @@ def _destinos_para(
             numeros = [c.carro.numero for c in candidatas if c is not origen and c.carro.numero in marcas]
             return sorted(numeros, key=clave_orden_carro)
         return sorted((c.carro.numero for c in cargas_municipio if c is not origen), key=clave_orden_carro)
+    zona_sugerida = next(
+        (z.zona for z in origen.zonas if z.zona.nombre == nombre_zona),
+        None,
+    )
+    if (
+        zona_sugerida is not None
+        and resultado.nivel_de_fijacion(zona_sugerida, observaciones) is NivelDeFijacion.SUGERIDA
+    ):
+        # Una sola observación no prohíbe las demás rutas del municipio.
+        return sorted((c.carro.numero for c in cargas_municipio if c is not origen), key=clave_orden_carro)
     if resultado.repertorio:
         candidatas = [c for cargas in resultado.cargas_por_municipio.values() for c in cargas]
     else:
@@ -386,28 +420,42 @@ def _destinos_para(
 
 
 def _controles_mover(
-    municipio: str, carga: CargaCarro, cargas: list[CargaCarro], planeacion: PlaneacionCompleta
+    municipio: str,
+    carga: CargaCarro,
+    cargas: list[CargaCarro],
+    planeacion: PlaneacionCompleta,
+    observaciones: int,
 ) -> None:
-    # Una zona fija (lado de Chiquinquirá, o una sola ruta marcada) no se ofrece.
+    # Lo inmovible (lado de Chiquinquirá, ruta marcada, fija por evidencia) no se ofrece.
+    resultado = planeacion.resultado
     movibles = sorted(
-        zona.zona.nombre for zona in carga.zonas if not _esta_fija(zona.zona, planeacion.resultado)
+        zona.zona.nombre
+        for zona in carga.zonas
+        if not resultado.nivel_de_fijacion(zona.zona, observaciones).inmovible
     )
     if not movibles:
         return
     clave = f"{municipio}_{carga.carro.numero}"
     col1, col2, col3 = st.columns([4, 2, 1])
     zona_elegida = col1.selectbox("Mover la zona:", movibles, key=f"mover_zona_{clave}")
-    destinos = _destinos_para(zona_elegida, carga, cargas, planeacion)
+    destinos = _destinos_para(zona_elegida, carga, cargas, planeacion, observaciones)
     if not destinos:
         col2.caption("Ningún otro carro tiene permitida esta zona (Configuración → Zonas por carro).")
         return
     destino = col2.selectbox("al carro:", destinos, key=f"mover_destino_{clave}")
     col3.markdown("&nbsp;")  # alinea el botón con los selectbox
     if col3.button("Mover", key=f"mover_boton_{clave}"):
+        zona_obj = next(z.zona for z in carga.zonas if z.zona.nombre == zona_elegida)
+        era_sugerida = resultado.nivel_de_fijacion(zona_obj, observaciones) is NivelDeFijacion.SUGERIDA
         try:
-            crear_ajustar_asignacion().ejecutar(planeacion.resultado, zona_elegida, destino)
+            crear_ajustar_asignacion().ejecutar(resultado, zona_elegida, destino, observaciones)
         except MovimientoInvalido as error:
             st.error(str(error))
             return
+        if era_sugerida:
+            movidas = list(st.session_state.get(estado.CLAVE_SUGERIDAS_MOVIDAS, []))
+            if zona_elegida not in movidas:
+                movidas.append(zona_elegida)
+            st.session_state[estado.CLAVE_SUGERIDAS_MOVIDAS] = movidas
         st.session_state.pop(estado.CLAVE_EXCEL_EXPORTADO, None)  # el Excel quedó obsoleto
         st.rerun()
