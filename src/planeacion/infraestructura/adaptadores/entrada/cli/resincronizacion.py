@@ -11,7 +11,7 @@ o un retiro real, y eso no lo decide un script.
 """
 
 from collections.abc import Iterable, Mapping, Sequence
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
 from decimal import Decimal
 from enum import Enum
 
@@ -467,13 +467,25 @@ def planear_clientes(
             dia_visita=actual.dia_visita,
             activo=actual.activo,
         )
-        if candidato == actual:
+        if _misma_fila(candidato, actual):
             plan.sin_cambios += 1
         else:
             plan.actualizados.append(candidato)
 
     plan.solo_en_base = sorted(codigo for codigo in por_codigo if codigo not in vistos)
     return plan
+
+
+def _misma_fila(candidato: Cliente, actual: Cliente) -> bool:
+    """Igualdad campo a campo con la zona comparada POR NOMBRE.
+
+    El repositorio de clientes reconstruye la zona sin sus banderas (``especial``,
+    ``regla_chiquinquira``) y el catálogo las trae: comparar los objetos marcaba
+    como "actualizados" a los clientes de las zonas especiales en cada corrida.
+    """
+    return replace(candidato, zona=None) == replace(actual, zona=None) and _texto(candidato.zona) == _texto(
+        actual.zona
+    )
 
 
 # ------------------------------------------------------- mapeo viejo -> nuevo

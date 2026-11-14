@@ -274,6 +274,17 @@ class TestClientes:
         assert [c.direccion for c in plan.actualizados] == ["CL 5 6 7"]
         assert plan.direcciones_sospechosas == []
 
+    def test_la_zona_se_compara_por_nombre_y_no_por_sus_banderas(self) -> None:
+        """El repositorio de clientes trae la zona sin ``especial``; el catálogo con ella."""
+        sin_marca = Zona(nombre="COMFABOY", municipio=Municipio("BARBOSA"))
+        con_marca = Zona(nombre="COMFABOY", municipio=Municipio("BARBOSA"), especial=True)
+        actual = Cliente(codigo="111", ciudad="MONIQUIRA", zona=sin_marca)
+        fila = FilaCliente(codigo="111", ciudad="MONIQUIRA", ruta="COMFABOY")
+
+        plan = planear_clientes([fila], {}, [actual], {"COMFABOY": con_marca})
+
+        assert plan.sin_cambios == 1 and plan.actualizados == []
+
     def test_un_codigo_repetido_en_la_maestra_gana_la_primera_aparicion(self) -> None:
         plan = planear_clientes(
             [FilaCliente(codigo="111", ciudad="PRIMERA"), FilaCliente(codigo="111", ciudad="SEGUNDA")],
