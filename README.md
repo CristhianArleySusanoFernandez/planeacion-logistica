@@ -312,12 +312,23 @@ correspondiente. **El orden importa: primero medir, después sembrar.**
    comparando contra los mismos días que lo configuraron. Conviene guardar el resultado: la serie de
    mediciones out-of-sample es lo que dice si la app está mejorando o no.
 
-3. **Verificar primero, sin escribir, y después sembrar con TODOS los archivos, no solo los nuevos:**
+3. **Verificar primero, sin escribir, y después sembrar con TODOS los archivos, no solo los nuevos,
+   más las planeaciones guardadas desde la app:**
 
    ```bash
-   uv run planeacion-sembrar-repertorio "datos/*.xlsm" "datos_prueba/*.xlsm" --solo-verificar
-   uv run planeacion-sembrar-repertorio "datos/*.xlsm" "datos_prueba/*.xlsm" --vaciar
+   uv run planeacion-sembrar-repertorio "datos/*.xlsm" "datos_prueba/*.xlsm" --desde-guardadas --solo-verificar
+   uv run planeacion-sembrar-repertorio "datos/*.xlsm" "datos_prueba/*.xlsm" --desde-guardadas --vaciar
    ```
+
+   > **`--desde-guardadas` es cómo la app aprende de sí misma.** Cada planeación guardada en el Paso 4
+   > (tablas `planeaciones` + `planeacion_asignaciones`) entra al conteo como un día más
+   > (`guardada:<fecha>`), con los pares zona → carro que quedaron tras los movimientos a mano. Reglas:
+   > si hay un `.xlsm` de la misma fecha gana el `.xlsm` (es lo que salió a bodega); entre dos guardadas
+   > de la misma fecha gana la más reciente; las anteriores al 20 de octubre de 2026 se descartan porque
+   > son de la maestra vieja. El reporte dice cuántas se usaron y por qué se descartó cada una.
+   > **Cuando la operación deje el Excel, la rutina es la misma sin los `.xlsm`:**
+   > `uv run planeacion-sembrar-repertorio --desde-guardadas --vaciar`. Por eso el Paso 4 pide guardar
+   > siempre, aunque no se haya movido nada: sin guardar, la app no aprende de ese reparto.
 
    > **Por qué con `--vaciar` y con todos.** La siembra es idempotente —`upsert` por
    > (carro, zona, día), no duplica— pero **no es incremental**: la columna `frecuencia` se **pisa**

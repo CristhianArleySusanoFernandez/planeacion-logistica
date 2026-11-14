@@ -6,7 +6,7 @@ from typing import Any
 
 from supabase import Client
 
-from planeacion.application.dto.planeacion import AsignacionPrevia
+from planeacion.application.dto.planeacion import AsignacionPrevia, PlaneacionGuardada
 from planeacion.domain.modelo import AsignacionZona
 from planeacion.infraestructura.adaptadores.salida.supabase import (
     repositorio_carros,
@@ -83,6 +83,37 @@ class RepositorioPlaneacionesSupabase:
         if not mapeo:
             return None
         return AsignacionPrevia(fecha=date.fromisoformat(filas_cabecera[0]["fecha"]), zona_a_carro=mapeo)
+
+    def listar_guardadas(self) -> list[PlaneacionGuardada]:
+        cabeceras = (
+            self._cliente.table(TABLA)
+            .select("id, fecha, dia_semana, creada_en")
+            .order("fecha")
+            .order("id")
+            .execute()
+        )
+        guardadas = []
+        for cabecera in como_filas(cabeceras.data):
+            detalle = (
+                self._cliente.table(TABLA_ASIGNACIONES)
+                .select("zonas(nombre), carros(numero)")
+                .eq("planeacion_id", cabecera["id"])
+                .execute()
+            )
+            pares = {
+                (str(fila["carros"]["numero"]), str(fila["zonas"]["nombre"]))
+                for fila in como_filas(detalle.data)
+                if fila.get("zonas") and fila.get("carros")  # carro_id nulo: zona sin asignar
+            }
+            guardadas.append(
+                PlaneacionGuardada(
+                    fecha=date.fromisoformat(str(cabecera["fecha"])),
+                    dia_semana=str(cabecera["dia_semana"]),
+                    creada_en=str(cabecera.get("creada_en") or ""),
+                    pares=tuple(sorted(pares)),
+                )
+            )
+        return guardadas
 
     def _ids(self, tabla: str, clave: str) -> dict[str, int]:
         respuesta = self._cliente.table(tabla).select(f"id, {clave}").limit(10000).execute()

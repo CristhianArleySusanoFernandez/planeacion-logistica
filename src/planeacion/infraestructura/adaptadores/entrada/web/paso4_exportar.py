@@ -25,11 +25,14 @@ def mostrar(contenedor: Contenedor) -> None:
         return
 
     _resumen_final(planeacion)
-    col_excel, col_guardar = st.columns(2)
-    with col_excel, st.container(border=True):
-        _exportar_excel(contenedor, planeacion)
+    # Guardar va primero: es lo que hace que la app aprenda qué ruta atiende cada
+    # zona (la siembra del repertorio lee las planeaciones guardadas). El Excel es
+    # la salida para facturación, pero sin guardar no queda rastro del reparto.
+    col_guardar, col_excel = st.columns(2)
     with col_guardar, st.container(border=True):
         _guardar(contenedor, planeacion)
+    with col_excel, st.container(border=True):
+        _exportar_excel(contenedor, planeacion)
 
 
 def _resumen_final(planeacion: PlaneacionCompleta) -> None:
@@ -65,6 +68,11 @@ def _exportar_excel(contenedor: Contenedor, planeacion: PlaneacionCompleta) -> N
         st.session_state[estado.CLAVE_EXCEL_EXPORTADO] = ruta.read_bytes()
 
     contenido: bytes | None = st.session_state.get(estado.CLAVE_EXCEL_EXPORTADO)
+    if contenido is not None and st.session_state.get(estado.CLAVE_ID_GUARDADA) is None:
+        # No bloquea la descarga: facturación no puede esperar. Solo recuerda.
+        st.warning(
+            "Todavía no guardó esta planeación. Sin guardar, la aplicación no aprende de este reparto."
+        )
     if contenido is not None:
         st.download_button(
             "⬇ Descargar " + nombre,
@@ -86,8 +94,11 @@ def _guardar(contenedor: Contenedor, planeacion: PlaneacionCompleta) -> None:
             f"La próxima planeación de un {planeacion.dia_semana} partirá de esta."
         )
         return
-    st.caption("Nada se guarda sin este clic: la máquina propone, Rudy decide.")
-    if st.button("💾 Guardar planeación", key="guardar_planeacion"):
+    st.caption(
+        "Guardar es lo que permite que la aplicación aprenda qué ruta atiende cada zona. "
+        "Guarde siempre, aunque no cambie nada."
+    )
+    if st.button("💾 Guardar planeación", key="guardar_planeacion", type="primary"):
         with st.spinner("Guardando la planeación..."):
             nuevo_id = crear_generar_planeacion(contenedor).guardar(planeacion)
         st.session_state[estado.CLAVE_ID_GUARDADA] = nuevo_id

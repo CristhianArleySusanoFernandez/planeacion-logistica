@@ -31,6 +31,14 @@ ninguno que ya se haya extraído.
 
 `--solo-verificar` simula la siembra Y la herencia en memoria y no escribe nada:
 es la verificación cruzada que se corre antes de un `--vaciar`.
+
+APRENDER DE LA APP. `--desde-guardadas` suma al conteo las planeaciones guardadas
+desde el Paso 4 (tablas `planeaciones` + `planeacion_asignaciones`), cada una como
+una lectura más (`guardada:<fecha>`). Cuando la operación deje el Excel, es el
+único origen que queda. Reglas: una guardada con `.xlsm` de la misma fecha se
+descarta (el `.xlsm` es lo que salió a bodega); dos guardadas de la misma fecha,
+gana la de `creada_en` más reciente; las anteriores a la maestra nueva (20 de
+octubre de 2026) se descartan como `datos_historico/nombres_viejos/`.
 """
 
 import argparse
@@ -46,6 +54,7 @@ from pathlib import Path
 
 from pydantic import ValidationError
 
+from planeacion.application.dto.planeacion import PlaneacionGuardada
 from planeacion.application.puertos.salida.repositorios import ParRepertorio
 from planeacion.config.contenedor import Contenedor, crear_contenedor
 from planeacion.config.settings import Settings
@@ -70,6 +79,10 @@ from planeacion.infraestructura.adaptadores.salida.excel.lector_referencia impor
 FRACCION_VOLUMEN_ANOMALO = 0.25
 # Donde quedan los CSV livianos de la primera pasada.
 CARPETA_LECTURAS = Path("salidas/lecturas")
+# Primera planeación con la maestra nueva: las guardadas anteriores son de otra
+# maestra (nombres viejos) y no se siembran, igual que datos_historico/nombres_viejos/.
+PRIMERA_FECHA_MAESTRA_NUEVA = date(2026, 10, 20)
+PREFIJO_GUARDADA = "guardada:"
 DIAS_LABORALES = ("lunes", "martes", "miercoles", "jueves", "viernes", "sabado")
 
 
@@ -129,6 +142,63 @@ def leer_lectura(ruta_csv: Path) -> LecturaArchivo:
         pares=tuple(sorted(pares)),
         fecha=meta[4] if len(meta) > 4 else "",
     )
+
+
+@dataclass
+class GuardadasUsadas:
+    """Lo que entró y lo que no de las planeaciones guardadas, para el reporte."""
+
+    lecturas: list[LecturaArchivo] = field(default_factory=list)
+    descartadas_por_xlsm: list[str] = field(default_factory=list)  # fechas ISO
+    anteriores_a_la_maestra: list[str] = field(default_factory=list)
+    repetidas: list[str] = field(default_factory=list)  # fechas con más de una guardada
+
+
+def lecturas_desde_guardadas(
+    guardadas: Sequence[PlaneacionGuardada],
+    lecturas_xlsm: Sequence[LecturaArchivo],
+    fecha_minima: date = PRIMERA_FECHA_MAESTRA_NUEVA,
+) -> GuardadasUsadas:
+    """Las planeaciones guardadas desde la app como lecturas de siembra.
+
+    Deduplicación por FECHA DE PEDIDOS: si hay un `.xlsm` con esa fecha (campo
+    ``fecha`` del CSV liviano), la guardada se descarta, porque el `.xlsm` es lo que
+    de verdad salió a bodega y la guardada pudo quedarse a medias. Entre dos
+    guardadas de la misma fecha gana la de ``creada_en`` más reciente. Las
+    anteriores a la maestra nueva se descartan: sus zonas ya no existen.
+    """
+    resultado = GuardadasUsadas()
+    fechas_xlsm = {lectura.fecha for lectura in lecturas_xlsm if lectura.fecha}
+    por_fecha: dict[date, PlaneacionGuardada] = {}
+    for guardada in guardadas:
+        anterior = por_fecha.get(guardada.fecha)
+        if anterior is not None:
+            resultado.repetidas.append(guardada.fecha.isoformat())
+            if guardada.creada_en <= anterior.creada_en:
+                continue
+        por_fecha[guardada.fecha] = guardada
+    for fecha in sorted(por_fecha):
+        guardada = por_fecha[fecha]
+        iso = fecha.isoformat()
+        if fecha < fecha_minima:
+            resultado.anteriores_a_la_maestra.append(iso)
+            continue
+        if iso in fechas_xlsm:
+            resultado.descartadas_por_xlsm.append(iso)
+            continue
+        facturas = len(guardada.pares)  # no hay bloque de ECOM: el cuadre es trivial
+        resultado.lecturas.append(
+            LecturaArchivo(
+                archivo=f"{PREFIJO_GUARDADA}{iso}",
+                dias=(guardada.dia_semana,),
+                facturas_bloque=facturas,
+                facturas_planeacion=facturas,
+                pares=tuple(sorted(guardada.pares)),
+                fecha=iso,
+            )
+        )
+    resultado.repetidas = sorted(set(resultado.repetidas))
+    return resultado
 
 
 def atribuir_dia(lecturas: Sequence[LecturaArchivo], atribuciones: Mapping[str, str]) -> list[LecturaArchivo]:
@@ -576,6 +646,13 @@ def main() -> int:
         "--solo-verificar (por defecto 2026-11-01: Julián hasta octubre, Catalina desde noviembre)",
     )
     parser.add_argument(
+        "--desde-guardadas",
+        action="store_true",
+        help="suma al conteo las planeaciones guardadas desde el Paso 4 de la app (una por fecha; si "
+        "hay .xlsm de la misma fecha gana el .xlsm; las anteriores al 20-oct-2026 se descartan). "
+        "Cuando ya no haya Excel, es el único origen.",
+    )
+    parser.add_argument(
         "--atribuir",
         action="append",
         default=[],
@@ -618,8 +695,8 @@ def main() -> int:
     if faltantes:
         print(f"ERROR: no existen: {', '.join(str(r) for r in faltantes)}", file=sys.stderr)
         return 1
-    if not rutas:
-        print("ERROR: ningún archivo para leer.", file=sys.stderr)
+    if not rutas and not args.desde_guardadas:
+        print("ERROR: ningún archivo para leer (o pase --desde-guardadas).", file=sys.stderr)
         return 1
 
     try:
@@ -652,6 +729,12 @@ def main() -> int:
             f"({lectura.fecha})"
         )
 
+    contenedor = crear_contenedor(settings)
+    if args.desde_guardadas:
+        guardadas = lecturas_desde_guardadas(contenedor.planeaciones.listar_guardadas(), lecturas)
+        _imprimir_guardadas(guardadas)
+        lecturas = lecturas + guardadas.lecturas
+
     if not lecturas:
         print("ERROR: no se pudo leer ningún archivo.", file=sys.stderr)
         return 1
@@ -673,7 +756,6 @@ def main() -> int:
     print(f"\nArchivos usables: {len(usables)} de {len(lecturas)}.")
 
     frecuencias = contar_frecuencias(usables)
-    contenedor = crear_contenedor(settings)
     if args.vaciar and not args.solo_verificar:
         _vaciar(contenedor, args.salidas)
     # Solo la flota ACTIVA siembra repertorio. Las rutas de refuerzo —la 23 de
@@ -752,6 +834,23 @@ def _extraer(ruta_xlsm: Path, ruta_csv: Path) -> int:
         return 1
     escribir_lectura(lectura, ruta_csv)
     return 0
+
+
+def _imprimir_guardadas(guardadas: GuardadasUsadas) -> None:
+    print(
+        f"\nPlaneaciones guardadas desde la app: {len(guardadas.lecturas)} usadas, "
+        f"{len(guardadas.descartadas_por_xlsm)} descartadas por .xlsm del mismo día, "
+        f"{len(guardadas.anteriores_a_la_maestra)} anteriores a la maestra nueva "
+        f"({PRIMERA_FECHA_MAESTRA_NUEVA.isoformat()})."
+    )
+    for lectura in guardadas.lecturas:
+        print(f"  {lectura.archivo}: {len(lectura.pares)} pares, {lectura.dias[0]}")
+    if guardadas.descartadas_por_xlsm:
+        print(f"  descartadas por .xlsm del mismo día: {', '.join(guardadas.descartadas_por_xlsm)}")
+    if guardadas.anteriores_a_la_maestra:
+        print(f"  anteriores a la maestra nueva: {', '.join(guardadas.anteriores_a_la_maestra)}")
+    if guardadas.repetidas:
+        print(f"  fechas con más de una guardada (ganó la más reciente): {', '.join(guardadas.repetidas)}")
 
 
 def _partir_atribucion(texto: str) -> tuple[str, str]:

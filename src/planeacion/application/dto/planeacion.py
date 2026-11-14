@@ -26,6 +26,20 @@ class AsignacionPrevia:
 
 
 @dataclass(frozen=True)
+class PlaneacionGuardada:
+    """Una planeación guardada desde el Paso 4, tal como la lee la siembra del repertorio.
+
+    Solo las zonas con carro: una zona sin asignar no dice qué ruta la atiende.
+    ``creada_en`` desempata dos guardadas de la misma fecha (gana la más reciente).
+    """
+
+    fecha: date
+    dia_semana: str
+    creada_en: str  # ISO, como lo devuelve la base
+    pares: tuple[tuple[str, str], ...]  # (numero de carro, nombre de zona)
+
+
+@dataclass(frozen=True)
 class PlaneacionCompleta:
     fecha: date
     dia_semana: str  # "lunes"..."domingo" (minúsculas, sin tildes)

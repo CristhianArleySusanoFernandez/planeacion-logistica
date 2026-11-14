@@ -10,7 +10,7 @@ from datetime import date
 from decimal import Decimal
 from typing import NamedTuple, Protocol
 
-from planeacion.application.dto.planeacion import AsignacionPrevia
+from planeacion.application.dto.planeacion import AsignacionPrevia, PlaneacionGuardada
 from planeacion.domain.modelo import (
     AsignacionZona,
     Carro,
@@ -229,4 +229,9 @@ class RepositorioPlaneaciones(Protocol):
     def obtener_asignacion_previa(self, dia_semana: str) -> AsignacionPrevia | None:
         """La fecha y el mapeo zona→carro de la planeación más reciente con ese día
         de semana (incluida la de hoy si ya se guardó); None si no hay ninguna."""
+        ...
+
+    def listar_guardadas(self) -> list[PlaneacionGuardada]:
+        """Todas las planeaciones guardadas con sus pares zona→carro (solo zonas con
+        carro). Es lo que la siembra del repertorio lee para aprender de la app."""
         ...
