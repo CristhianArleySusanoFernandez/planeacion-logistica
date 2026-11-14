@@ -61,6 +61,33 @@ class TestFlota:
         assert ("municipio", "TUNJA", "OTROS") in campos
         assert ("municipio_real", None, "VILLA DELEYVA") in campos
 
+    def test_un_conductor_repetido_en_dos_rutas_activas_es_errata_y_no_se_aplica(self) -> None:
+        """La BASE del 12-nov traia RAUL 1 en la 12 y en la 13: la 13 sigue RAUL 2."""
+        base = [
+            Carro(numero="12", conductor="RAUL 1", municipio=_OTROS, conductor_clave="RAUL"),
+            Carro(numero="13", conductor="RAUL 2", municipio=_OTROS, conductor_clave="RAUL"),
+        ]
+        archivo = [
+            Carro(numero="12", conductor="RAUL 1", municipio=_OTROS, conductor_clave="RAUL"),
+            Carro(numero="13", conductor="RAUL 1", municipio=_OTROS, conductor_clave="RAUL"),
+        ]
+
+        plan = planear_flota(archivo, base)
+
+        assert plan.a_guardar == []
+        assert plan.cambios == []
+        assert [(c.clave, c.antes, c.despues) for c in plan.erratas_en_base] == [("13", "RAUL 2", "RAUL 1")]
+        assert plan.sin_cambios == 2
+
+    def test_un_cambio_de_conductor_a_un_nombre_libre_si_se_aplica(self) -> None:
+        base = [Carro(numero="13", conductor="RAUL 2", municipio=_OTROS)]
+        archivo = [Carro(numero="13", conductor="PEDRO", municipio=_OTROS)]
+
+        plan = planear_flota(archivo, base)
+
+        assert [c.conductor for c in plan.actualizadas] == ["PEDRO"]
+        assert plan.erratas_en_base == []
+
     def test_una_ruta_que_no_cambio_no_se_reescribe(self) -> None:
         carro = Carro(numero="1", conductor="FABIAN 1", municipio=_TUNJA, conductor_clave="FABIAN")
 
@@ -213,6 +240,31 @@ class TestClientes:
 
         assert plan.sin_cambios == 1
         assert plan.a_guardar == []
+
+    def test_una_direccion_que_es_la_ciudad_no_pisa_la_de_la_base(self) -> None:
+        actual = Cliente(codigo="111", direccion="CR 10 10 45", ciudad="CHIQUINQUIRA", barrio="CENTRO")
+        fila = FilaCliente(
+            codigo="111", direccion="15176 - Chiquinquirá", ciudad="15176 - CHIQUINQUIRA", barrio="NUEVO"
+        )
+
+        plan = planear_clientes([fila], {}, [actual], {})
+
+        assert [c.direccion for c in plan.actualizados] == ["CR 10 10 45"]
+        assert [c.barrio for c in plan.actualizados] == ["NUEVO"]  # el resto de la fila si
+        campos = {c.campo for c in plan.cambios_de_ubicacion}
+        assert "direccion" not in campos and "barrio" in campos
+        assert [(c.clave, c.despues) for c in plan.direcciones_sospechosas] == [
+            ("111", "15176 - Chiquinquirá")
+        ]
+
+    def test_una_direccion_distinta_de_la_ciudad_si_se_actualiza(self) -> None:
+        actual = Cliente(codigo="111", direccion="CR 10 10 45", ciudad="CHIQUINQUIRA")
+        fila = FilaCliente(codigo="111", direccion="CL 5 6 7", ciudad="15176 - CHIQUINQUIRA")
+
+        plan = planear_clientes([fila], {}, [actual], {})
+
+        assert [c.direccion for c in plan.actualizados] == ["CL 5 6 7"]
+        assert plan.direcciones_sospechosas == []
 
     def test_un_codigo_repetido_en_la_maestra_gana_la_primera_aparicion(self) -> None:
         plan = planear_clientes(

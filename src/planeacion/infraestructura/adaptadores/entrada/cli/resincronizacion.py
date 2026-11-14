@@ -23,6 +23,7 @@ from planeacion.domain.modelo import (
     OverrideZona,
     Zona,
 )
+from planeacion.domain.servicios.normalizacion_ubicacion import normalizar_ubicacion
 from planeacion.domain.servicios.parseo_zonas import crear_zona, normalizar_nombre_zona
 
 # Las rutas de reparto de la operación de octubre de 2026. Una ruta fuera de este
@@ -156,11 +157,26 @@ class PlanFlota:
     actualizadas: list[Carro] = field(default_factory=list)
     desactivadas: list[Carro] = field(default_factory=list)
     cambios: list[Cambio] = field(default_factory=list)
+    # Un cambio que dejaría dos rutas activas con el mismo ``conductor`` exacto
+    # (RAUL 1 en la 12 y en la 13) es una errata de la hoja, no un cambio de
+    # operación: no se aplica y se lista.
+    erratas_en_base: list[Cambio] = field(default_factory=list)
     sin_cambios: int = 0
 
     @property
     def a_guardar(self) -> list[Carro]:
         return self.nuevas + self.actualizadas + self.desactivadas
+
+
+def _conductor_repetido(carro: Carro, flota_archivo: Sequence[Carro]) -> bool:
+    """Otra ruta activa del archivo trae exactamente el mismo ``conductor``."""
+    conductor = _texto(carro.conductor)
+    if conductor is None:
+        return False
+    return any(
+        otro.numero != carro.numero and otro.activo and _texto(otro.conductor) == conductor
+        for otro in flota_archivo
+    )
 
 
 def planear_flota(flota_archivo: Sequence[Carro], flota_base: Sequence[Carro]) -> PlanFlota:
@@ -178,6 +194,17 @@ def planear_flota(flota_archivo: Sequence[Carro], flota_base: Sequence[Carro]) -
         if actual is None:
             plan.nuevas.append(carro)
             plan.cambios.append(Cambio(carro.numero, "ruta nueva", None, _texto(carro.conductor)))
+            continue
+        if _texto(carro.conductor) != _texto(actual.conductor) and _conductor_repetido(carro, flota_archivo):
+            plan.erratas_en_base.append(
+                Cambio(
+                    carro.numero,
+                    "errata en BASE: conductor repetido",
+                    _texto(actual.conductor),
+                    _texto(carro.conductor),
+                )
+            )
+            plan.sin_cambios += 1
             continue
         cambios = _comparar(
             carro.numero,
@@ -316,11 +343,20 @@ class PlanClientes:
     # se reporta y no se aplica (ni se crea ni se actualiza).
     duplicados_en_archivo: int = 0
     duplicados_con_zonas_distintas: list[Cambio] = field(default_factory=list)
+    # Una fila con la ciudad en la columna Dirección ("15176 - CHIQUINQUIRA") tiene
+    # las columnas corridas: la dirección no se toca y el resto de la fila sí.
+    direcciones_sospechosas: list[Cambio] = field(default_factory=list)
     sin_cambios: int = 0
 
     @property
     def a_guardar(self) -> list[Cliente]:
         return self.nuevos + self.actualizados
+
+
+def _direccion_sospechosa(fila: FilaCliente) -> bool:
+    """La dirección es la ciudad (normalizada, sin tildes ni prefijo DANE)."""
+    direccion = normalizar_ubicacion(fila.direccion)
+    return bool(direccion) and direccion == normalizar_ubicacion(fila.ciudad)
 
 
 def _duplicados_contradictorios(filas: Sequence[FilaCliente]) -> dict[str, set[str]]:
@@ -370,6 +406,12 @@ def planear_clientes(
         nombre_zona = normalizar_nombre_zona(fila.ruta) if fila.ruta else ""
         zona = zonas_por_nombre.get(nombre_zona)
         actual = por_codigo.get(fila.codigo)
+        direccion = fila.direccion
+        if _direccion_sospechosa(fila):
+            direccion = actual.direccion if actual else None
+            plan.direcciones_sospechosas.append(
+                Cambio(fila.codigo, "dirección sospechosa (es la ciudad)", direccion, fila.direccion)
+            )
 
         if nombre_zona and zona is None:
             plan.zonas_no_encontradas.append(Cambio(fila.codigo, "zona inexistente", None, nombre_zona))
@@ -378,7 +420,7 @@ def planear_clientes(
             plan.nuevos.append(
                 Cliente(
                     codigo=fila.codigo,
-                    direccion=fila.direccion,
+                    direccion=direccion,
                     barrio=fila.barrio,
                     ciudad=fila.ciudad,
                     zona=zona,
@@ -402,7 +444,7 @@ def planear_clientes(
                 {
                     "ciudad": (actual.ciudad, fila.ciudad),
                     "barrio": (actual.barrio, fila.barrio),
-                    "direccion": (actual.direccion, fila.direccion),
+                    "direccion": (actual.direccion, direccion),
                 },
             )
         )
@@ -413,7 +455,7 @@ def planear_clientes(
 
         candidato = Cliente(
             codigo=fila.codigo,
-            direccion=fila.direccion,
+            direccion=direccion,
             barrio=fila.barrio,
             ciudad=fila.ciudad,
             zona=zona_final,

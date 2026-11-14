@@ -171,6 +171,10 @@ def _reportar_flota(reporte: _Reporte, plan: PlanFlota) -> None:
     reporte.linea(f"- rutas actualizadas: {len(plan.actualizadas)}")
     reporte.linea(f"- rutas desactivadas (están en la base y no en el archivo): {len(plan.desactivadas)}")
     reporte.lista(plan.cambios, "cambios")
+    reporte.lista(
+        plan.erratas_en_base,
+        "erratas en BASE (dejarían dos rutas activas con el mismo conductor): NO se aplican",
+    )
 
 
 def _reportar_zonas(reporte: _Reporte, plan: PlanZonas, fusiones: list[tuple[str, str]]) -> None:
@@ -266,6 +270,10 @@ def _reportar_clientes(reporte: _Reporte, plan: PlanClientes) -> None:
         reporte.linea(f"    - ... y {len(plan.solo_en_base) - _MAX_EJEMPLOS} más")
     reporte.lista(plan.cambios_de_zona, "cambios de zona")
     reporte.lista(plan.cambios_de_ubicacion, "cambios de ciudad/barrio/dirección")
+    reporte.lista(
+        plan.direcciones_sospechosas,
+        "direcciones sospechosas (la columna trae la ciudad): se conserva la de la base",
+    )
     reporte.lista(plan.rellenados, "documento/razón social rellenados (solo si estaban vacíos)")
     reporte.lista(plan.zonas_no_encontradas, "filas cuya RUTA no casa con ninguna zona")
 
